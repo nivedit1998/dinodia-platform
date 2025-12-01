@@ -10,3 +10,4 @@ export default async function AdminDashboardPage() {
 
   return <AdminDashboard username={user.username} />;
 }
+
