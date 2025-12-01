@@ -1,36 +1,101 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dinodia Smart Living
 
-## Getting Started
+Multi-tenant tablet UI for Home Assistant built with Next.js App Router, Prisma, and Tailwind. Dinodia admins wire up a Home Assistant instance once, then wall-mounted tablets provide premium control dashboards per tenant/area.
 
-First, run the development server:
+## Stack
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- Next.js 16 (App Router, TypeScript, TailwindCSS)
+- Prisma ORM
+- PostgreSQL (Supabase) in production, SQLite acceptable for quick local prototyping
+- Custom auth (username/password with JWT cookies)
+- Home Assistant REST + template APIs
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Local development
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Copy `.env.production.example` to `.env.local` and fill in values that make sense for dev (see **Environment** below). SQLite still works locally by pointing `DATABASE_URL` to `file:./prisma/dev.db`.
+3. Run the dev server:
+   ```bash
+   npm run dev
+   ```
+4. Lint / type-check before opening a PR:
+   ```bash
+   npm run lint
+   npm run build
+   ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment
 
-## Learn More
+All deployments (local, preview, production) must define the following variables. `.env.production.example` documents the production-ready defaults (e.g. Supabase URL) while `.env.local` is ignored by git for local overrides.
 
-To learn more about Next.js, take a look at the following resources:
+| Variable | Description |
+| --- | --- |
+| `DATABASE_URL` | Connection string for Prisma. Use `file:./prisma/dev.db` for SQLite locally or `postgresql://USER:PASSWORD@HOST:PORT/DB?sslmode=require` for Supabase Postgres. |
+| `JWT_SECRET` | Secret string used to sign the auth JWT cookie. Generate a long random value. |
+| `NEXT_PUBLIC_APP_URL` | Base URL served to clients (e.g. `https://app.dinodiasmartliving.com`). Needed for share links or future deep links. |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+> Production builds fail fast if `JWT_SECRET` or `DATABASE_URL` are missing.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Database (Supabase Postgres)
 
-## Deploy on Vercel
+1. Create a new Supabase project + Postgres instance.
+2. Copy the provided connection string into `DATABASE_URL` (remember to include `?sslmode=require`).
+3. Run Prisma migrations against the new database:
+   ```bash
+   npx prisma migrate dev --name init-postgres
+   ```
+   This replays the schema on Postgres while preserving existing models.
+4. (Optional) Generate the Prisma client for type safety:
+   ```bash
+   npx prisma generate
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+For production/CI use `npx prisma migrate deploy` so only committed migrations run.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Security & auth
+
+- Sessions are JWT-based and stored in the `dinodia_token` cookie with `httpOnly`, `sameSite: 'lax'`, `secure` in production, and a 7-day expiry. Ensure `JWT_SECRET` is long and random in every environment.
+- Home Assistant base URLs and long-lived tokens never leave the backend. They live in the database and are consumed only inside server utilities (`src/lib/homeAssistant.ts`, API routes). Clients interact exclusively through our `/api/*` routes.
+- `/api/device-control` is rate limited per user (30 commands per 10 seconds) to avoid accidentally overwhelming Home Assistant. Limits are enforced server-side in `src/lib/rateLimit.ts`.
+
+## Deployment (Vercel)
+
+1. Push this repo to GitHub and create a new Vercel project from it.
+2. In Vercel → Settings → Environment Variables, add:
+   - `DATABASE_URL` (Supabase connection string)
+   - `JWT_SECRET`
+   - `NEXT_PUBLIC_APP_URL` (`https://app.dinodiasmartliving.com`)
+3. Configure Supabase to accept Vercel connections (SSL required).
+4. Define the build & install commands (defaults work):
+   - Install: `npm install`
+   - Build: `npm run build`
+   - Post-build migration: set a deploy hook or `npm run prisma:deploy` (e.g. `npx prisma migrate deploy`) via Vercel build command or a CI step.
+5. After the first deployment, add the custom domain:
+   - In Vercel project → Domains, add `app.dinodiasmartliving.com`.
+   - Create a CNAME record pointing `app.dinodiasmartliving.com` → `cname.vercel-dns.com`.
+   - Wait for propagation; Vercel will issue certificates automatically.
+
+### Production checklist
+
+- `DATABASE_URL` points to Supabase (Postgres provider in `prisma/schema.prisma`).
+- `npx prisma migrate deploy` runs during deployment.
+- Environment variables are set for every Vercel environment (Production, Preview).
+- Rate limiting is active (see `src/lib/rateLimit.ts`).
+- `npm run build` succeeds locally before pushing.
+
+## API rate limiting
+
+`/api/device-control` guards against rapid-fire requests:
+
+- Limit: 30 actions per 10 seconds per authenticated user.
+- Implementation: `src/lib/rateLimit.ts` (Map-backed token bucket). Ready to swap for Redis later if needed.
+- Behavior: When exceeded, the API returns HTTP 429 with `Too many actions, please slow down.` and no command is sent to Home Assistant.
+
+## Contribution notes
+
+- Keep Home Assistant credentials server-side. Never introduce `NEXT_PUBLIC_` variables for HA data.
+- Run `npm run lint` before opening a PR.
+- For schema changes, create a new Prisma migration (`npx prisma migrate dev --name <change>`). Remember to update Supabase via `npx prisma migrate deploy`.

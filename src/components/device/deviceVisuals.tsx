@@ -1,5 +1,6 @@
 'use client';
 
+import { JSX } from 'react';
 import { UIDevice } from '@/types/device';
 import { formatTemperature, getBrightnessPercent } from './DeviceControls';
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import { callHaService, fetchHaState, HaConnectionLike } from '@/lib/homeAssistant';
 import { getUserWithHaConnection } from '@/lib/haConnection';
+import { checkRateLimit } from '@/lib/rateLimit';
 
 const NUMERIC_COMMANDS = new Set([
   'light/set_brightness',
@@ -12,6 +13,17 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const allowed = checkRateLimit(`device-control:${user.id}`, {
+    maxRequests: 30,
+    windowMs: 10_000,
+  });
+  if (!allowed) {
+    return NextResponse.json(
+      { ok: false, error: 'Too many actions, please slow down.' },
+      { status: 429 }
+    );
   }
 
   const body = await req.json().catch(() => null);
