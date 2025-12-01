@@ -1,52 +1,78 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { UIDevice } from '@/types/device';
-import {
-  getPrimaryLabel,
-  getAdditionalLabels,
-  normalizeLabel,
-} from '@/lib/deviceLabels';
+import { getPrimaryLabel } from '@/lib/deviceLabels';
 
 const CAMERA_REFRESH_INTERVAL_MS = 15000;
 
-type DeviceControlsProps = {
-  device: UIDevice;
-  isDetail?: boolean;
-  onActionComplete?: () => void;
-  actionSlot?: ReactNode;
-};
-
-type ControlPayload = {
+export type ControlPayload = {
   entityId: string;
   command: string;
   value?: number;
 };
 
-export function DeviceControls({
-  device,
-  isDetail = false,
-  onActionComplete,
-  actionSlot,
-}: DeviceControlsProps) {
-  const label = getPrimaryLabel(device);
-  const areaDisplay = (device.area ?? device.areaName ?? '').trim();
-  const attrs = device.attributes || {};
-  const brightnessValue = getBrightnessPercent(attrs);
-  const volumeValue = getVolumePercent(attrs);
+export function useDeviceCommand(onActionComplete?: () => void) {
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
-  const [brightnessPct, setBrightnessPct] = useState(brightnessValue);
-  const [volumePct, setVolumePct] = useState(volumeValue);
-  const [cameraRefreshToken, setCameraRefreshToken] = useState(() =>
-    Date.now()
+
+  const sendCommand = useCallback(
+    async (payload: ControlPayload) => {
+      setPendingCommand(payload.command);
+      try {
+        const res = await fetch('/api/device-control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({ ok: false }));
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || `Failed with status ${res.status}`);
+        }
+        onActionComplete?.();
+      } catch (err) {
+        console.error('Device control failed', err);
+      } finally {
+        setPendingCommand(null);
+      }
+    },
+    [onActionComplete]
   );
 
+  return { pendingCommand, sendCommand };
+}
+
+type DeviceControlsProps = {
+  device: UIDevice;
+  onActionComplete?: () => void;
+  relatedDevices?: UIDevice[];
+};
+
+export function DeviceControls({
+  device,
+  onActionComplete,
+  relatedDevices,
+}: DeviceControlsProps) {
+  const label = getPrimaryLabel(device);
+  const attrs = device.attributes || {};
+  const { pendingCommand, sendCommand } = useDeviceCommand(onActionComplete);
+  const brightnessValue = getBrightnessPercent(attrs);
+  const volumeValue = getVolumePercent(attrs);
+  const [brightnessPct, setBrightnessPct] = useState(brightnessValue ?? 0);
+  const [volumePct, setVolumePct] = useState(volumeValue ?? 0);
+  const [cameraRefreshToken, setCameraRefreshToken] = useState(() => Date.now());
+
   useEffect(() => {
-    setBrightnessPct(brightnessValue);
+    if (brightnessValue !== null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setBrightnessPct(brightnessValue);
+    }
   }, [brightnessValue]);
 
   useEffect(() => {
-    setVolumePct(volumeValue);
+    if (volumeValue !== null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setVolumePct(volumeValue);
+    }
   }, [volumeValue]);
 
   useEffect(() => {
@@ -60,373 +86,597 @@ export function DeviceControls({
     return undefined;
   }, [label]);
 
-  const sendControl = useCallback(
-    async (payload: ControlPayload) => {
-      setPendingCommand(payload.command);
-      try {
-        const res = await fetch('/api/device-control', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+  const content = useMemo(() => {
+    switch (label) {
+      case 'Light':
+        return renderLightControls({
+          device,
+          brightnessPct,
+          supportsBrightness: brightnessValue !== null,
+          setBrightnessPct,
+          pendingCommand,
+          sendCommand,
         });
-        const data = await res.json().catch(() => ({ ok: false }));
-        if (!res.ok || !data.ok) {
-          throw new Error(data.error || `Failed with ${res.status}`);
-        }
-        onActionComplete?.();
-      } catch (err) {
-        console.error('Device control failed', err);
-      } finally {
-        setPendingCommand(null);
-      }
-    },
-    [onActionComplete]
-  );
-
-  const controls = renderControls({
-    device,
+      case 'Blind':
+        return renderBlindControls({ device, pendingCommand, sendCommand });
+      case 'Spotify':
+        return renderSpotifyControls({ device, pendingCommand, sendCommand });
+      case 'Boiler':
+        return renderBoilerControls({ device, pendingCommand, sendCommand });
+      case 'Doorbell':
+        return renderDoorbellControls({ device, cameraRefreshToken });
+      case 'Home Security':
+        return renderSecurityControls({
+          relatedDevices,
+          cameraRefreshToken,
+        });
+      case 'TV':
+        return renderTvControls({
+          device,
+          volumePct,
+          setVolumePct,
+          pendingCommand,
+          sendCommand,
+        });
+      case 'Speaker':
+        return renderSpeakerControls({
+          device,
+          volumePct,
+          setVolumePct,
+          pendingCommand,
+          sendCommand,
+        });
+      case 'Motion Sensor':
+        return renderMotionSensorControls({ device });
+      default:
+        return (
+          <p className="text-sm text-slate-500">
+            No interactive controls available.
+          </p>
+        );
+    }
+  }, [
     label,
-    isDetail,
-    pendingCommand,
+    device,
     brightnessPct,
-    setBrightnessPct,
+    brightnessValue,
     volumePct,
-    setVolumePct,
-    sendControl,
-  });
+    sendCommand,
+    pendingCommand,
+    cameraRefreshToken,
+    relatedDevices,
+  ]);
 
-  const additionalLabels = getAdditionalLabels(device, label);
+  return <div className="space-y-6">{content}</div>;
+}
 
+function renderLightControls({
+  device,
+  brightnessPct,
+  supportsBrightness,
+  setBrightnessPct,
+  pendingCommand,
+  sendCommand,
+}: {
+  device: UIDevice;
+  brightnessPct: number;
+  supportsBrightness: boolean;
+  setBrightnessPct: (value: number) => void;
+  pendingCommand: string | null;
+  sendCommand: (payload: ControlPayload) => Promise<void>;
+}) {
+  const isOn = device.state === 'on';
   return (
-    <div>
-      <div className="flex items-start justify-between gap-2">
-        <div className="space-y-1">
-          <p className="text-sm font-semibold text-slate-800">{device.name}</p>
-          {label && (
-            <span className="inline-flex text-[10px] uppercase tracking-wide text-indigo-700 bg-indigo-50 rounded-full px-2 py-0.5">
-              {label}
+    <div className="space-y-6">
+      <button
+        type="button"
+        onClick={() =>
+          sendCommand({ entityId: device.entityId, command: 'light/toggle' })
+        }
+        disabled={pendingCommand !== null}
+        className={`w-full rounded-2xl py-4 text-center text-lg font-semibold transition shadow-inner ${
+          isOn
+            ? 'bg-amber-400/80 text-amber-950 shadow-amber-200/60'
+            : 'bg-slate-200/70 text-slate-600'
+        }`}
+      >
+        {isOn ? 'Turn light off' : 'Turn light on'}
+      </button>
+      {device.domain === 'light' && supportsBrightness && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between text-sm text-slate-500">
+            <span>Brightness</span>
+            <span className="text-base font-semibold text-slate-900">
+              {brightnessPct}%
             </span>
-          )}
-          {additionalLabels.length > 0 && (
-            <p className="text-[10px] text-slate-500">
-              {additionalLabels.join(', ')}
-            </p>
-          )}
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={brightnessPct}
+            onChange={(e) => setBrightnessPct(Number(e.target.value))}
+            onMouseUp={(e) =>
+              sendCommand({
+                entityId: device.entityId,
+                command: 'light/set_brightness',
+                value: Number((e.target as HTMLInputElement).value),
+              })
+            }
+            onTouchEnd={(e) =>
+              sendCommand({
+                entityId: device.entityId,
+                command: 'light/set_brightness',
+                value: Number((e.target as HTMLInputElement).value),
+              })
+            }
+            className="w-full accent-amber-500"
+          />
         </div>
-        {actionSlot}
-      </div>
-      <div className="mt-2 text-[11px] text-slate-600">
-        Area:{' '}
-        <span className="text-slate-800 font-medium">
-          {areaDisplay || '—'}
-        </span>
-      </div>
-      <div className="text-[11px] text-slate-600">
-        State:{' '}
-        <span className="text-slate-800 font-semibold">{device.state}</span>
-      </div>
-
-      {renderInfoBlock(label, attrs, device.state, cameraRefreshToken, device.entityId)}
-
-      {controls}
+      )}
     </div>
   );
 }
 
-type RenderControlsArgs = {
+function renderBlindControls({
+  device,
+  pendingCommand,
+  sendCommand,
+}: {
   device: UIDevice;
-  label: string;
-  isDetail: boolean;
   pendingCommand: string | null;
-  brightnessPct: number | null;
-  setBrightnessPct: (value: number) => void;
-  volumePct: number | null;
-  setVolumePct: (value: number) => void;
-  sendControl: (payload: ControlPayload) => Promise<void>;
-};
+  sendCommand: (payload: ControlPayload) => Promise<void>;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <button
+        type="button"
+        onClick={() =>
+          sendCommand({ entityId: device.entityId, command: 'blind/open' })
+        }
+        disabled={pendingCommand !== null}
+        className="rounded-2xl bg-gradient-to-br from-sky-200 to-sky-100 py-4 text-sky-900 font-semibold shadow-sm"
+      >
+        Open
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          sendCommand({ entityId: device.entityId, command: 'blind/close' })
+        }
+        disabled={pendingCommand !== null}
+        className="rounded-2xl bg-gradient-to-br from-slate-200 to-slate-100 py-4 text-slate-800 font-semibold shadow-sm"
+      >
+        Close
+      </button>
+    </div>
+  );
+}
 
-function renderControls(args: RenderControlsArgs) {
-  const {
-    device,
-    label,
-    isDetail,
-    pendingCommand,
-    brightnessPct,
-    setBrightnessPct,
-    volumePct,
-    setVolumePct,
-    sendControl,
-  } = args;
+function renderSpotifyControls({
+  device,
+  pendingCommand,
+  sendCommand,
+}: {
+  device: UIDevice;
+  pendingCommand: string | null;
+  sendCommand: (payload: ControlPayload) => Promise<void>;
+}) {
+  const attrs = device.attributes || {};
+  const cover = readImageAttr(attrs);
+  const title = readStringAttr(attrs, 'media_title');
+  const artist = readStringAttr(attrs, 'media_artist');
+  const duration = readNumberAttr(attrs, 'media_duration');
+  const position = readNumberAttr(attrs, 'media_position') ?? 0;
+  const progressPct =
+    duration && duration > 0
+      ? Math.min(100, Math.round((position / duration) * 100))
+      : 0;
 
-  if (isDetail) return null;
-
-  switch (label) {
-    case 'Light':
-      return (
-        <div className="mt-3 space-y-2">
-          <button
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
-            onClick={() =>
-              sendControl({ entityId: device.entityId, command: 'light/toggle' })
-            }
-            disabled={pendingCommand !== null}
-          >
-            Toggle
-          </button>
-          {device.domain === 'light' && brightnessPct !== null && (
-            <div className="flex items-center gap-2 text-[11px] text-slate-600">
-              <span>Brightness</span>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={brightnessPct}
-                onChange={(e) => setBrightnessPct(Number(e.target.value))}
-                onMouseUp={(e) =>
-                  sendControl({
-                    entityId: device.entityId,
-                    command: 'light/set_brightness',
-                    value: Number((e.target as HTMLInputElement).value),
-                  })
-                }
-                onTouchEnd={(e) =>
-                  sendControl({
-                    entityId: device.entityId,
-                    command: 'light/set_brightness',
-                    value: Number((e.target as HTMLInputElement).value),
-                  })
-                }
-                className="flex-1"
-              />
-              <span>{brightnessPct}%</span>
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 md:flex-row">
+        <div className="w-full md:w-56 aspect-square rounded-3xl overflow-hidden bg-slate-900/10">
+          {cover ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={cover}
+              alt={title ?? device.name}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-slate-400">
+              No cover
             </div>
           )}
         </div>
-      );
-    case 'Blind':
-      return (
-        <div className="mt-3 flex gap-2">
-          <button
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
-            onClick={() =>
-              sendControl({ entityId: device.entityId, command: 'blind/open' })
-            }
-            disabled={pendingCommand !== null}
-          >
-            Open
-          </button>
-          <button
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
-            onClick={() =>
-              sendControl({ entityId: device.entityId, command: 'blind/close' })
-            }
-            disabled={pendingCommand !== null}
-          >
-            Close
-          </button>
-        </div>
-      );
-    case 'Spotify':
-      return (
-        <div className="mt-3 flex gap-2 flex-wrap">
-          <button
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
-            onClick={() =>
-              sendControl({ entityId: device.entityId, command: 'media/previous' })
-            }
-            disabled={pendingCommand !== null}
-          >
-            Previous
-          </button>
-          <button
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
-            onClick={() =>
-              sendControl({ entityId: device.entityId, command: 'media/play_pause' })
-            }
-            disabled={pendingCommand !== null}
-          >
-            {device.state === 'playing' ? 'Pause' : 'Play'}
-          </button>
-          <button
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
-            onClick={() =>
-              sendControl({ entityId: device.entityId, command: 'media/next' })
-            }
-            disabled={pendingCommand !== null}
-          >
-            Next
-          </button>
-        </div>
-      );
-    case 'Boiler':
-      return (
-        <div className="mt-3 flex gap-2">
-          <button
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
-            onClick={() =>
-              sendControl({ entityId: device.entityId, command: 'boiler/temp_down' })
-            }
-            disabled={pendingCommand !== null}
-          >
-            -1°C
-          </button>
-          <button
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
-            onClick={() =>
-              sendControl({ entityId: device.entityId, command: 'boiler/temp_up' })
-            }
-            disabled={pendingCommand !== null}
-          >
-            +1°C
-          </button>
-        </div>
-      );
-    case 'TV':
-    case 'Speaker':
-      return (
-        <div className="mt-3 space-y-2">
-          <div className="flex gap-2 flex-wrap">
+        <div className="flex-1 space-y-4">
+          <div>
+            <p className="text-xl font-semibold text-slate-900">
+              {title || 'Nothing playing'}
+            </p>
+            {artist && <p className="text-sm text-slate-500">{artist}</p>}
+          </div>
+          <div>
+            <div className="h-2 rounded-full bg-slate-200">
+              <div
+                className="h-full rounded-full bg-emerald-500"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+            {duration !== null && (
+              <div className="mt-2 flex justify-between text-xs text-slate-500">
+                <span>{formatDuration(position)}</span>
+                <span>-{formatDuration(duration - position)}</span>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-3">
             <button
-              className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
+              type="button"
               onClick={() =>
-                sendControl({
+                sendCommand({
                   entityId: device.entityId,
-                  command: `${label === 'TV' ? 'tv' : 'speaker'}/toggle_power`,
+                  command: 'media/previous',
                 })
               }
               disabled={pendingCommand !== null}
+              className="rounded-full border border-slate-200 px-4 py-2 text-sm"
             >
-              {device.state === 'off' ? 'Power on' : 'Power off'}
+              Previous
             </button>
             <button
-              className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
+              type="button"
               onClick={() =>
-                sendControl({ entityId: device.entityId, command: 'media/volume_down' })
+                sendCommand({
+                  entityId: device.entityId,
+                  command: 'media/play_pause',
+                })
               }
               disabled={pendingCommand !== null}
+              className="rounded-full bg-emerald-500 px-6 py-2 text-sm font-semibold text-white shadow"
             >
-              Vol -
+              {device.state === 'playing' ? 'Pause' : 'Play'}
             </button>
             <button
-              className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
+              type="button"
               onClick={() =>
-                sendControl({ entityId: device.entityId, command: 'media/volume_up' })
+                sendCommand({
+                  entityId: device.entityId,
+                  command: 'media/next',
+                })
               }
               disabled={pendingCommand !== null}
+              className="rounded-full border border-slate-200 px-4 py-2 text-sm"
             >
-              Vol +
+              Next
             </button>
           </div>
-          {volumePct !== null && (
-            <div className="flex items-center gap-2 text-[11px] text-slate-600">
-              <span>Volume</span>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={volumePct}
-                onChange={(e) => setVolumePct(Number(e.target.value))}
-                onMouseUp={(e) =>
-                  sendControl({
-                    entityId: device.entityId,
-                    command: 'media/volume_set',
-                    value: Number((e.target as HTMLInputElement).value),
-                  })
-                }
-                onTouchEnd={(e) =>
-                  sendControl({
-                    entityId: device.entityId,
-                    command: 'media/volume_set',
-                    value: Number((e.target as HTMLInputElement).value),
-                  })
-                }
-                className="flex-1"
-              />
-              <span>{volumePct}%</span>
-            </div>
-          )}
         </div>
-      );
-    case 'Doorbell':
-    case 'Home Security':
-    case 'Motion Sensor':
-      return null;
-    default:
-      return null;
-  }
+      </div>
+    </div>
+  );
 }
 
-function renderInfoBlock(
-  label: string,
-  attrs: Record<string, unknown>,
-  _state: string,
-  cameraRefreshToken: number,
-  entityId: string
-) {
-  switch (label) {
-    case 'Spotify':
-    case 'TV':
-    case 'Speaker':
-      const mediaTitle = readStringAttr(attrs, 'media_title');
-      const mediaArtist = readStringAttr(attrs, 'media_artist');
-      const mediaAlbum = readStringAttr(attrs, 'media_album_name');
-      return (
-        <div className="mt-3 text-[11px] text-slate-600 space-y-1">
-          {mediaTitle && (
-            <div>
-              <span className="font-semibold">Track:</span> {mediaTitle}
-            </div>
-          )}
-          {mediaArtist && (
-            <div>
-              <span className="font-semibold">Artist:</span> {mediaArtist}
-            </div>
-          )}
-          {mediaAlbum && (
-            <div>
-              <span className="font-semibold">Album:</span> {mediaAlbum}
-            </div>
-          )}
-        </div>
-      );
-    case 'Boiler':
-      const target = attrs.temperature;
-      const current = attrs.current_temperature;
-      return (
-        <div className="mt-3 text-[11px] text-slate-600">
-          <div>
-            <span className="font-semibold">Target:</span>{' '}
-            {formatTemperature(target)}
-          </div>
-          {current !== undefined && (
-            <div>
-              <span className="font-semibold">Current:</span>{' '}
-              {formatTemperature(current)}
-            </div>
-          )}
-        </div>
-      );
-    case 'Doorbell':
-    case 'Home Security':
-      return (
-        <div className="mt-3">
+function renderBoilerControls({
+  device,
+  pendingCommand,
+  sendCommand,
+}: {
+  device: UIDevice;
+  pendingCommand: string | null;
+  sendCommand: (payload: ControlPayload) => Promise<void>;
+}) {
+  const attrs = device.attributes || {};
+  const target = attrs.temperature;
+  const current = attrs.current_temperature;
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <p className="text-sm uppercase tracking-[0.2em] text-slate-500">
+          Target
+        </p>
+        <p className="mt-2 text-5xl font-semibold text-slate-900">
+          {formatTemperature(target)}
+        </p>
+        {current !== undefined && (
+          <p className="mt-2 text-sm text-slate-500">
+            Current {formatTemperature(current)}
+          </p>
+        )}
+      </div>
+      <div className="flex justify-center gap-4">
+        <button
+          type="button"
+          onClick={() =>
+            sendCommand({ entityId: device.entityId, command: 'boiler/temp_down' })
+          }
+          disabled={pendingCommand !== null}
+          className="h-16 w-16 rounded-2xl border bg-white text-2xl shadow"
+        >
+          –
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            sendCommand({ entityId: device.entityId, command: 'boiler/temp_up' })
+          }
+          disabled={pendingCommand !== null}
+          className="h-16 w-16 rounded-2xl border bg-white text-2xl shadow"
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function renderDoorbellControls({
+  device,
+  cameraRefreshToken,
+}: {
+  device: UIDevice;
+  cameraRefreshToken: number;
+}) {
+  return (
+    <div className="overflow-hidden rounded-3xl border border-white/30 shadow-inner">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`/api/camera-proxy?entityId=${encodeURIComponent(
+          device.entityId
+        )}&ts=${cameraRefreshToken}`}
+        alt={device.name}
+        className="h-[320px] w-full object-cover"
+      />
+    </div>
+  );
+}
+
+function renderSecurityControls({
+  relatedDevices,
+  cameraRefreshToken,
+}: {
+  relatedDevices?: UIDevice[];
+  cameraRefreshToken: number;
+}) {
+  if (!relatedDevices || relatedDevices.length === 0) {
+    return <p className="text-sm text-slate-500">No cameras available.</p>;
+  }
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      {relatedDevices.map((device) => (
+        <div
+          key={device.entityId}
+          className="overflow-hidden rounded-2xl border border-white/30"
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`/api/camera-proxy?entityId=${encodeURIComponent(
-              entityId
+              device.entityId
             )}&ts=${cameraRefreshToken}`}
-            alt={label}
-            className="w-full h-40 object-cover rounded-lg border"
-            loading="lazy"
+            alt={device.name}
+            className="h-48 w-full object-cover"
           />
+          <div className="bg-white/80 px-4 py-2 text-sm text-slate-600">
+            {device.name}
+          </div>
         </div>
-      );
-    default:
-      return null;
-  }
+      ))}
+    </div>
+  );
 }
 
-function getBrightnessPercent(attrs: Record<string, unknown>) {
+function renderTvControls({
+  device,
+  volumePct,
+  setVolumePct,
+  pendingCommand,
+  sendCommand,
+}: {
+  device: UIDevice;
+  volumePct: number;
+  setVolumePct: (value: number) => void;
+  pendingCommand: string | null;
+  sendCommand: (payload: ControlPayload) => Promise<void>;
+}) {
+  return (
+    <div className="space-y-5">
+      <button
+        type="button"
+        onClick={() =>
+          sendCommand({ entityId: device.entityId, command: 'tv/toggle_power' })
+        }
+        disabled={pendingCommand !== null}
+        className={`w-full rounded-2xl py-4 text-lg font-semibold ${
+          device.state === 'off'
+            ? 'bg-slate-200 text-slate-600'
+            : 'bg-indigo-500/90 text-white'
+        }`}
+      >
+        {device.state === 'off' ? 'Power on' : 'Power off'}
+      </button>
+      <div>
+        <div className="flex items-center justify-between text-sm text-slate-500">
+          <span>Volume</span>
+          <span className="text-base font-semibold text-slate-900">
+            {volumePct}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={volumePct}
+          onChange={(e) => setVolumePct(Number(e.target.value))}
+          onMouseUp={(e) =>
+            sendCommand({
+              entityId: device.entityId,
+              command: 'media/volume_set',
+              value: Number((e.target as HTMLInputElement).value),
+            })
+          }
+          onTouchEnd={(e) =>
+            sendCommand({
+              entityId: device.entityId,
+              command: 'media/volume_set',
+              value: Number((e.target as HTMLInputElement).value),
+            })
+          }
+          className="w-full accent-indigo-500"
+        />
+        <div className="mt-4 flex gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              sendCommand({
+                entityId: device.entityId,
+                command: 'media/volume_down',
+              })
+            }
+            disabled={pendingCommand !== null}
+            className="flex-1 rounded-2xl border border-slate-200 py-3"
+          >
+            Volume -
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              sendCommand({
+                entityId: device.entityId,
+                command: 'media/volume_up',
+              })
+            }
+            disabled={pendingCommand !== null}
+            className="flex-1 rounded-2xl border border-slate-200 py-3"
+          >
+            Volume +
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function renderSpeakerControls({
+  device,
+  volumePct,
+  setVolumePct,
+  pendingCommand,
+  sendCommand,
+}: {
+  device: UIDevice;
+  volumePct: number;
+  setVolumePct: (value: number) => void;
+  pendingCommand: string | null;
+  sendCommand: (payload: ControlPayload) => Promise<void>;
+}) {
+  return (
+    <div className="space-y-5">
+      <button
+        type="button"
+        onClick={() =>
+          sendCommand({
+            entityId: device.entityId,
+            command: 'speaker/toggle_power',
+          })
+        }
+        disabled={pendingCommand !== null}
+        className={`w-full rounded-2xl py-4 text-lg font-semibold ${
+          device.state === 'off'
+            ? 'bg-slate-200 text-slate-600'
+            : 'bg-purple-500/90 text-white'
+        }`}
+      >
+        {device.state === 'off' ? 'Power on' : 'Power off'}
+      </button>
+      <div>
+        <div className="flex items-center justify-between text-sm text-slate-500">
+          <span>Volume</span>
+          <span className="text-base font-semibold text-slate-900">
+            {volumePct}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={volumePct}
+          onChange={(e) => setVolumePct(Number(e.target.value))}
+          onMouseUp={(e) =>
+            sendCommand({
+              entityId: device.entityId,
+              command: 'media/volume_set',
+              value: Number((e.target as HTMLInputElement).value),
+            })
+          }
+          onTouchEnd={(e) =>
+            sendCommand({
+              entityId: device.entityId,
+              command: 'media/volume_set',
+              value: Number((e.target as HTMLInputElement).value),
+            })
+          }
+          className="w-full accent-purple-500"
+        />
+        <div className="mt-4 flex gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              sendCommand({
+                entityId: device.entityId,
+                command: 'media/volume_down',
+              })
+            }
+            disabled={pendingCommand !== null}
+            className="flex-1 rounded-2xl border border-slate-200 py-3"
+          >
+            Volume -
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              sendCommand({
+                entityId: device.entityId,
+                command: 'media/volume_up',
+              })
+            }
+            disabled={pendingCommand !== null}
+            className="flex-1 rounded-2xl border border-slate-200 py-3"
+          >
+            Volume +
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function renderMotionSensorControls({ device }: { device: UIDevice }) {
+  const normalized = device.state.toLowerCase();
+  const isActive =
+    normalized === 'on' ||
+    normalized === 'open' ||
+    normalized === 'detected' ||
+    normalized === 'motion';
+
+  return (
+    <div className="flex flex-col items-center gap-4 py-10">
+      <div
+        className={`flex h-28 w-28 items-center justify-center rounded-full text-3xl ${
+          isActive ? 'bg-emerald-200 text-emerald-700' : 'bg-slate-200 text-slate-500'
+        }`}
+      >
+        {isActive ? '●' : '○'}
+      </div>
+      <p className="text-lg font-semibold text-slate-900">
+        {isActive ? 'Motion detected' : 'No motion'}
+      </p>
+    </div>
+  );
+}
+
+export function getBrightnessPercent(attrs: Record<string, unknown>) {
   const brightnessPct = attrs['brightness_pct'];
   if (typeof brightnessPct === 'number') {
     return Math.round(brightnessPct);
@@ -438,7 +688,7 @@ function getBrightnessPercent(attrs: Record<string, unknown>) {
   return null;
 }
 
-function getVolumePercent(attrs: Record<string, unknown>) {
+export function getVolumePercent(attrs: Record<string, unknown>) {
   const volumeLevel = attrs['volume_level'];
   if (typeof volumeLevel === 'number') {
     return Math.round(volumeLevel * 100);
@@ -446,13 +696,30 @@ function getVolumePercent(attrs: Record<string, unknown>) {
   return null;
 }
 
-function formatTemperature(value: unknown) {
+export function formatTemperature(value: unknown) {
   if (typeof value === 'number') return `${value.toFixed(1)}°C`;
-  const normalized = normalizeLabel(value);
-  return normalized ? `${normalized}°C` : '—';
+  return '—';
+}
+
+function formatDuration(seconds?: number | null) {
+  if (typeof seconds !== 'number' || Number.isNaN(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.max(0, Math.round(seconds % 60));
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 function readStringAttr(attrs: Record<string, unknown>, key: string) {
   const raw = attrs[key];
   return typeof raw === 'string' ? raw : null;
+}
+
+function readNumberAttr(attrs: Record<string, unknown>, key: string) {
+  const raw = attrs[key];
+  return typeof raw === 'number' ? raw : null;
+}
+
+function readImageAttr(attrs: Record<string, unknown>) {
+  const local = readStringAttr(attrs, 'entity_picture_local');
+  if (local) return local;
+  return readStringAttr(attrs, 'entity_picture');
 }

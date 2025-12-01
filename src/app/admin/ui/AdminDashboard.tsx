@@ -14,7 +14,9 @@ import {
   normalizeLabel,
   getPrimaryLabel,
 } from '@/lib/deviceLabels';
-import { DeviceControls } from '@/components/device/DeviceControls';
+import { DeviceTile } from '@/components/device/DeviceTile';
+import { DeviceDetailSheet } from '@/components/device/DeviceDetailSheet';
+import { DeviceEditSheet } from '@/components/device/DeviceEditSheet';
 
 type Props = {
   username: string;
@@ -29,8 +31,7 @@ type EditValues = Record<
   }
 >;
 
-
-function devicesAreDifferent(a: Device[], b: Device[]) {
+function devicesAreDifferent(a: UIDevice[], b: UIDevice[]) {
   if (a.length !== b.length) return true;
   const mapA = new Map(a.map((d) => [d.entityId, d]));
   for (const d of b) {
@@ -49,68 +50,75 @@ function devicesAreDifferent(a: Device[], b: Device[]) {
   return false;
 }
 
-function isDetailDevice(state: string) {
-  const trimmed = (state ?? '').toString().trim();
-  if (!trimmed) return false;
-  const isUnavailable = trimmed.toLowerCase() === 'unavailable';
-  const isNumeric = !Number.isNaN(Number(trimmed));
-  return isUnavailable || isNumeric;
+function formatClock(date: Date) {
+  return new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    weekday: 'short',
+  }).format(date);
 }
 
-export default function AdminDashboard({ username }: Props) {
+export default function AdminDashboard(props: Props) {
+  void props;
   const [devices, setDevices] = useState<UIDevice[]>([]);
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [clock, setClock] = useState(() => formatClock(new Date()));
+  const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
+  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
+  const [savingDeviceId, setSavingDeviceId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<EditValues>({});
-  const [openEditor, setOpenEditor] = useState<string | null>(null);
-  const previousDevicesRef = useRef<Device[] | null>(null);
+  const previousDevicesRef = useRef<UIDevice[] | null>(null);
 
-  const loadDevices = useCallback(async () => {
-    let showSpinner = false;
-    if (!previousDevicesRef.current) {
-      setLoadingDevices(true);
-      showSpinner = true;
-    }
-    setError(null);
-    try {
-      const res = await fetch('/api/devices');
-      const data = await res.json();
-      if (showSpinner) setLoadingDevices(false);
-
-      if (!res.ok) {
-        setError(data.error || 'Failed to load devices');
-        return;
+  const loadDevices = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const silent = opts?.silent ?? false;
+      let showSpinner = false;
+      if (!previousDevicesRef.current && !silent) {
+        setLoadingDevices(true);
+        showSpinner = true;
       }
-
-      const list: UIDevice[] = data.devices || [];
-      const previous = previousDevicesRef.current;
-      if (!previous || devicesAreDifferent(previous, list)) {
-        previousDevicesRef.current = list;
-        setDevices(list);
-        setEditValues((prev) => {
-          const next = { ...prev };
-          for (const d of list) {
-            if (openEditor === d.entityId) continue;
-            next[d.entityId] = {
-              name: d.name,
-              area: d.area ?? d.areaName ?? '',
-              label:
-                d.label ??
-                (Array.isArray(d.labels) && d.labels.length > 0
-                  ? d.labels[0]
-                  : d.labelCategory ?? ''),
-            };
-          }
-          return next;
-        });
+      if (!silent) {
+        setError(null);
+        setMessage(null);
       }
-    } catch (err) {
-      console.error(err);
-      if (showSpinner) setLoadingDevices(false);
-      setError('Failed to load devices');
-    }
-  }, [openEditor]);
+      try {
+        const res = await fetch('/api/devices');
+        const data = await res.json();
+        if (showSpinner) setLoadingDevices(false);
+
+        if (!res.ok) {
+          setError(data.error || 'Failed to load devices');
+          return;
+        }
+
+        const list: UIDevice[] = data.devices || [];
+        const previous = previousDevicesRef.current;
+        if (!previous || devicesAreDifferent(previous, list)) {
+          previousDevicesRef.current = list;
+          setDevices(list);
+          setEditValues((prev) => {
+            const next = { ...prev };
+            for (const d of list) {
+              if (editingDeviceId === d.entityId) continue;
+              next[d.entityId] = {
+                name: d.name,
+                area: d.area ?? d.areaName ?? '',
+                label: d.label || getPrimaryLabel(d),
+              };
+            }
+            return next;
+          });
+        }
+      } catch (err) {
+        console.error(err);
+        if (showSpinner) setLoadingDevices(false);
+        setError('Failed to load devices');
+      }
+    },
+    [editingDeviceId]
+  );
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -119,33 +127,44 @@ export default function AdminDashboard({ username }: Props) {
     return () => clearInterval(id);
   }, [loadDevices]);
 
-  async function logout() {
-    await fetch('/api/auth/login', { method: 'DELETE' });
-    window.location.href = '/login';
-  }
+  useEffect(() => {
+    const id = setInterval(() => setClock(formatClock(new Date())), 60000);
+    return () => clearInterval(id);
+  }, []);
 
-  function toggleEditor(entityId: string) {
-    setOpenEditor((prev) => (prev === entityId ? null : entityId));
-  }
+  const visibleDevices = useMemo(
+    () =>
+      devices.filter((d) => {
+        const areaName = (d.area ?? d.areaName ?? '').trim();
+        const labels = Array.isArray(d.labels) ? d.labels : [];
+        const hasLabel =
+          normalizeLabel(d.label).length > 0 ||
+          labels.some((lbl) => normalizeLabel(lbl).length > 0);
+        return areaName.length > 0 && hasLabel;
+      }),
+    [devices]
+  );
 
-  function updateEditValue(
-    entityId: string,
-    key: keyof EditValues[string],
-    value: string
-  ) {
-    setEditValues((prev) => ({
-      ...prev,
-      [entityId]: {
-        ...(prev[entityId] || { name: '', area: '', label: '' }),
-        [key]: value,
-      },
-    }));
-  }
+  const labelGroups = useMemo(() => {
+    const map = new Map<string, UIDevice[]>();
+    visibleDevices.forEach((device) => {
+      const key = getGroupLabel(device);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(device);
+    });
+    return map;
+  }, [visibleDevices]);
+
+  const sortedLabels = useMemo(
+    () => sortLabels(Array.from(labelGroups.keys())),
+    [labelGroups]
+  );
 
   async function saveDevice(entityId: string) {
     const current = editValues[entityId];
     if (!current) return;
 
+    setSavingDeviceId(entityId);
     setMessage(null);
 
     const res = await fetch('/api/admin/device', {
@@ -163,261 +182,138 @@ export default function AdminDashboard({ username }: Props) {
     if (!res.ok) {
       setMessage(data.error || 'Failed to save device');
     } else {
-      setMessage('Device settings saved ✅');
-      setOpenEditor(null);
-      previousDevicesRef.current = null;
-      loadDevices();
+      setMessage('Device settings saved');
+      setEditingDeviceId(null);
+      loadDevices({ silent: true });
     }
+    setSavingDeviceId(null);
   }
 
-  const visibleDevices = useMemo(
-    () =>
-      devices.filter((d) => {
-        const areaName = (d.area ?? d.areaName ?? '').trim();
-        const labels = Array.isArray(d.labels) ? d.labels : [];
-        const hasLabel =
-          normalizeLabel(d.label).length > 0 ||
-          labels.some((lbl) => normalizeLabel(lbl).length > 0);
-        return areaName.length > 0 && hasLabel;
-      }),
-    [devices]
-  );
+  const openDevice = openDeviceId
+    ? devices.find((d) => d.entityId === openDeviceId) ?? null
+    : null;
 
-  const labelGroups = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        primary: UIDevice[];
-        detail: UIDevice[];
-      }
-    >();
-    visibleDevices.forEach((device) => {
-      const key = getGroupLabel(device);
-      if (!map.has(key)) {
-        map.set(key, { primary: [], detail: [] });
-      }
-      const bucket = map.get(key)!;
-      if (isDetailDevice(device.state)) bucket.detail.push(device);
-      else bucket.primary.push(device);
-    });
-    return map;
-  }, [visibleDevices]);
+  const relatedDevices =
+    openDevice && getGroupLabel(openDevice) === 'Home Security'
+      ? devices.filter((d) => getGroupLabel(d) === 'Home Security')
+      : undefined;
 
-  const sortedLabels = useMemo(
-    () => sortLabels(Array.from(labelGroups.keys())),
-    [labelGroups]
-  );
+  const editingDevice = editingDeviceId
+    ? devices.find((d) => d.entityId === editingDeviceId) ?? null
+    : null;
 
   return (
-    <div className="w-full bg-white rounded-2xl shadow-lg p-6 flex flex-col gap-5">
-      <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between border-b pb-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Dinodia Admin Dashboard</h1>
-          <p className="text-xs text-slate-500">
-            Logged in as <span className="font-medium">{username}</span>
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={loadDevices}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
-          >
-            Scan for devices
-          </button>
-          <button
-            onClick={logout}
-            className="text-xs px-3 py-1.5 rounded-lg border text-slate-700 hover:bg-slate-50"
-          >
-            Logout
-          </button>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#f5f5f7] text-slate-900">
+      <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 pb-16 pt-10 lg:pt-14">
+        <header className="sticky top-4 z-30 flex h-14 items-center justify-between rounded-full border border-white/60 bg-white/80 px-6 text-sm text-slate-600 shadow-sm backdrop-blur-xl">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400">
+              Dinodia Admin
+            </p>
+            <p className="text-lg font-semibold text-slate-900">
+              Building controls
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+              Today
+            </p>
+            <p>{clock}</p>
+          </div>
+        </header>
 
-      {error && (
-        <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
-          {message}
-        </div>
-      )}
+        {error && (
+          <div className="rounded-3xl border border-red-100 bg-red-50/80 px-6 py-4 text-sm text-red-600 shadow-sm">
+            {error}
+          </div>
+        )}
+        {message && (
+          <div className="rounded-3xl border border-emerald-100 bg-emerald-50/80 px-6 py-4 text-sm text-emerald-700 shadow-sm">
+            {message}
+          </div>
+        )}
 
-      <div className="flex flex-col gap-6">
-        {sortedLabels.map((label) => {
-          const buckets = labelGroups.get(label);
-          if (!buckets) return null;
-          return (
-            <section key={label} className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">
-                  {label}
-                </h2>
-                {loadingDevices && (
-                  <span className="text-[11px] text-slate-400">
-                    Refreshing…
-                  </span>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <p className="text-[11px] font-semibold text-slate-500 uppercase">
-                    Controls
-                  </p>
-                  <div className="flex gap-3 overflow-x-auto pb-2">
-                    {buckets.primary.length === 0 ? (
-                      <p className="text-[11px] text-slate-400">
-                        No primary devices in this label.
-                      </p>
-                    ) : (
-                      buckets.primary.map((device) => (
-                        <AdminDeviceCard
-                          key={device.entityId}
-                          device={device}
-                          isDetail={false}
-                          editValues={editValues}
-                          openEditor={openEditor}
-                          toggleEditor={toggleEditor}
-                          updateEditValue={updateEditValue}
-                          saveDevice={saveDevice}
-                          refresh={loadDevices}
-                        />
-                      ))
-                    )}
-                  </div>
+        <div className="space-y-10">
+          {sortedLabels.map((label) => {
+            const group = labelGroups.get(label);
+            if (!group || group.length === 0) return null;
+            return (
+              <section key={label} className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-semibold tracking-tight">
+                    {label}
+                  </h2>
+                  {loadingDevices && (
+                    <span className="text-xs text-slate-400">
+                      Refreshing…
+                    </span>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  <p className="text-[11px] font-semibold text-slate-500 uppercase">
-                    Details
-                  </p>
-                  <div className="flex gap-3 overflow-x-auto pb-2">
-                    {buckets.detail.length === 0 ? (
-                      <p className="text-[11px] text-slate-400">
-                        No detail devices in this label.
-                      </p>
-                    ) : (
-                      buckets.detail.map((device) => (
-                        <AdminDeviceCard
-                          key={device.entityId}
-                          device={device}
-                          isDetail
-                          editValues={editValues}
-                          openEditor={openEditor}
-                          toggleEditor={toggleEditor}
-                          updateEditValue={updateEditValue}
-                          saveDevice={saveDevice}
-                          refresh={loadDevices}
-                        />
-                      ))
-                    )}
-                  </div>
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+                  {group.map((device) => (
+                    <DeviceTile
+                      key={device.entityId}
+                      device={device}
+                      onOpenDetails={() => setOpenDeviceId(device.entityId)}
+                      onActionComplete={() => loadDevices({ silent: true })}
+                      showAdminControls
+                      onOpenAdminEdit={() => setEditingDeviceId(device.entityId)}
+                    />
+                  ))}
                 </div>
-              </div>
-            </section>
-          );
-        })}
+              </section>
+            );
+          })}
 
-{sortedLabels.length === 0 && !loadingDevices && (
-  <p className="text-sm text-slate-500">
-    No devices with both area and label were found. Confirm your Home
-    Assistant labels and areas.
-  </p>
-)}
+          {sortedLabels.length === 0 && !loadingDevices && (
+            <p className="rounded-3xl border border-slate-200/70 bg-white/70 px-6 py-10 text-center text-sm text-slate-500">
+              No devices with both area and label were found. Confirm your Home
+              Assistant labels and areas.
+            </p>
+          )}
+        </div>
       </div>
-    </div>
-  );
-}
 
-type AdminDeviceCardProps = {
-  device: UIDevice;
-  isDetail: boolean;
-  editValues: EditValues;
-  openEditor: string | null;
-  toggleEditor: (id: string) => void;
-  updateEditValue: (
-    entityId: string,
-    key: keyof EditValues[string],
-    value: string
-  ) => void;
-  saveDevice: (entityId: string) => Promise<void>;
-  refresh: () => void;
-};
+      {openDevice && (
+        <DeviceDetailSheet
+          device={openDevice}
+          onClose={() => setOpenDeviceId(null)}
+          onActionComplete={() => loadDevices({ silent: true })}
+          relatedDevices={relatedDevices}
+          showAdminControls
+          onOpenAdminEdit={() => setEditingDeviceId(openDevice.entityId)}
+        />
+      )}
 
-function AdminDeviceCard({
-  device,
-  isDetail,
-  editValues,
-  openEditor,
-  toggleEditor,
-  updateEditValue,
-  saveDevice,
-  refresh,
-}: AdminDeviceCardProps) {
-  const edit = editValues[device.entityId] || {
-    name: device.name,
-    area: device.area ?? device.areaName ?? '',
-    label: getPrimaryLabel(device),
-  };
-  const isEditing = openEditor === device.entityId;
-
-  return (
-    <div className="min-w-[220px] border border-slate-200 rounded-xl p-4 text-xs shadow-sm flex-shrink-0">
-      <DeviceControls
-        device={device}
-        isDetail={isDetail}
-        onActionComplete={refresh}
-        actionSlot={
-          <button
-            onClick={() => toggleEditor(device.entityId)}
-            className="text-slate-400 hover:text-slate-600 text-sm"
-            aria-label="Edit area or label"
-          >
-            ⋯
-          </button>
-        }
-      />
-      {isEditing && (
-        <div className="mt-3 border-t border-slate-200 pt-3 space-y-2">
-          <div>
-            <label className="block text-[11px] mb-1">Display name</label>
-            <input
-              className="w-full border rounded-md px-2 py-1 text-[11px] outline-none focus:ring-1 focus:ring-indigo-500"
-              value={edit.name}
-              onChange={(e) => updateEditValue(device.entityId, 'name', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] mb-1">Area</label>
-            <input
-              className="w-full border rounded-md px-2 py-1 text-[11px] outline-none focus:ring-1 focus:ring-indigo-500"
-              value={edit.area}
-              onChange={(e) => updateEditValue(device.entityId, 'area', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] mb-1">Label</label>
-            <input
-              className="w-full border rounded-md px-2 py-1 text-[11px] outline-none focus:ring-1 focus:ring-indigo-500"
-              value={edit.label}
-              onChange={(e) => updateEditValue(device.entityId, 'label', e.target.value)}
-            />
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => saveDevice(device.entityId)}
-              className="text-[11px] bg-indigo-600 text-white rounded-md px-3 py-1 font-medium hover:bg-indigo-700"
-            >
-              Save
-            </button>
-            <button
-              onClick={() => toggleEditor(device.entityId)}
-              className="text-[11px] text-slate-500 px-3 py-1"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+      {editingDevice && (
+        <DeviceEditSheet
+          device={editingDevice}
+          values={
+            editValues[editingDevice.entityId] || {
+              name: editingDevice.name,
+              area: editingDevice.area ?? editingDevice.areaName ?? '',
+              label:
+                editingDevice.label || getPrimaryLabel(editingDevice) || '',
+            }
+          }
+          onChange={(key, value) =>
+            setEditValues((prev) => ({
+              ...prev,
+              [editingDevice.entityId]: {
+                ...(prev[editingDevice.entityId] || {
+                  name: editingDevice.name,
+                  area: editingDevice.area ?? editingDevice.areaName ?? '',
+                  label:
+                    editingDevice.label || getPrimaryLabel(editingDevice) || '',
+                }),
+                [key]: value,
+              },
+            }))
+          }
+          onSave={() => saveDevice(editingDevice.entityId)}
+          onClose={() => setEditingDeviceId(null)}
+          saving={savingDeviceId === editingDevice.entityId}
+        />
       )}
     </div>
   );
