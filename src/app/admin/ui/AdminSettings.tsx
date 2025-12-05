@@ -18,6 +18,7 @@ const EMPTY_PASSWORD_FORM = {
 const EMPTY_HA_FORM = {
   haUsername: '',
   haBaseUrl: '',
+  haCloudUrl: '',
   haPassword: '',
   haLongLivedToken: '',
 };
@@ -68,6 +69,7 @@ export default function AdminSettings({ username }: Props) {
           ...prev,
           haUsername: data.haUsername ?? '',
           haBaseUrl: data.haBaseUrl ?? '',
+          haCloudUrl: data.haCloudUrl ?? '',
           haPassword: '',
           haLongLivedToken: '',
         }));
@@ -156,6 +158,10 @@ export default function AdminSettings({ username }: Props) {
       haUsername: haForm.haUsername.trim(),
       haBaseUrl: haForm.haBaseUrl.trim(),
     };
+    const cloudUrl = haForm.haCloudUrl.trim();
+    if (cloudUrl) {
+      payload.haCloudUrl = cloudUrl;
+    }
     if (haForm.haPassword) {
       payload.haPassword = haForm.haPassword;
     }
@@ -179,6 +185,7 @@ export default function AdminSettings({ username }: Props) {
         ...prev,
         haUsername: data.haUsername ?? prev.haUsername,
         haBaseUrl: data.haBaseUrl ?? prev.haBaseUrl,
+        haCloudUrl: data.haCloudUrl ?? '',
         haPassword: '',
         haLongLivedToken: '',
       }));
@@ -311,6 +318,19 @@ export default function AdminSettings({ username }: Props) {
                     required
                     disabled={haInitialLoading}
                   />
+                </div>
+                <div>
+                  <label className="block mb-1 text-xs">HA Cloud URL (optional)</label>
+                  <input
+                    placeholder="https://example.ui.nabu.casa/"
+                    className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={haForm.haCloudUrl}
+                    onChange={(e) => updateHaField('haCloudUrl', e.target.value)}
+                    disabled={haInitialLoading}
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Leave blank if this home does not use a cloud URL.
+                  </p>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   <div>

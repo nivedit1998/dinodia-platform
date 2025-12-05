@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import {
@@ -6,10 +6,12 @@ import {
   getDevicesWithMetadata,
 } from '@/lib/homeAssistant';
 import { classifyDeviceByLabel } from '@/lib/labelCatalog';
-import { getUserWithHaConnection } from '@/lib/haConnection';
+import { getUserWithHaConnection, resolveHaForMode, ViewMode } from '@/lib/haConnection';
 import { Role } from '@prisma/client';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const modeParam = req.nextUrl.searchParams.get('view');
+  const viewMode: ViewMode = modeParam === 'holiday' ? 'holiday' : 'home';
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -27,7 +29,8 @@ export async function GET() {
   // Fetch HA devices with area/labels via template helpers
   let enriched: EnrichedDevice[] = [];
   try {
-    enriched = await getDevicesWithMetadata(haConnection);
+    const effectiveHa = resolveHaForMode(haConnection, viewMode);
+    enriched = await getDevicesWithMetadata(effectiveHa);
   } catch (err) {
     console.error('Failed to fetch devices from HA:', err);
     return NextResponse.json(

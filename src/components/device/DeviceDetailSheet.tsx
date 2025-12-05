@@ -13,6 +13,7 @@ import {
 
 type DeviceDetailSheetProps = {
   device: UIDevice;
+  viewMode: 'home' | 'holiday';
   onClose: () => void;
   onActionComplete?: () => void;
   relatedDevices?: UIDevice[];
@@ -22,6 +23,7 @@ type DeviceDetailSheetProps = {
 
 export function DeviceDetailSheet({
   device,
+  viewMode,
   onClose,
   onActionComplete,
   relatedDevices,
@@ -113,6 +115,7 @@ export function DeviceDetailSheet({
         <div className="p-6 sm:p-8">
           <DeviceControls
             device={device}
+            viewMode={viewMode}
             onActionComplete={onActionComplete}
             relatedDevices={relatedDevices}
           />

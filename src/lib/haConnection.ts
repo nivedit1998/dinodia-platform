@@ -1,5 +1,8 @@
 import { Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import type { HaConnectionLike } from '@/lib/homeAssistant';
+
+export type ViewMode = 'home' | 'holiday';
 
 const userInclude = {
   haConnection: true,
@@ -66,4 +69,18 @@ export async function getUserWithHaConnection(userId: number) {
   }
 
   return { user, haConnection };
+}
+
+export function resolveHaForMode(
+  haConnection: { baseUrl: string; cloudUrl: string | null; longLivedToken: string },
+  mode: ViewMode
+): HaConnectionLike {
+  const cloud = typeof haConnection.cloudUrl === 'string' ? haConnection.cloudUrl.trim() : '';
+  const hasCloud = cloud.length > 0;
+  const useCloud = mode === 'holiday' && hasCloud;
+
+  return {
+    baseUrl: useCloud ? cloud : haConnection.baseUrl,
+    longLivedToken: haConnection.longLivedToken,
+  };
 }

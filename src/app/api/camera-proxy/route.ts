@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { getUserWithHaConnection, resolveHaForMode, ViewMode } from '@/lib/haConnection';
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -11,19 +11,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing entityId' }, { status: 400 });
   }
 
-  const dbUser = await prisma.user.findUnique({
-    where: { id: user.id },
-    include: { haConnection: true },
-  });
+  const viewParam = req.nextUrl.searchParams.get('view');
+  const viewMode: ViewMode = viewParam === 'holiday' ? 'holiday' : 'home';
 
-  if (!dbUser?.haConnection) {
-    return NextResponse.json({ error: 'HA connection missing' }, { status: 400 });
+  let haConnection;
+  try {
+    ({ haConnection } = await getUserWithHaConnection(user.id));
+  } catch (err) {
+    return NextResponse.json(
+      { error: (err as Error).message || 'HA connection missing' },
+      { status: 400 }
+    );
   }
 
-  const url = `${dbUser.haConnection.baseUrl}/api/camera_proxy/${entityId}`;
+  const effectiveHa = resolveHaForMode(haConnection, viewMode);
+
+  const url = `${effectiveHa.baseUrl}/api/camera_proxy/${entityId}`;
   const res = await fetch(url, {
     headers: {
-      Authorization: `Bearer ${dbUser.haConnection.longLivedToken}`,
+      Authorization: `Bearer ${effectiveHa.longLivedToken}`,
     },
   });
 

@@ -29,6 +29,7 @@ model User {
 model HaConnection {
   id             Int    @id @default(autoincrement())
   baseUrl        String // e.g. https://xxxx.ui.nabu.casa or http://homeassistant.local:8123
+  cloudUrl       String? // optional HA Cloud URL shared across admin + tenants
   haUsername     String
   haPassword     String
   longLivedToken String

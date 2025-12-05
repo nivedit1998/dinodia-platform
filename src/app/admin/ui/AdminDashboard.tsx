@@ -260,6 +260,7 @@ export default function AdminDashboard(props: Props) {
                     <DeviceTile
                       key={device.entityId}
                       device={device}
+                      viewMode="home"
                       onOpenDetails={() => setOpenDeviceId(device.entityId)}
                       onActionComplete={() => loadDevices({ silent: true })}
                       showAdminControls
@@ -283,6 +284,7 @@ export default function AdminDashboard(props: Props) {
       {openDevice && (
         <DeviceDetailSheet
           device={openDevice}
+          viewMode="home"
           onClose={() => setOpenDeviceId(null)}
           onActionComplete={() => loadDevices({ silent: true })}
           relatedDevices={relatedDevices}

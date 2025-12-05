@@ -37,6 +37,7 @@ export async function GET() {
     return NextResponse.json({
       haUsername: haConnection.haUsername ?? '',
       haBaseUrl: haConnection.baseUrl ?? '',
+      haCloudUrl: haConnection.cloudUrl ?? '',
       hasHaPassword: Boolean(haConnection.haPassword),
       hasLongLivedToken: Boolean(haConnection.longLivedToken),
     });
@@ -58,6 +59,7 @@ export async function PUT(req: NextRequest) {
     haUsername?: string;
     haPassword?: string;
     haBaseUrl?: string;
+    haCloudUrl?: string;
     haLongLivedToken?: string;
   };
   try {
@@ -66,7 +68,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
   }
 
-  const { haUsername, haPassword, haBaseUrl, haLongLivedToken } = body ?? {};
+  const { haUsername, haPassword, haBaseUrl, haCloudUrl, haLongLivedToken } = body ?? {};
 
   if (typeof haUsername !== 'string' || !haUsername.trim()) {
     return NextResponse.json({ error: 'HA username is required' }, { status: 400 });
@@ -82,6 +84,15 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
 
+  let normalizedCloudUrl: string | null = null;
+  if (typeof haCloudUrl === 'string' && haCloudUrl.trim()) {
+    try {
+      normalizedCloudUrl = normalizeHaBaseUrl(haCloudUrl);
+    } catch (err) {
+      return NextResponse.json({ error: (err as Error).message }, { status: 400 });
+    }
+  }
+
   let haContext;
   try {
     haContext = await ensureAdminWithConnection(me.id);
@@ -95,11 +106,13 @@ export async function PUT(req: NextRequest) {
   const updateData: {
     haUsername: string;
     baseUrl: string;
+    cloudUrl?: string | null;
     haPassword?: string;
     longLivedToken?: string;
   } = {
     haUsername: haUsername.trim(),
     baseUrl: normalizedBaseUrl,
+    cloudUrl: normalizedCloudUrl,
   };
 
   if (typeof haPassword === 'string' && haPassword.length > 0) {
@@ -115,6 +128,7 @@ export async function PUT(req: NextRequest) {
     select: {
       haUsername: true,
       baseUrl: true,
+      cloudUrl: true,
       haPassword: true,
       longLivedToken: true,
     },
@@ -124,6 +138,7 @@ export async function PUT(req: NextRequest) {
     ok: true,
     haUsername: updated.haUsername ?? '',
     haBaseUrl: updated.baseUrl ?? '',
+    haCloudUrl: updated.cloudUrl ?? '',
     hasHaPassword: Boolean(updated.haPassword),
     hasLongLivedToken: Boolean(updated.longLivedToken),
   });
