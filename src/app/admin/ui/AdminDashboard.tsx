@@ -63,16 +63,25 @@ function formatClock(date: Date) {
 
 export default function AdminDashboard(props: Props) {
   void props;
-  const [devices, setDevices] = useState<UIDevice[]>([]);
+  const [devicesByMode, setDevicesByMode] = useState<Record<ViewMode, UIDevice[]>>({
+    home: [],
+    holiday: [],
+  });
   const [loadingDevices, setLoadingDevices] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorsByMode, setErrorsByMode] = useState<Record<ViewMode, string | null>>({
+    home: null,
+    holiday: null,
+  });
   const [message, setMessage] = useState<string | null>(null);
   const [clock, setClock] = useState(() => formatClock(new Date()));
   const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
   const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
   const [savingDeviceId, setSavingDeviceId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<EditValues>({});
-  const previousDevicesRef = useRef<UIDevice[] | null>(null);
+  const previousDevicesRef = useRef<Record<ViewMode, UIDevice[] | null>>({
+    home: null,
+    holiday: null,
+  });
   const [viewMode, setViewMode] = useState<ViewMode>('home');
   const [supportsHoliday, setSupportsHoliday] = useState(false);
   const [configLoading, setConfigLoading] = useState(true);
@@ -87,12 +96,12 @@ export default function AdminDashboard(props: Props) {
       requestCounterRef.current = requestId;
       latestRequestRef.current = { mode, id: requestId };
       let showSpinner = false;
-      if (!previousDevicesRef.current && !silent) {
+      if (!previousDevicesRef.current[mode] && !silent) {
         setLoadingDevices(true);
         showSpinner = true;
       }
       if (!silent) {
-        setError(null);
+        setErrorsByMode((prev) => ({ ...prev, [mode]: null }));
         setMessage(null);
       }
       try {
@@ -106,17 +115,17 @@ export default function AdminDashboard(props: Props) {
         if (showSpinner) setLoadingDevices(false);
 
         if (!res.ok) {
-          previousDevicesRef.current = null;
-          setDevices([]);
-          setError(data.error || 'Failed to load devices');
+          previousDevicesRef.current[mode] = null;
+          setDevicesByMode((prev) => ({ ...prev, [mode]: [] }));
+          setErrorsByMode((prev) => ({ ...prev, [mode]: data.error || 'Failed to load devices' }));
           return;
         }
 
         const list: UIDevice[] = data.devices || [];
-        const previous = previousDevicesRef.current;
+        const previous = previousDevicesRef.current[mode];
         if (!previous || devicesAreDifferent(previous, list)) {
-          previousDevicesRef.current = list;
-          setDevices(list);
+          previousDevicesRef.current[mode] = list;
+          setDevicesByMode((prev) => ({ ...prev, [mode]: list }));
           setEditValues((prev) => {
             const next = { ...prev };
             for (const d of list) {
@@ -136,9 +145,9 @@ export default function AdminDashboard(props: Props) {
           latestRequestRef.current?.id === requestId && latestRequestRef.current?.mode === mode;
         if (!isLatest) return;
         if (showSpinner) setLoadingDevices(false);
-        previousDevicesRef.current = null;
-        setDevices([]);
-        setError('Failed to load devices');
+        previousDevicesRef.current[mode] = null;
+        setDevicesByMode((prev) => ({ ...prev, [mode]: [] }));
+        setErrorsByMode((prev) => ({ ...prev, [mode]: 'Failed to load devices' }));
       }
     },
     [editingDeviceId, viewMode]
@@ -195,9 +204,10 @@ export default function AdminDashboard(props: Props) {
       if (mode === viewMode || configLoading) return;
       if (mode === 'holiday' && !supportsHoliday) return;
       setViewMode(mode);
-      setDevices([]);
-      previousDevicesRef.current = null;
-      setError(null);
+      setOpenDeviceId(null);
+      setDevicesByMode((prev) => ({ ...prev, [mode]: [] }));
+      previousDevicesRef.current[mode] = null;
+      setErrorsByMode((prev) => ({ ...prev, [mode]: null }));
       setMessage(null);
       setLoadingDevices(true);
       if (typeof window !== 'undefined') {
@@ -212,7 +222,7 @@ export default function AdminDashboard(props: Props) {
 
   const visibleDevices = useMemo(
     () =>
-      devices.filter((d) => {
+      (devicesByMode[viewMode] ?? []).filter((d) => {
         const areaName = (d.area ?? d.areaName ?? '').trim();
         const labels = Array.isArray(d.labels) ? d.labels : [];
         const hasLabel =
@@ -220,7 +230,7 @@ export default function AdminDashboard(props: Props) {
           labels.some((lbl) => normalizeLabel(lbl).length > 0);
         return areaName.length > 0 && hasLabel;
       }),
-    [devices]
+    [devicesByMode, viewMode]
   );
 
   const labelGroups = useMemo(() => {
@@ -237,6 +247,8 @@ export default function AdminDashboard(props: Props) {
     () => sortLabels(Array.from(labelGroups.keys())),
     [labelGroups]
   );
+
+  const devices = devicesByMode[viewMode] || [];
 
   async function saveDevice(entityId: string) {
     const current = editValues[entityId];
@@ -327,9 +339,9 @@ export default function AdminDashboard(props: Props) {
           </div>
         </header>
 
-        {error && (
+        {errorsByMode[viewMode] && (
           <div className="rounded-3xl border border-red-100 bg-red-50/80 px-6 py-4 text-sm text-red-600 shadow-sm">
-            {error}
+            {errorsByMode[viewMode]}
           </div>
         )}
         {message && (

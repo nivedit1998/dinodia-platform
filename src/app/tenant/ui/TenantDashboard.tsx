@@ -60,12 +60,21 @@ function formatClock(date: Date) {
 
 export default function TenantDashboard(props: Props) {
   void props;
-  const [devices, setDevices] = useState<UIDevice[]>([]);
   const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
   const [loadingDevices, setLoadingDevices] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [clock, setClock] = useState(() => formatClock(new Date()));
-  const previousDevicesRef = useRef<UIDevice[] | null>(null);
+  const previousDevicesRef = useRef<Record<ViewMode, UIDevice[] | null>>({
+    home: null,
+    holiday: null,
+  });
+  const [devicesByMode, setDevicesByMode] = useState<Record<ViewMode, UIDevice[]>>({
+    home: [],
+    holiday: [],
+  });
+  const [errorsByMode, setErrorsByMode] = useState<Record<ViewMode, string | null>>({
+    home: null,
+    holiday: null,
+  });
   const [viewMode, setViewMode] = useState<ViewMode>('home');
   const [supportsHoliday, setSupportsHoliday] = useState(false);
   const [configLoading, setConfigLoading] = useState(true);
@@ -80,12 +89,12 @@ export default function TenantDashboard(props: Props) {
       requestCounterRef.current = requestId;
       latestRequestRef.current = { mode, id: requestId };
       let showSpinner = false;
-      if (!previousDevicesRef.current && !silent) {
+      if (!previousDevicesRef.current[mode] && !silent) {
         setLoadingDevices(true);
         showSpinner = true;
       }
       if (!silent) {
-        setError(null);
+        setErrorsByMode((prev) => ({ ...prev, [mode]: null }));
       }
       try {
         const url = mode === 'holiday' ? '/api/devices?view=holiday' : '/api/devices';
@@ -98,17 +107,17 @@ export default function TenantDashboard(props: Props) {
         if (showSpinner) setLoadingDevices(false);
 
         if (!res.ok) {
-          previousDevicesRef.current = null;
-          setDevices([]);
-          setError(data.error || 'Failed to load devices');
+          previousDevicesRef.current[mode] = null;
+          setDevicesByMode((prev) => ({ ...prev, [mode]: [] }));
+          setErrorsByMode((prev) => ({ ...prev, [mode]: data.error || 'Failed to load devices' }));
           return;
         }
 
         const list: UIDevice[] = data.devices || [];
-        const previous = previousDevicesRef.current;
+        const previous = previousDevicesRef.current[mode];
         if (!previous || devicesAreDifferent(previous, list)) {
-          previousDevicesRef.current = list;
-          setDevices(list);
+          previousDevicesRef.current[mode] = list;
+          setDevicesByMode((prev) => ({ ...prev, [mode]: list }));
         }
       } catch (err) {
         console.error(err);
@@ -116,9 +125,9 @@ export default function TenantDashboard(props: Props) {
           latestRequestRef.current?.id === requestId && latestRequestRef.current?.mode === mode;
         if (!isLatest) return;
         if (showSpinner) setLoadingDevices(false);
-        previousDevicesRef.current = null;
-        setDevices([]);
-        setError('Failed to load devices');
+        previousDevicesRef.current[mode] = null;
+        setDevicesByMode((prev) => ({ ...prev, [mode]: [] }));
+        setErrorsByMode((prev) => ({ ...prev, [mode]: 'Failed to load devices' }));
       }
     },
     [viewMode]
@@ -171,9 +180,10 @@ export default function TenantDashboard(props: Props) {
       if (mode === viewMode || configLoading) return;
       if (mode === 'holiday' && !supportsHoliday) return;
       setViewMode(mode);
-      setDevices([]);
-      previousDevicesRef.current = null;
-      setError(null);
+      setOpenDeviceId(null);
+      setDevicesByMode((prev) => ({ ...prev, [mode]: [] }));
+      previousDevicesRef.current[mode] = null;
+      setErrorsByMode((prev) => ({ ...prev, [mode]: null }));
       setLoadingDevices(true);
       if (typeof window !== 'undefined') {
         window.localStorage.setItem('dinodia_view_mode', mode);
@@ -190,7 +200,7 @@ export default function TenantDashboard(props: Props) {
 
   const visibleDevices = useMemo(
     () =>
-      devices.filter((d) => {
+      (devicesByMode[viewMode] ?? []).filter((d) => {
         const areaName = (d.area ?? d.areaName ?? '').trim();
         const labels = Array.isArray(d.labels) ? d.labels : [];
         const hasLabel =
@@ -199,7 +209,7 @@ export default function TenantDashboard(props: Props) {
         const primary = !isDetailDevice(d.state);
         return areaName.length > 0 && hasLabel && primary;
       }),
-    [devices]
+    [devicesByMode, viewMode]
   );
 
   const labelGroups = useMemo(() => {
@@ -218,12 +228,12 @@ export default function TenantDashboard(props: Props) {
   );
 
   const openDevice = openDeviceId
-    ? devices.find((d) => d.entityId === openDeviceId) ?? null
+    ? (devicesByMode[viewMode] || []).find((d) => d.entityId === openDeviceId) ?? null
     : null;
 
   const relatedDevices =
     openDevice && getGroupLabel(openDevice) === 'Home Security'
-      ? devices.filter((d) => getGroupLabel(d) === 'Home Security')
+      ? (devicesByMode[viewMode] || []).filter((d) => getGroupLabel(d) === 'Home Security')
       : undefined;
   const holidayDisabled = !supportsHoliday || configLoading;
 
@@ -274,9 +284,9 @@ export default function TenantDashboard(props: Props) {
           </div>
         </header>
 
-        {error && (
+        {errorsByMode[viewMode] && (
           <div className="rounded-3xl border border-red-100 bg-red-50/80 px-6 py-4 text-sm text-red-600 shadow-sm">
-            {error}
+            {errorsByMode[viewMode]}
           </div>
         )}
 
