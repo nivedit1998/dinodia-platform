@@ -67,7 +67,6 @@ export default function AdminDashboard(props: Props) {
     home: [],
     holiday: [],
   });
-  const [loadingDevices, setLoadingDevices] = useState(false);
   const [errorsByMode, setErrorsByMode] = useState<Record<ViewMode, string | null>>({
     home: null,
     holiday: null,
@@ -76,60 +75,87 @@ export default function AdminDashboard(props: Props) {
   const [clock, setClock] = useState(() => formatClock(new Date()));
   const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
   const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
+  const editingDeviceIdRef = useRef<string | null>(null);
   const [savingDeviceId, setSavingDeviceId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<EditValues>({});
-  const previousDevicesRef = useRef<Record<ViewMode, UIDevice[] | null>>({
-    home: null,
-    holiday: null,
-  });
   const [viewMode, setViewMode] = useState<ViewMode>('home');
+  const viewModeRef = useRef<ViewMode>('home');
   const [supportsHoliday, setSupportsHoliday] = useState(false);
   const [configLoading, setConfigLoading] = useState(true);
   const requestCounterRef = useRef(0);
-  const latestRequestRef = useRef<{ mode: ViewMode; id: number } | null>(null);
+  const latestRequestRef = useRef<Record<ViewMode, number>>({
+    home: 0,
+    holiday: 0,
+  });
+  const [loadingByMode, setLoadingByMode] = useState<Record<ViewMode, boolean>>({
+    home: false,
+    holiday: false,
+  });
+  const lastLoadedRef = useRef<Record<ViewMode, number | null>>({
+    home: null,
+    holiday: null,
+  });
+  const abortControllersRef = useRef<Record<ViewMode, AbortController | null>>({
+    home: null,
+    holiday: null,
+  });
 
   const loadDevices = useCallback(
-    async (opts?: { silent?: boolean; modeOverride?: ViewMode }) => {
+    async (opts?: { silent?: boolean; modeOverride?: ViewMode; force?: boolean }) => {
       const silent = opts?.silent ?? false;
-      const mode = opts?.modeOverride ?? viewMode;
+      const force = opts?.force ?? false;
+      const mode = opts?.modeOverride ?? viewModeRef.current;
+      const now = Date.now();
+      const lastLoaded = lastLoadedRef.current[mode];
+      if (!force && lastLoaded && now - lastLoaded < 60_000) {
+        setLoadingByMode((prev) => ({ ...prev, [mode]: false }));
+        return;
+      }
+
       const requestId = requestCounterRef.current + 1;
       requestCounterRef.current = requestId;
-      latestRequestRef.current = { mode, id: requestId };
-      let showSpinner = false;
-      if (!previousDevicesRef.current[mode] && !silent) {
-        setLoadingDevices(true);
-        showSpinner = true;
-      }
+      latestRequestRef.current[mode] = requestId;
+
       if (!silent) {
         setErrorsByMode((prev) => ({ ...prev, [mode]: null }));
         setMessage(null);
       }
+      setLoadingByMode((prev) => ({ ...prev, [mode]: true }));
+
+      if (abortControllersRef.current[mode]) {
+        abortControllersRef.current[mode]?.abort();
+      }
+      const controller = new AbortController();
+      abortControllersRef.current[mode] = controller;
+
       try {
         const url = mode === 'holiday' ? '/api/devices?view=holiday' : '/api/devices';
-        const res = await fetch(url);
+        const res = await fetch(url, { signal: controller.signal });
         const data = await res.json();
-        const isLatest =
-          latestRequestRef.current?.id === requestId && latestRequestRef.current?.mode === mode;
+        const isLatest = latestRequestRef.current[mode] === requestId;
         if (!isLatest) return;
 
-        if (showSpinner) setLoadingDevices(false);
+        setLoadingByMode((prev) => ({ ...prev, [mode]: false }));
+        abortControllersRef.current[mode] = null;
 
         if (!res.ok) {
-          previousDevicesRef.current[mode] = null;
-          setDevicesByMode((prev) => ({ ...prev, [mode]: [] }));
           setErrorsByMode((prev) => ({ ...prev, [mode]: data.error || 'Failed to load devices' }));
           return;
         }
 
         const list: UIDevice[] = data.devices || [];
-        const previous = previousDevicesRef.current[mode];
-        if (!previous || devicesAreDifferent(previous, list)) {
-          previousDevicesRef.current[mode] = list;
-          setDevicesByMode((prev) => ({ ...prev, [mode]: list }));
+        let shouldUpdateEdits = false;
+        setDevicesByMode((prev) => {
+          const previous = prev[mode] ?? [];
+          if (!devicesAreDifferent(previous, list)) return prev;
+          shouldUpdateEdits = true;
+          return { ...prev, [mode]: list };
+        });
+        if (shouldUpdateEdits) {
           setEditValues((prev) => {
             const next = { ...prev };
             for (const d of list) {
-              if (editingDeviceId === d.entityId) continue;
+              if (editingDeviceIdRef.current === d.entityId) continue;
               next[d.entityId] = {
                 name: d.name,
                 area: d.area ?? d.areaName ?? '',
@@ -139,19 +165,31 @@ export default function AdminDashboard(props: Props) {
             return next;
           });
         }
+        lastLoadedRef.current[mode] = Date.now();
       } catch (err) {
-        console.error(err);
-        const isLatest =
-          latestRequestRef.current?.id === requestId && latestRequestRef.current?.mode === mode;
+        const isLatest = latestRequestRef.current[mode] === requestId;
         if (!isLatest) return;
-        if (showSpinner) setLoadingDevices(false);
-        previousDevicesRef.current[mode] = null;
-        setDevicesByMode((prev) => ({ ...prev, [mode]: [] }));
+        if ((err as Error).name === 'AbortError') {
+          setLoadingByMode((prev) => ({ ...prev, [mode]: false }));
+          abortControllersRef.current[mode] = null;
+          return;
+        }
+        console.error(err);
+        setLoadingByMode((prev) => ({ ...prev, [mode]: false }));
+        abortControllersRef.current[mode] = null;
         setErrorsByMode((prev) => ({ ...prev, [mode]: 'Failed to load devices' }));
       }
     },
-    [editingDeviceId, viewMode]
+    []
   );
+
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  }, [viewMode]);
+
+  useEffect(() => {
+    editingDeviceIdRef.current = editingDeviceId;
+  }, [editingDeviceId]);
 
   useEffect(() => {
     let mounted = true;
@@ -199,17 +237,23 @@ export default function AdminDashboard(props: Props) {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(
+    () => () => {
+      abortControllersRef.current.home?.abort();
+      abortControllersRef.current.holiday?.abort();
+    },
+    []
+  );
+
   const handleModeChange = useCallback(
     (mode: ViewMode) => {
       if (mode === viewMode || configLoading) return;
       if (mode === 'holiday' && !supportsHoliday) return;
       setViewMode(mode);
       setOpenDeviceId(null);
-      setDevicesByMode((prev) => ({ ...prev, [mode]: [] }));
-      previousDevicesRef.current[mode] = null;
       setErrorsByMode((prev) => ({ ...prev, [mode]: null }));
       setMessage(null);
-      setLoadingDevices(true);
+      setLoadingByMode((prev) => ({ ...prev, [mode]: true }));
       if (typeof window !== 'undefined') {
         window.localStorage.setItem('dinodia_view_mode', mode);
       }
@@ -218,11 +262,18 @@ export default function AdminDashboard(props: Props) {
     [viewMode, configLoading, supportsHoliday, loadDevices]
   );
 
+  const devices = useMemo(
+    () => devicesByMode[viewMode] || [],
+    [devicesByMode, viewMode]
+  );
+  const isLoading = loadingByMode[viewMode];
+  const currentError = errorsByMode[viewMode];
+  const hasDevices = devices.length > 0;
   const holidayDisabled = !supportsHoliday || configLoading;
 
   const visibleDevices = useMemo(
     () =>
-      (devicesByMode[viewMode] ?? []).filter((d) => {
+      devices.filter((d) => {
         const areaName = (d.area ?? d.areaName ?? '').trim();
         const labels = Array.isArray(d.labels) ? d.labels : [];
         const hasLabel =
@@ -230,7 +281,7 @@ export default function AdminDashboard(props: Props) {
           labels.some((lbl) => normalizeLabel(lbl).length > 0);
         return areaName.length > 0 && hasLabel;
       }),
-    [devicesByMode, viewMode]
+    [devices]
   );
 
   const labelGroups = useMemo(() => {
@@ -247,8 +298,6 @@ export default function AdminDashboard(props: Props) {
     () => sortLabels(Array.from(labelGroups.keys())),
     [labelGroups]
   );
-
-  const devices = devicesByMode[viewMode] || [];
 
   async function saveDevice(entityId: string) {
     const current = editValues[entityId];
@@ -274,7 +323,7 @@ export default function AdminDashboard(props: Props) {
     } else {
       setMessage('Device settings saved');
       setEditingDeviceId(null);
-      loadDevices({ silent: true });
+      void loadDevices({ silent: true, force: true });
     }
     setSavingDeviceId(null);
   }
@@ -311,6 +360,11 @@ export default function AdminDashboard(props: Props) {
               </p>
               <p>{clock}</p>
             </div>
+            {isLoading && (
+              <span className="rounded-full bg-white/70 px-3 py-1 text-[11px] text-slate-500 shadow-sm">
+                Refreshing…
+              </span>
+            )}
             <div className="flex items-center gap-1 rounded-full bg-slate-100 px-1 py-0.5 text-[11px]">
               <button
                 type="button"
@@ -339,9 +393,15 @@ export default function AdminDashboard(props: Props) {
           </div>
         </header>
 
-        {errorsByMode[viewMode] && (
+        {currentError && !hasDevices && (
           <div className="rounded-3xl border border-red-100 bg-red-50/80 px-6 py-4 text-sm text-red-600 shadow-sm">
-            {errorsByMode[viewMode]}
+            {currentError}
+          </div>
+        )}
+        {currentError && hasDevices && (
+          <div className="flex items-center gap-2 rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3 text-xs text-amber-700 shadow-sm">
+            <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+            <span>{currentError}</span>
           </div>
         )}
         {message && (
@@ -360,30 +420,35 @@ export default function AdminDashboard(props: Props) {
                   <h2 className="text-xl font-semibold tracking-tight">
                     {label}
                   </h2>
-                  {loadingDevices && (
+                  {isLoading && (
                     <span className="text-xs text-slate-400">
                       Refreshing…
                     </span>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
-                  {group.map((device) => (
-                    <DeviceTile
-                      key={device.entityId}
-                      device={device}
-                      viewMode={viewMode}
-                      onOpenDetails={() => setOpenDeviceId(device.entityId)}
-                      onActionComplete={() => loadDevices({ silent: true })}
-                      showAdminControls
-                      onOpenAdminEdit={() => setEditingDeviceId(device.entityId)}
-                    />
-                  ))}
+                <div className="relative">
+                  {isLoading && (
+                    <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/70 via-white/30 to-white/0 backdrop-blur-sm animate-pulse" />
+                  )}
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+                    {group.map((device) => (
+                      <DeviceTile
+                        key={device.entityId}
+                        device={device}
+                        viewMode={viewMode}
+                        onOpenDetails={() => setOpenDeviceId(device.entityId)}
+                        onActionComplete={() => loadDevices({ silent: true, force: true })}
+                        showAdminControls
+                        onOpenAdminEdit={() => setEditingDeviceId(device.entityId)}
+                      />
+                    ))}
+                  </div>
                 </div>
               </section>
             );
           })}
 
-          {sortedLabels.length === 0 && !loadingDevices && (
+          {sortedLabels.length === 0 && !isLoading && (
             <p className="rounded-3xl border border-slate-200/70 bg-white/70 px-6 py-10 text-center text-sm text-slate-500">
               No devices with both area and label were found. Confirm your Home
               Assistant labels and areas.
@@ -397,7 +462,7 @@ export default function AdminDashboard(props: Props) {
           device={openDevice}
           viewMode={viewMode}
           onClose={() => setOpenDeviceId(null)}
-          onActionComplete={() => loadDevices({ silent: true })}
+          onActionComplete={() => loadDevices({ silent: true, force: true })}
           relatedDevices={relatedDevices}
           showAdminControls
           onOpenAdminEdit={() => setEditingDeviceId(openDevice.entityId)}

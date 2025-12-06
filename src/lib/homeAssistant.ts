@@ -1,5 +1,8 @@
 import { classifyDeviceByLabel, LabelCategory } from './labelCatalog';
 
+const DEFAULT_HA_TIMEOUT_MS = 8000;
+const TEMPLATE_TIMEOUT_MS = 6500;
+
 export type HaConnectionLike = {
   baseUrl: string;
   longLivedToken: string;
@@ -31,20 +34,62 @@ export type EnrichedDevice = {
   attributes: Record<string, unknown>;
 };
 
+function buildTimeoutSignal(timeoutMs: number, externalSignal?: AbortSignal | null) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timer),
+  };
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit = {},
+  timeoutMs = DEFAULT_HA_TIMEOUT_MS
+) {
+  const { signal, cancel } = buildTimeoutSignal(timeoutMs, init.signal);
+  try {
+    return await fetch(url, { ...init, signal });
+  } finally {
+    cancel();
+  }
+}
+
 export async function callHomeAssistantAPI<T>(
   ha: HaConnectionLike,
   path: string,
-  init?: RequestInit
+  init?: RequestInit & { timeoutMs?: number }
 ): Promise<T> {
   const url = `${ha.baseUrl}${path}`;
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${ha.longLivedToken}`,
-      'Content-Type': 'application/json',
-      ...(init?.headers || {}),
-    },
-  });
+  const { timeoutMs = DEFAULT_HA_TIMEOUT_MS, ...restInit } = init ?? {};
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      url,
+      {
+        ...restInit,
+        headers: {
+          Authorization: `Bearer ${ha.longLivedToken}`,
+          'Content-Type': 'application/json',
+          ...(restInit.headers || {}),
+        },
+      },
+      timeoutMs
+    );
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') {
+      throw new Error(`HA API timeout after ${timeoutMs}ms on ${path}`);
+    }
+    throw err;
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`HA API error ${res.status} on ${path}: ${text}`);
@@ -54,16 +99,29 @@ export async function callHomeAssistantAPI<T>(
 
 export async function renderHomeAssistantTemplate<T>(
   ha: HaConnectionLike,
-  template: string
+  template: string,
+  timeoutMs = TEMPLATE_TIMEOUT_MS
 ): Promise<T> {
-  const res = await fetch(`${ha.baseUrl}/api/template`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${ha.longLivedToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ template }),
-  });
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      `${ha.baseUrl}/api/template`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ha.longLivedToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ template }),
+      },
+      timeoutMs
+    );
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') {
+      throw new Error(`HA template timeout after ${timeoutMs}ms`);
+    }
+    throw err;
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`HA template error ${res.status}: ${text}`);
@@ -74,8 +132,6 @@ export async function renderHomeAssistantTemplate<T>(
 export async function getDevicesWithMetadata(
   ha: HaConnectionLike
 ): Promise<EnrichedDevice[]> {
-  const states = await callHomeAssistantAPI<HAState[]>(ha, '/api/states');
-
   const template = `{% set ns = namespace(result=[]) %}
 {% for s in states %}
   {% set item = {
@@ -87,13 +143,14 @@ export async function getDevicesWithMetadata(
 {% endfor %}
 {{ ns.result | tojson }}`;
 
-  let meta: TemplateDeviceMeta[] = [];
-  try {
-    meta = await renderHomeAssistantTemplate<TemplateDeviceMeta[]>(ha, template);
-  } catch (err) {
-    console.warn('HA template metadata failed:', err);
-    meta = [];
-  }
+  const statesPromise = callHomeAssistantAPI<HAState[]>(ha, '/api/states');
+  const metaPromise = renderHomeAssistantTemplate<TemplateDeviceMeta[]>(ha, template).catch(
+    (err) => {
+      console.warn('HA template metadata failed (continuing without metadata):', err);
+      return [];
+    }
+  );
+  const [states, meta] = await Promise.all([statesPromise, metaPromise]);
 
   const metaByEntity = new Map<string, TemplateDeviceMeta>();
   for (const m of meta) {
@@ -140,14 +197,26 @@ export async function callHaService(
   data: Record<string, unknown> = {}
 ) {
   const url = `${ha.baseUrl}/api/services/${domain}/${service}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${ha.longLivedToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ha.longLivedToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      },
+      DEFAULT_HA_TIMEOUT_MS
+    );
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') {
+      throw new Error(`HA service timeout after ${DEFAULT_HA_TIMEOUT_MS}ms`);
+    }
+    throw err;
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`HA service error ${res.status}: ${text}`);

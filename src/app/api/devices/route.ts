@@ -15,6 +15,10 @@ export async function GET(req: NextRequest) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[api/devices] fetch', { viewMode, userId: me.id });
+  }
+
   let user;
   let haConnection;
   try {
@@ -28,15 +32,23 @@ export async function GET(req: NextRequest) {
 
   // Fetch HA devices with area/labels via template helpers
   let enriched: EnrichedDevice[] = [];
+  const fetchStartedAt = Date.now();
   try {
     const effectiveHa = resolveHaForMode(haConnection, viewMode);
     enriched = await getDevicesWithMetadata(effectiveHa);
   } catch (err) {
-    console.error('Failed to fetch devices from HA:', err);
+    console.error(`Failed to fetch devices from HA (mode=${viewMode}):`, err);
     return NextResponse.json(
       { error: 'Failed to fetch HA devices' },
       { status: 502 }
     );
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[api/devices] fetched from HA', {
+      viewMode,
+      count: enriched.length,
+      ms: Date.now() - fetchStartedAt,
+    });
   }
 
   // Load overrides for this HA connection (name/area/label)

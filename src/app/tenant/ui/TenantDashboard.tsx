@@ -61,12 +61,7 @@ function formatClock(date: Date) {
 export default function TenantDashboard(props: Props) {
   void props;
   const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
-  const [loadingDevices, setLoadingDevices] = useState(false);
   const [clock, setClock] = useState(() => formatClock(new Date()));
-  const previousDevicesRef = useRef<Record<ViewMode, UIDevice[] | null>>({
-    home: null,
-    holiday: null,
-  });
   const [devicesByMode, setDevicesByMode] = useState<Record<ViewMode, UIDevice[]>>({
     home: [],
     holiday: [],
@@ -75,63 +70,97 @@ export default function TenantDashboard(props: Props) {
     home: null,
     holiday: null,
   });
+  const [loadingByMode, setLoadingByMode] = useState<Record<ViewMode, boolean>>({
+    home: false,
+    holiday: false,
+  });
   const [viewMode, setViewMode] = useState<ViewMode>('home');
+  const viewModeRef = useRef<ViewMode>('home');
   const [supportsHoliday, setSupportsHoliday] = useState(false);
   const [configLoading, setConfigLoading] = useState(true);
   const requestCounterRef = useRef(0);
-  const latestRequestRef = useRef<{ mode: ViewMode; id: number } | null>(null);
+  const latestRequestRef = useRef<Record<ViewMode, number>>({
+    home: 0,
+    holiday: 0,
+  });
+  const lastLoadedRef = useRef<Record<ViewMode, number | null>>({
+    home: null,
+    holiday: null,
+  });
+  const abortControllersRef = useRef<Record<ViewMode, AbortController | null>>({
+    home: null,
+    holiday: null,
+  });
 
   const loadDevices = useCallback(
-    async (opts?: { silent?: boolean; modeOverride?: ViewMode }) => {
+    async (opts?: { silent?: boolean; modeOverride?: ViewMode; force?: boolean }) => {
       const silent = opts?.silent ?? false;
-      const mode = opts?.modeOverride ?? viewMode;
+      const force = opts?.force ?? false;
+      const mode = opts?.modeOverride ?? viewModeRef.current;
+      const now = Date.now();
+      const lastLoaded = lastLoadedRef.current[mode];
+      if (!force && lastLoaded && now - lastLoaded < 60_000) {
+        setLoadingByMode((prev) => ({ ...prev, [mode]: false }));
+        return;
+      }
+
       const requestId = requestCounterRef.current + 1;
       requestCounterRef.current = requestId;
-      latestRequestRef.current = { mode, id: requestId };
-      let showSpinner = false;
-      if (!previousDevicesRef.current[mode] && !silent) {
-        setLoadingDevices(true);
-        showSpinner = true;
-      }
+      latestRequestRef.current[mode] = requestId;
+
       if (!silent) {
         setErrorsByMode((prev) => ({ ...prev, [mode]: null }));
       }
+      setLoadingByMode((prev) => ({ ...prev, [mode]: true }));
+
+      if (abortControllersRef.current[mode]) {
+        abortControllersRef.current[mode]?.abort();
+      }
+      const controller = new AbortController();
+      abortControllersRef.current[mode] = controller;
+
       try {
         const url = mode === 'holiday' ? '/api/devices?view=holiday' : '/api/devices';
-        const res = await fetch(url);
+        const res = await fetch(url, { signal: controller.signal });
         const data = await res.json();
-        const isLatest =
-          latestRequestRef.current?.id === requestId && latestRequestRef.current?.mode === mode;
+        const isLatest = latestRequestRef.current[mode] === requestId;
         if (!isLatest) return;
 
-        if (showSpinner) setLoadingDevices(false);
+        setLoadingByMode((prev) => ({ ...prev, [mode]: false }));
+        abortControllersRef.current[mode] = null;
 
         if (!res.ok) {
-          previousDevicesRef.current[mode] = null;
-          setDevicesByMode((prev) => ({ ...prev, [mode]: [] }));
           setErrorsByMode((prev) => ({ ...prev, [mode]: data.error || 'Failed to load devices' }));
           return;
         }
 
         const list: UIDevice[] = data.devices || [];
-        const previous = previousDevicesRef.current[mode];
-        if (!previous || devicesAreDifferent(previous, list)) {
-          previousDevicesRef.current[mode] = list;
-          setDevicesByMode((prev) => ({ ...prev, [mode]: list }));
-        }
+        setDevicesByMode((prev) => {
+          const previous = prev[mode] ?? [];
+          if (!devicesAreDifferent(previous, list)) return prev;
+          return { ...prev, [mode]: list };
+        });
+        lastLoadedRef.current[mode] = Date.now();
       } catch (err) {
-        console.error(err);
-        const isLatest =
-          latestRequestRef.current?.id === requestId && latestRequestRef.current?.mode === mode;
+        const isLatest = latestRequestRef.current[mode] === requestId;
         if (!isLatest) return;
-        if (showSpinner) setLoadingDevices(false);
-        previousDevicesRef.current[mode] = null;
-        setDevicesByMode((prev) => ({ ...prev, [mode]: [] }));
+        if ((err as Error).name === 'AbortError') {
+          setLoadingByMode((prev) => ({ ...prev, [mode]: false }));
+          abortControllersRef.current[mode] = null;
+          return;
+        }
+        console.error(err);
+        setLoadingByMode((prev) => ({ ...prev, [mode]: false }));
+        abortControllersRef.current[mode] = null;
         setErrorsByMode((prev) => ({ ...prev, [mode]: 'Failed to load devices' }));
       }
     },
-    [viewMode]
+    []
   );
+
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  }, [viewMode]);
 
   useEffect(() => {
     let mounted = true;
@@ -181,10 +210,8 @@ export default function TenantDashboard(props: Props) {
       if (mode === 'holiday' && !supportsHoliday) return;
       setViewMode(mode);
       setOpenDeviceId(null);
-      setDevicesByMode((prev) => ({ ...prev, [mode]: [] }));
-      previousDevicesRef.current[mode] = null;
       setErrorsByMode((prev) => ({ ...prev, [mode]: null }));
-      setLoadingDevices(true);
+      setLoadingByMode((prev) => ({ ...prev, [mode]: true }));
       if (typeof window !== 'undefined') {
         window.localStorage.setItem('dinodia_view_mode', mode);
       }
@@ -198,9 +225,25 @@ export default function TenantDashboard(props: Props) {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(
+    () => () => {
+      abortControllersRef.current.home?.abort();
+      abortControllersRef.current.holiday?.abort();
+    },
+    []
+  );
+
+  const devices = useMemo(
+    () => devicesByMode[viewMode] || [],
+    [devicesByMode, viewMode]
+  );
+  const isLoading = loadingByMode[viewMode];
+  const currentError = errorsByMode[viewMode];
+  const hasDevices = devices.length > 0;
+
   const visibleDevices = useMemo(
     () =>
-      (devicesByMode[viewMode] ?? []).filter((d) => {
+      devices.filter((d) => {
         const areaName = (d.area ?? d.areaName ?? '').trim();
         const labels = Array.isArray(d.labels) ? d.labels : [];
         const hasLabel =
@@ -209,7 +252,7 @@ export default function TenantDashboard(props: Props) {
         const primary = !isDetailDevice(d.state);
         return areaName.length > 0 && hasLabel && primary;
       }),
-    [devicesByMode, viewMode]
+    [devices]
   );
 
   const labelGroups = useMemo(() => {
@@ -228,12 +271,12 @@ export default function TenantDashboard(props: Props) {
   );
 
   const openDevice = openDeviceId
-    ? (devicesByMode[viewMode] || []).find((d) => d.entityId === openDeviceId) ?? null
+    ? devices.find((d) => d.entityId === openDeviceId) ?? null
     : null;
 
   const relatedDevices =
     openDevice && getGroupLabel(openDevice) === 'Home Security'
-      ? (devicesByMode[viewMode] || []).filter((d) => getGroupLabel(d) === 'Home Security')
+      ? devices.filter((d) => getGroupLabel(d) === 'Home Security')
       : undefined;
   const holidayDisabled = !supportsHoliday || configLoading;
 
@@ -256,6 +299,11 @@ export default function TenantDashboard(props: Props) {
               </p>
               <p>{clock}</p>
             </div>
+            {isLoading && (
+              <span className="rounded-full bg-white/70 px-3 py-1 text-[11px] text-slate-500 shadow-sm">
+                Refreshing…
+              </span>
+            )}
             <div className="flex items-center gap-1 rounded-full bg-slate-100 px-1 py-0.5 text-[11px]">
               <button
                 type="button"
@@ -284,9 +332,15 @@ export default function TenantDashboard(props: Props) {
           </div>
         </header>
 
-        {errorsByMode[viewMode] && (
+        {currentError && !hasDevices && (
           <div className="rounded-3xl border border-red-100 bg-red-50/80 px-6 py-4 text-sm text-red-600 shadow-sm">
-            {errorsByMode[viewMode]}
+            {currentError}
+          </div>
+        )}
+        {currentError && hasDevices && (
+          <div className="flex items-center gap-2 rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3 text-xs text-amber-700 shadow-sm">
+            <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+            <span>{currentError}</span>
           </div>
         )}
 
@@ -300,28 +354,33 @@ export default function TenantDashboard(props: Props) {
                   <h2 className="text-xl font-semibold tracking-tight">
                     {label}
                   </h2>
-                  {loadingDevices && (
+                  {isLoading && (
                     <span className="text-xs text-slate-400">
                       Refreshing…
                     </span>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
-                  {group.map((device) => (
-                    <DeviceTile
-                      key={device.entityId}
-                      device={device}
-                      viewMode={viewMode}
-                      onOpenDetails={() => setOpenDeviceId(device.entityId)}
-                      onActionComplete={() => loadDevices({ silent: true })}
-                    />
-                  ))}
+                <div className="relative">
+                  {isLoading && (
+                    <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/70 via-white/30 to-white/0 backdrop-blur-sm animate-pulse" />
+                  )}
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+                    {group.map((device) => (
+                      <DeviceTile
+                        key={device.entityId}
+                        device={device}
+                        viewMode={viewMode}
+                        onOpenDetails={() => setOpenDeviceId(device.entityId)}
+                        onActionComplete={() => loadDevices({ silent: true, force: true })}
+                      />
+                    ))}
+                  </div>
                 </div>
               </section>
             );
           })}
 
-          {sortedLabels.length === 0 && !loadingDevices && (
+          {sortedLabels.length === 0 && !isLoading && (
             <p className="rounded-3xl border border-slate-200/70 bg-white/70 px-6 py-10 text-center text-sm text-slate-500">
               No devices available. Ask your Dinodia admin to confirm your
               access.
@@ -335,7 +394,7 @@ export default function TenantDashboard(props: Props) {
           device={openDevice}
           viewMode={viewMode}
           onClose={() => setOpenDeviceId(null)}
-          onActionComplete={() => loadDevices({ silent: true })}
+          onActionComplete={() => loadDevices({ silent: true, force: true })}
           relatedDevices={relatedDevices}
         />
       )}
