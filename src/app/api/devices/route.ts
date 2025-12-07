@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
-import { EnrichedDevice, getDevicesWithMetadata } from '@/lib/homeAssistant';
+import { EnrichedDevice, HAState, callHomeAssistantAPI, getDevicesWithMetadata } from '@/lib/homeAssistant';
 import { classifyDeviceByLabel } from '@/lib/labelCatalog';
 import { getUserWithHaConnection, resolveHaCloudFirst } from '@/lib/haConnection';
 import { Role } from '@prisma/client';
@@ -28,11 +28,30 @@ export async function GET() {
     const effectiveHa = resolveHaCloudFirst(haConnection);
     enriched = await getDevicesWithMetadata(effectiveHa);
   } catch (err) {
-    console.error('Failed to fetch devices from HA (cloud-first):', err);
-    return NextResponse.json(
-      { error: 'Failed to fetch HA devices' },
-      { status: 502 }
-    );
+    console.warn('[api/devices] metadata failed, falling back to states-only', err);
+    try {
+      const effectiveHa = resolveHaCloudFirst(haConnection);
+      const states = await callHomeAssistantAPI<HAState[]>(effectiveHa, '/api/states');
+      enriched = states.map((s) => {
+        const domain = s.entity_id.split('.')[0] || '';
+        return {
+          entityId: s.entity_id,
+          name: s.attributes.friendly_name ?? s.entity_id,
+          state: s.state,
+          areaName: null,
+          labels: [],
+          labelCategory: null,
+          domain,
+          attributes: s.attributes ?? {},
+        };
+      });
+    } catch (fallbackErr) {
+      console.error('Failed to fetch devices from HA (cloud-first) after fallback:', fallbackErr);
+      return NextResponse.json(
+        { error: 'Failed to fetch HA devices' },
+        { status: 502 }
+      );
+    }
   }
   if (process.env.NODE_ENV !== 'production') {
     console.log('[api/devices] fetched from HA', {

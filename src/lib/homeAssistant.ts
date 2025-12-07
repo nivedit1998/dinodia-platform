@@ -1,7 +1,7 @@
 import { classifyDeviceByLabel, LabelCategory } from './labelCatalog';
 
-const DEFAULT_HA_TIMEOUT_MS = 8000;
-const TEMPLATE_TIMEOUT_MS = 6500;
+const DEFAULT_HA_TIMEOUT_MS = 6000;
+const TEMPLATE_TIMEOUT_MS = 4000;
 
 export type HaConnectionLike = {
   baseUrl: string;
@@ -143,14 +143,18 @@ export async function getDevicesWithMetadata(
 {% endfor %}
 {{ ns.result | tojson }}`;
 
-  const statesPromise = callHomeAssistantAPI<HAState[]>(ha, '/api/states');
-  const metaPromise = renderHomeAssistantTemplate<TemplateDeviceMeta[]>(ha, template).catch(
-    (err) => {
+  const states = await callHomeAssistantAPI<HAState[]>(ha, '/api/states');
+  let meta: TemplateDeviceMeta[] = [];
+  if (process.env.SKIP_HA_TEMPLATE_META === 'true') {
+    meta = [];
+  } else {
+    try {
+      meta = await renderHomeAssistantTemplate<TemplateDeviceMeta[]>(ha, template);
+    } catch (err) {
       console.warn('HA template metadata failed (continuing without metadata):', err);
-      return [];
+      meta = [];
     }
-  );
-  const [states, meta] = await Promise.all([statesPromise, metaPromise]);
+  }
 
   const metaByEntity = new Map<string, TemplateDeviceMeta>();
   for (const m of meta) {
