@@ -146,9 +146,72 @@ export function DeviceDetailSheet({
   );
 }
 
+type HistoryPoint = {
+  bucketStart: string;
+  label: string;
+  value: number;
+  count: number;
+};
+
 function SensorCard({ sensor }: { sensor: UIDevice }) {
   const reading = formatSensorReading(sensor);
   const extras = getSensorAttributes(sensor);
+  const [expanded, setExpanded] = useState(false);
+  const [bucket, setBucket] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [history, setHistory] = useState<HistoryPoint[] | null>(null);
+  const [historyUnit, setHistoryUnit] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!expanded) return;
+
+    let aborted = false;
+    const controller = new AbortController();
+
+    async function loadHistory() {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      try {
+        const params = new URLSearchParams({
+          entityId: sensor.entityId,
+          bucket,
+        });
+        const res = await fetch(`/api/admin/monitoring/history?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        const data = await res.json();
+        if (aborted) return;
+        if (!res.ok || !data.ok) {
+          setHistoryError(data.error || 'Failed to load history');
+          setHistory(null);
+          setHistoryUnit(null);
+          return;
+        }
+        setHistory(Array.isArray(data.points) ? data.points : []);
+        setHistoryUnit(typeof data.unit === 'string' ? data.unit : null);
+      } catch (err) {
+        if (aborted) return;
+        if ((err as Error).name === 'AbortError') return;
+        console.error(err);
+        setHistoryError('Failed to load history');
+        setHistory(null);
+        setHistoryUnit(null);
+      } finally {
+        if (!aborted) {
+          setHistoryLoading(false);
+        }
+      }
+    }
+
+    void loadHistory();
+
+    return () => {
+      aborted = true;
+      controller.abort();
+    };
+  }, [expanded, bucket, sensor.entityId]);
+
   return (
     <div className="rounded-2xl border border-slate-100 bg-white/80 p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -159,9 +222,18 @@ function SensorCard({ sensor }: { sensor: UIDevice }) {
           <p className="text-sm font-semibold text-slate-900">{sensor.name}</p>
           <p className="text-xs text-slate-500">{reading}</p>
         </div>
-        <span className="rounded-xl bg-slate-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-          {formatState(sensor.state)}
-        </span>
+        <div className="flex flex-col items-end gap-2">
+          <span className="rounded-xl bg-slate-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+            {formatState(sensor.state)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setExpanded((prev) => !prev)}
+            className="text-[11px] rounded-full bg-slate-100 px-2 py-1 text-slate-600 hover:bg-slate-200"
+          >
+            {expanded ? 'Hide history' : 'History'}
+          </button>
+        </div>
       </div>
       {extras.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-600">
@@ -173,6 +245,53 @@ function SensorCard({ sensor }: { sensor: UIDevice }) {
               {attr.label}: {attr.value}
             </span>
           ))}
+        </div>
+      )}
+      {expanded && (
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-600">
+            <span className="uppercase tracking-[0.18em] text-slate-400">
+              History
+            </span>
+            {(['daily', 'weekly', 'monthly'] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setBucket(key)}
+                className={[
+                  'rounded-full px-2 py-1',
+                  'border text-[11px]',
+                  bucket === key
+                    ? 'border-slate-500 bg-slate-600 text-white'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100',
+                ].join(' ')}
+              >
+                {key === 'daily' ? 'Daily' : key === 'weekly' ? 'Weekly' : 'Monthly'}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 max-h-40 overflow-y-auto rounded-xl bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
+            {historyLoading && <p>Loading...</p>}
+            {historyError && !historyLoading && (
+              <p className="text-red-500">{historyError}</p>
+            )}
+            {!historyLoading && !historyError && history && history.length === 0 && (
+              <p>No history yet.</p>
+            )}
+            {!historyLoading && !historyError && history && history.length > 0 && (
+              <ul className="space-y-1">
+                {history.map((point) => (
+                  <li key={point.bucketStart} className="flex justify-between gap-2">
+                    <span>{point.label}</span>
+                    <span className="font-medium">
+                      {point.value.toFixed(2)}
+                      {historyUnit ? ` ${historyUnit}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       )}
     </div>
