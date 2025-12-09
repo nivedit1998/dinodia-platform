@@ -13,6 +13,7 @@ import {
   getGroupLabel,
   sortLabels,
   normalizeLabel,
+  OTHER_LABEL,
 } from '@/lib/deviceLabels';
 import { isDetailState } from '@/lib/deviceSensors';
 import { DeviceTile } from '@/components/device/DeviceTile';
@@ -393,6 +394,7 @@ export default function TenantDashboard(props: Props) {
 
         <div className="space-y-10">
           {sortedLabels.map((label) => {
+            if (label === OTHER_LABEL) return null;
             const group = labelGroups.get(label);
             if (!group || group.length === 0) return null;
             return (
