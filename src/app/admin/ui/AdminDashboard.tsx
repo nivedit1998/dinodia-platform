@@ -420,46 +420,52 @@ export default function AdminDashboard(props: Props) {
               </p>
               <p>{clock}</p>
             </div>
-            {isLoading && (
-              <span className="rounded-full bg-white/70 px-3 py-1 text-[11px] text-slate-500 shadow-sm">
-                Refreshing…
-              </span>
-            )}
-            <div className="relative" ref={menuRef}>
-              <button
-                type="button"
-                aria-label="Menu"
-                onClick={() => setMenuOpen((v) => !v)}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-slate-600 shadow-sm hover:bg-white"
-              >
-                <span className="sr-only">Menu</span>
-                <span className="flex flex-col gap-1">
-                  <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
-                  <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
-                  <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
-                </span>
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
-                  <Link
-                    href="/admin/settings"
-                    className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    Admin Settings
-                  </Link>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      void performLogout();
-                    }}
-                  >
-                    Logout
-                  </button>
-                </div>
-              )}
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center text-slate-400">
+                {isLoading && (
+                  <span
+                    className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-500"
+                    role="status"
+                    aria-label="Refreshing devices"
+                  />
+                )}
+              </div>
+              <div className="relative" ref={menuRef}>
+                <button
+                  type="button"
+                  aria-label="Menu"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-slate-600 shadow-sm hover:bg-white"
+                >
+                  <span className="sr-only">Menu</span>
+                  <span className="flex flex-col gap-1">
+                    <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
+                    <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
+                    <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
+                  </span>
+                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
+                    <Link
+                      href="/admin/settings"
+                      className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Admin Settings
+                    </Link>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        void performLogout();
+                      }}
+                    >
+                      Logout
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </header>
@@ -492,16 +498,8 @@ export default function AdminDashboard(props: Props) {
                   <h2 className="text-xl font-semibold tracking-tight">
                     {label}
                   </h2>
-                  {isLoading && (
-                    <span className="text-xs text-slate-400">
-                      Refreshing…
-                    </span>
-                  )}
                 </div>
-                <div className="relative">
-                  {isLoading && (
-                    <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/70 via-white/30 to-white/0 backdrop-blur-sm animate-pulse" />
-                  )}
+                <div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
                     {group.map((device) => (
                       <DeviceTile
