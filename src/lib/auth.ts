@@ -15,6 +15,35 @@ export type AuthUser = {
 const JWT_SECRET = process.env.JWT_SECRET!;
 if (!JWT_SECRET) throw new Error('JWT_SECRET not set');
 
+async function findAuthUserById(id: number): Promise<AuthUser | null> {
+  const user = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true, username: true, role: true },
+  });
+  return user ?? null;
+}
+
+export async function getUserFromToken(token: string | null | undefined): Promise<AuthUser | null> {
+  if (!token) return null;
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as AuthUser;
+    return await findAuthUserById(payload.id);
+  } catch {
+    return null;
+  }
+}
+
+function extractBearerToken(authHeader: string | null | undefined): string | null {
+  if (!authHeader || typeof authHeader !== 'string') return null;
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : null;
+}
+
+export async function getUserFromAuthorizationHeader(authHeader: string | null | undefined) {
+  return getUserFromToken(extractBearerToken(authHeader));
+}
+
 export async function hashPassword(password: string) {
   const salt = await bcrypt.genSalt(10);
   return bcrypt.hash(password, salt);
@@ -58,12 +87,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
   try {
     const payload = jwt.verify(token, JWT_SECRET) as AuthUser;
     // Make sure user still exists
-    const user = await prisma.user.findUnique({
-      where: { id: payload.id },
-      select: { id: true, username: true, role: true },
-    });
-    if (!user) return null;
-    return user;
+    return await findAuthUserById(payload.id);
   } catch {
     return null;
   }

@@ -22,6 +22,8 @@ model User {
   haConnectionId    Int?
   ownedHaConnection HaConnection? @relation("OwnedHaConnection")
   accessRules       AccessRule[]
+  alexaAuthCodes    AlexaAuthCode[]
+  alexaRefreshTokens AlexaRefreshToken[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 }
@@ -80,4 +82,27 @@ model MonitoringReading {
   capturedAt     DateTime     @default(now())
 
   @@index([haConnectionId, entityId, capturedAt])
+}
+
+model AlexaAuthCode {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  user        User     @relation(fields: [userId], references: [id])
+  userId      Int
+  clientId    String
+  redirectUri String
+  expiresAt   DateTime
+  used        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model AlexaRefreshToken {
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  clientId  String
+  revoked   Boolean  @default(false)
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
 }
