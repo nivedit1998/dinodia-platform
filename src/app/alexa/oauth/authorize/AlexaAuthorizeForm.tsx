@@ -1,30 +1,51 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-type Props = {
-  clientId: string;
-  redirectUri: string;
-  responseType: string;
-  state?: string;
-  scope?: string;
+type OAuthParams = {
+  clientId: string | null;
+  redirectUri: string | null;
+  responseType: string | null;
+  state: string | null;
+  scope: string | null;
 };
 
-export function AlexaAuthorizeForm({
-  clientId,
-  redirectUri,
-  responseType,
-  state,
-  scope,
-}: Props) {
+export function AlexaAuthorizeForm() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [oauth, setOauth] = useState<OAuthParams | null>(null);
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const clientId = params.get('client_id');
+      const redirectUri = params.get('redirect_uri');
+      const responseType = params.get('response_type') || 'code';
+      const state = params.get('state');
+      const scope = params.get('scope');
+
+      if (!clientId || !redirectUri) {
+        setError('Missing client_id or redirect_uri.');
+      }
+
+      setOauth({ clientId, redirectUri, responseType, state, scope });
+    } catch (err) {
+      console.error('Failed to parse OAuth parameters', err);
+      setError('Invalid Alexa link. Please try again.');
+    }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (!oauth || !oauth.clientId || !oauth.redirectUri || !oauth.responseType) {
+      setError('Missing OAuth details. Please relaunch linking from Alexa.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -34,11 +55,11 @@ export function AlexaAuthorizeForm({
         body: JSON.stringify({
           username,
           password,
-          clientId,
-          redirectUri,
-          responseType,
-          state,
-          scope,
+          clientId: oauth.clientId,
+          redirectUri: oauth.redirectUri,
+          responseType: oauth.responseType,
+          state: oauth.state ?? undefined,
+          scope: oauth.scope ?? undefined,
         }),
       });
 
