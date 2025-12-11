@@ -18,7 +18,7 @@ function unauthorized(message: string) {
 
 function getRedirectPath(role: Role, requested: string | null) {
   if (requested && requested.startsWith('/')) return requested;
-  return role === Role.ADMIN ? '/admin/dashboard' : '/tenant/dashboard';
+  return role === Role.ADMIN ? '/admin/settings' : '/tenant/dashboard';
 }
 
 export async function GET(req: NextRequest) {

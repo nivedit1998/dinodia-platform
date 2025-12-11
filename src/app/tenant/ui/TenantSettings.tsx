@@ -16,12 +16,17 @@ const EMPTY_FORM = {
   confirmNewPassword: '',
 };
 
+const ALEXA_SKILL_URL =
+  'https://skills-store.amazon.com/deeplink/tvt/ce5823e0e48bf0fbebdd69c05e82ea253ca9f8137a8c89008963c4ba3b04e3e84f2b8674b8de634ed4ba2a52a88b9612d12b45bf82d964129002a97b49108fe88950025bd45afc1478f80162754eccb83ade4624e2ba4b88a005b1ff54f8ccbb94adfa66f95188b78f1a66c2beb6adb5';
+
 export default function TenantSettings({ username }: Props) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [alert, setAlert] = useState<StatusMessage>(null);
   const [loading, setLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [alexaLinkVisible, setAlexaLinkVisible] = useState(false);
+  const [passwordSectionOpen, setPasswordSectionOpen] = useState(false);
 
   function updateField(key: keyof typeof form, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -81,6 +86,33 @@ export default function TenantSettings({ username }: Props) {
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    let active = true;
+    async function checkAlexaDevices() {
+      try {
+        const res = await fetch('/api/alexa/devices', {
+          cache: 'no-store',
+          credentials: 'include',
+        });
+        const data = await res.json();
+        if (!active) return;
+        if (!res.ok) {
+          throw new Error(data.error || 'Unable to load devices');
+        }
+        const devices = Array.isArray(data.devices) ? data.devices : [];
+        setAlexaLinkVisible(devices.length > 0);
+      } catch {
+        if (active) {
+          setAlexaLinkVisible(false);
+        }
+      }
+    }
+    void checkAlexaDevices();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <div className="w-full max-w-3xl bg-white rounded-2xl shadow-lg p-4 sm:p-6 flex flex-col gap-4">
       <header className="flex flex-col gap-3 border-b pb-3 sm:flex-row sm:items-center sm:justify-between">
@@ -128,65 +160,96 @@ export default function TenantSettings({ username }: Props) {
         </div>
       </header>
 
-      <section className="text-sm border border-slate-200 rounded-xl p-4">
-        <h2 className="font-semibold mb-4">Change password</h2>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <label className="block mb-1 text-xs">Current password</label>
-            <input
-              type="password"
-              className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-              value={form.currentPassword}
-              onChange={(e) => updateField('currentPassword', e.target.value)}
-              required
-            />
+      <section className="text-sm border border-slate-200 rounded-xl">
+        <button
+          type="button"
+          className="w-full flex items-center justify-between px-4 py-3 text-left font-semibold"
+          onClick={() => setPasswordSectionOpen((prev) => !prev)}
+        >
+          <span>Change password</span>
+          <span className="text-xs font-normal text-slate-500">
+            {passwordSectionOpen ? 'Hide' : 'Show'}
+          </span>
+        </button>
+        {passwordSectionOpen && (
+          <div className="px-4 pb-4 pt-1 border-t border-slate-100">
+            <form onSubmit={handleSubmit} className="space-y-3 mt-3">
+              <div>
+                <label className="block mb-1 text-xs">Current password</label>
+                <input
+                  type="password"
+                  className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={form.currentPassword}
+                  onChange={(e) => updateField('currentPassword', e.target.value)}
+                  required
+                />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="block mb-1 text-xs">New password</label>
+                  <input
+                    type="password"
+                    className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={form.newPassword}
+                    onChange={(e) => updateField('newPassword', e.target.value)}
+                    required
+                    minLength={8}
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-xs">Confirm new password</label>
+                  <input
+                    type="password"
+                    className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={form.confirmNewPassword}
+                    onChange={(e) => updateField('confirmNewPassword', e.target.value)}
+                    required
+                    minLength={8}
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Minimum 8 characters. Contact your admin if you can&apos;t access your account.
+              </p>
+              <button
+                type="submit"
+                disabled={loading}
+                className="bg-indigo-600 text-white rounded-lg py-2 px-4 text-xs font-medium hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {loading ? 'Updating…' : 'Update password'}
+              </button>
+            </form>
+            {alert && (
+              <p
+                className={`mt-2 text-xs ${
+                  alert.type === 'success' ? 'text-emerald-600' : 'text-red-600'
+                }`}
+              >
+                {alert.message}
+              </p>
+            )}
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <label className="block mb-1 text-xs">New password</label>
-              <input
-                type="password"
-                className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                value={form.newPassword}
-                onChange={(e) => updateField('newPassword', e.target.value)}
-                required
-                minLength={8}
-              />
-            </div>
-            <div>
-              <label className="block mb-1 text-xs">Confirm new password</label>
-              <input
-                type="password"
-                className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                value={form.confirmNewPassword}
-                onChange={(e) => updateField('confirmNewPassword', e.target.value)}
-                required
-                minLength={8}
-              />
-            </div>
-          </div>
-          <p className="text-[11px] text-slate-500">
-            Minimum 8 characters. Contact your admin if you can&apos;t access your account.
-          </p>
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-indigo-600 text-white rounded-lg py-2 px-4 text-xs font-medium hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {loading ? 'Updating…' : 'Update password'}
-          </button>
-        </form>
-        {alert && (
-          <p
-            className={`mt-2 text-xs ${
-              alert.type === 'success' ? 'text-emerald-600' : 'text-red-600'
-            }`}
-          >
-            {alert.message}
-          </p>
         )}
       </section>
-
+      {alexaLinkVisible && (
+        <section className="text-sm border border-indigo-100 rounded-xl p-4 bg-indigo-50 text-indigo-900">
+          <h2 className="font-semibold mb-2">
+            Connect all your Dinodia smart home devices to Alexa!
+          </h2>
+          <p className="text-[11px] text-indigo-900/80">
+            Link your account with the Dinodia Smart Living skill to control your devices
+            hands-free from the Alexa app or any Echo speaker.
+          </p>
+          <a
+            href={ALEXA_SKILL_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-4 inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-700"
+          >
+            Open Dinodia in Alexa
+          </a>
+        </section>
+      )}
     </div>
   );
 }

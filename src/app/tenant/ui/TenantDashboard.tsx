@@ -1,12 +1,6 @@
 'use client';
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { UIDevice } from '@/types/device';
 import {
@@ -27,6 +21,8 @@ type Props = {
 };
 
 const ALL_AREAS = 'All areas';
+const ALEXA_SKILL_URL =
+  'https://skills-store.amazon.com/deeplink/tvt/ce5823e0e48bf0fbebdd69c05e82ea253ca9f8137a8c89008963c4ba3b04e3e84f2b8674b8de634ed4ba2a52a88b9612d12b45bf82d964129002a97b49108fe88950025bd45afc1478f80162754eccb83ade4624e2ba4b88a005b1ff54f8ccbb94adfa66f95188b78f1a66c2beb6adb5';
 
 function devicesAreDifferent(a: UIDevice[], b: UIDevice[]) {
   if (a.length !== b.length) return true;
@@ -79,6 +75,7 @@ export default function TenantDashboard(props: Props) {
   });
   const [areaMenuOpen, setAreaMenuOpen] = useState(false);
   const areaMenuRef = useRef<HTMLDivElement | null>(null);
+  const [showAlexaLink, setShowAlexaLink] = useState(false);
 
   const loadDevices = useCallback(
     async (opts?: { silent?: boolean; force?: boolean }) => {
@@ -188,6 +185,33 @@ export default function TenantDashboard(props: Props) {
     });
     return () => cancelAnimationFrame(frame);
   }, [loadDevices]);
+
+  useEffect(() => {
+    let active = true;
+    async function checkAlexaDevices() {
+      try {
+        const res = await fetch('/api/alexa/devices', {
+          cache: 'no-store',
+          credentials: 'include',
+        });
+        const data = await res.json();
+        if (!active) return;
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to check Alexa devices');
+        }
+        const list = Array.isArray(data.devices) ? data.devices : [];
+        setShowAlexaLink(list.length > 0);
+      } catch {
+        if (active) {
+          setShowAlexaLink(false);
+        }
+      }
+    }
+    void checkAlexaDevices();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const unsubscribe = subscribeToRefresh(() => {
@@ -343,11 +367,24 @@ export default function TenantDashboard(props: Props) {
             <p className="mt-1 text-xs text-slate-500">Connected Devices</p>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-right min-w-[120px]">
+            <div className="text-right min-w-[140px]">
               <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
                 Today
               </p>
               <p>{clock}</p>
+              {showAlexaLink && (
+                <a
+                  href={ALEXA_SKILL_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-sm hover:bg-white"
+                >
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white">
+                    a
+                  </span>
+                  Alexa Link
+                </a>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center text-slate-400">

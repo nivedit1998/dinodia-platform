@@ -5,7 +5,7 @@ import { Role } from '@prisma/client';
 export default async function Home() {
   const user = await getCurrentUser();
   if (user) {
-    if (user.role === Role.ADMIN) redirect('/admin/dashboard');
+    if (user.role === Role.ADMIN) redirect('/admin/settings');
     else redirect('/tenant/dashboard');
   }
 

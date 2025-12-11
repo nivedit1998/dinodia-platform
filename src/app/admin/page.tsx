@@ -9,5 +9,5 @@ export default async function AdminPage() {
     redirect('/tenant/dashboard');
   }
 
-  redirect('/admin/dashboard');
+  redirect('/admin/settings');
 }

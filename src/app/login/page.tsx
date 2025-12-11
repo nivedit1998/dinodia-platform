@@ -29,7 +29,7 @@ export default function LoginPage() {
       return;
     }
 
-    if (data.role === 'ADMIN') router.push('/admin/dashboard');
+    if (data.role === 'ADMIN') router.push('/admin/settings');
     else router.push('/tenant/dashboard');
   }
 
