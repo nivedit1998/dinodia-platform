@@ -10,7 +10,10 @@ import {
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json(
+      { ok: false, error: 'Your session has ended. Please sign in again.' },
+      { status: 401 }
+    );
   }
 
   const allowed = checkRateLimit(`device-control:${user.id}`, {
@@ -19,7 +22,7 @@ export async function POST(req: NextRequest) {
   });
   if (!allowed) {
     return NextResponse.json(
-      { ok: false, error: 'Too many actions, please slow down.' },
+      { ok: false, error: 'You’ve sent a lot of commands at once. Please wait a moment and try again.' },
       { status: 429 }
     );
   }
@@ -56,7 +59,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
     console.error('Device control error', err);
-    const message = err instanceof Error ? err.message : 'Control failed';
+    const raw = err instanceof Error ? err.message : 'Control failed';
+    const message =
+      raw && raw.toLowerCase().includes('ha')
+        ? 'We couldn’t reach your Dinodia Hub for that action. Please try again in a moment.'
+        : raw || 'We couldn’t complete that action. Please try again.';
     return NextResponse.json(
       { ok: false, error: message },
       { status: 500 }

@@ -103,7 +103,10 @@ function getBucketInfo(bucket: Bucket, capturedAt: Date): BucketInfo {
 export async function GET(req: NextRequest) {
   const me = await getCurrentUser();
   if (!me || (me.role !== Role.ADMIN && me.role !== Role.TENANT)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'Your session has ended. Please sign in again.' },
+      { status: 401 }
+    );
   }
 
   const { searchParams } = new URL(req.url);
@@ -113,7 +116,7 @@ export async function GET(req: NextRequest) {
 
   if (!entityId || typeof entityId !== 'string' || entityId.trim().length === 0) {
     return NextResponse.json(
-      { error: 'Missing or invalid entityId' },
+      { error: 'Please select a valid device to view history.' },
       { status: 400 }
     );
   }
@@ -138,7 +141,7 @@ export async function GET(req: NextRequest) {
     } catch (err) {
       console.error('Failed to fetch devices for tenant history', err);
       return NextResponse.json(
-        { error: 'Failed to fetch HA devices' },
+        { error: 'Dinodia Hub did not respond when loading devices.' },
         { status: 502 }
       );
     }
@@ -151,7 +154,11 @@ export async function GET(req: NextRequest) {
     const target = allowedDevices.find((d) => d.entityId === entityId);
     if (!target) {
       return NextResponse.json(
-        { ok: false, error: 'Forbidden' },
+        {
+          ok: false,
+          error:
+            'You don’t have access to this device. Ask the homeowner to update your access in Dinodia.',
+        },
         { status: 403 }
       );
     }

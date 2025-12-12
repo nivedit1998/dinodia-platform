@@ -10,7 +10,10 @@ import {
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== 'object') {
-    return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Invalid request. Please start linking again from the Alexa app.' },
+      { status: 400 }
+    );
   }
 
   const {
@@ -30,15 +33,24 @@ export async function POST(req: NextRequest) {
   };
 
   if (!username || !password) {
-    return NextResponse.json({ error: 'Missing username or password' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Please enter your Dinodia username and password.' },
+      { status: 400 }
+    );
   }
 
   if (!clientId || !redirectUri) {
-    return NextResponse.json({ error: 'Missing OAuth details' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Some link details are missing. Please start linking again from the Alexa app.' },
+      { status: 400 }
+    );
   }
 
   if (responseType !== 'code') {
-    return NextResponse.json({ error: 'Unsupported response_type' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'We couldn’t finish linking with Alexa. Please try again.' },
+      { status: 400 }
+    );
   }
 
   try {
@@ -52,7 +64,10 @@ export async function POST(req: NextRequest) {
 
   const authUser = await authenticateWithCredentials(username, password);
   if (!authUser) {
-    return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'Those details don’t match any Dinodia account.' },
+      { status: 401 }
+    );
   }
 
   try {
@@ -64,6 +79,9 @@ export async function POST(req: NextRequest) {
     if (err instanceof AlexaOAuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
-    return NextResponse.json({ error: 'Failed to issue authorization code' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'We couldn’t complete linking with Alexa. Please try again in a moment.' },
+      { status: 500 }
+    );
   }
 }

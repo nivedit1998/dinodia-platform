@@ -7,7 +7,10 @@ import { resolveAlexaAuthUser } from '@/app/api/alexa/auth';
 export async function GET(req: NextRequest) {
   const authUser = await resolveAlexaAuthUser(req);
   if (!authUser) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'Your session has ended. Please sign in again.' },
+      { status: 401 }
+    );
   }
 
   try {
@@ -26,7 +29,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ devices: filteredDevices });
   } catch (err) {
     console.error('[api/alexa/devices] error', err);
-    const message = err instanceof Error ? err.message : 'Failed to fetch devices';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      {
+        error:
+          'Dinodia Hub isn’t reachable right now. Check its internet connection and remote access, then try again.',
+      },
+      { status: 500 }
+    );
   }
 }

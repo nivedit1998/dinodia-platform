@@ -4,7 +4,12 @@ import { getUserWithHaConnection, resolveHaCloudFirst } from '@/lib/haConnection
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Your session has ended. Please sign in again.' },
+      { status: 401 }
+    );
+  }
 
   const entityId = req.nextUrl.searchParams.get('entityId');
   if (!entityId) {

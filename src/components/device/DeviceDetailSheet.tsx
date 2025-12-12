@@ -208,7 +208,10 @@ function SensorCard({
         const data = await res.json();
         if (aborted) return;
         if (!res.ok || !data.ok) {
-          setHistoryError(data.error || 'Failed to load history');
+          setHistoryError(
+            data.error ||
+              'We couldn’t load this history right now. Please check your connection and try again.'
+          );
           setHistory(null);
           setHistoryUnit(null);
           return;
@@ -219,7 +222,9 @@ function SensorCard({
         if (aborted) return;
         if ((err as Error).name === 'AbortError') return;
         console.error(err);
-        setHistoryError('Failed to load history');
+        setHistoryError(
+          'We couldn’t load this history right now. Please check your connection and try again.'
+        );
         setHistory(null);
         setHistoryUnit(null);
       } finally {
@@ -303,7 +308,7 @@ function SensorCard({
               <p className="text-red-500">{historyError}</p>
             )}
             {!historyLoading && !historyError && history && history.length === 0 && (
-              <p>No history yet.</p>
+              <p>No history recorded yet for this device.</p>
             )}
             {!historyLoading && !historyError && history && history.length > 0 && (
               <ul className="space-y-1">

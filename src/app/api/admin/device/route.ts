@@ -6,14 +6,17 @@ import { Role } from '@prisma/client';
 export async function POST(req: NextRequest) {
   const me = await getCurrentUser();
   if (!me || me.role !== Role.ADMIN) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Your session has ended. Please sign in again.' }, { status: 401 });
   }
 
   const body = await req.json();
   const { entityId, name, area, label } = body;
 
   if (!entityId || !name) {
-    return NextResponse.json({ error: 'Missing entityId or name' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Please include both the device name and the entity id.' },
+      { status: 400 }
+    );
   }
 
   const admin = await prisma.user.findUnique({
@@ -23,7 +26,7 @@ export async function POST(req: NextRequest) {
 
   if (!admin || !admin.haConnection) {
     return NextResponse.json(
-      { error: 'Admin HA connection missing' },
+      { error: 'The homeowner’s Dinodia Hub connection is missing for this home.' },
       { status: 400 }
     );
   }

@@ -102,7 +102,10 @@ function getBucketInfo(bucket: Bucket, capturedAt: Date): BucketInfo {
 export async function GET(req: NextRequest) {
   const me = await getCurrentUser();
   if (!me || me.role !== Role.ADMIN) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'Your session has ended. Please sign in again.' },
+      { status: 401 }
+    );
   }
 
   const { searchParams } = new URL(req.url);
@@ -112,7 +115,7 @@ export async function GET(req: NextRequest) {
 
   if (!entityId || typeof entityId !== 'string' || entityId.trim().length === 0) {
     return NextResponse.json(
-      { error: 'Missing or invalid entityId' },
+      { error: 'Please select a valid device to view history.' },
       { status: 400 }
     );
   }

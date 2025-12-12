@@ -65,7 +65,7 @@ export async function getUserWithHaConnection(userId: number) {
   }
 
   if (!user || !haConnection) {
-    throw new Error('HA connection not configured');
+    throw new Error('Dinodia Hub connection isn’t set up yet for this home.');
   }
 
   return { user, haConnection };

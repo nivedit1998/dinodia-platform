@@ -209,7 +209,7 @@ export default function TenantSettings({ username }: Props) {
                 </div>
               </div>
               <p className="text-[11px] text-slate-500">
-                Minimum 8 characters. Contact your admin if you can&apos;t access your account.
+                Minimum 8 characters. If you can&apos;t access your account, ask the homeowner who set up Dinodia to help.
               </p>
               <button
                 type="submit"

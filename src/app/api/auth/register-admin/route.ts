@@ -17,12 +17,15 @@ export async function POST(req: NextRequest) {
     } = body;
 
     if (!username || !password || !haUsername || !haPassword || !haBaseUrl || !haLongLivedToken) {
-      return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Please fill in all fields to connect your Dinodia Hub.' },
+        { status: 400 }
+      );
     }
 
     const existing = await prisma.user.findUnique({ where: { username } });
     if (existing) {
-      return NextResponse.json({ error: 'Username already exists' }, { status: 400 });
+      return NextResponse.json({ error: 'That username is already taken. Try another one.' }, { status: 400 });
     }
 
     const passwordHash = await hashPassword(password);
@@ -61,6 +64,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, role: admin.role });
   } catch (err) {
     console.error(err);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'We couldn’t finish setting up the homeowner account. Please try again.' },
+      { status: 500 }
+    );
   }
 }

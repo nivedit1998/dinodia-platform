@@ -8,7 +8,7 @@ const MIN_PASSWORD_LENGTH = 8;
 export async function POST(req: NextRequest) {
   const me = await getCurrentUser();
   if (!me || me.role !== Role.ADMIN) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Your session has ended. Please sign in again.' }, { status: 401 });
   }
 
   let body: {
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid request. Please try again.' }, { status: 400 });
   }
 
   const { currentPassword, newPassword, confirmNewPassword } = body ?? {};
@@ -30,16 +30,16 @@ export async function POST(req: NextRequest) {
     typeof newPassword !== 'string' ||
     typeof confirmNewPassword !== 'string'
   ) {
-    return NextResponse.json({ error: 'All password fields are required' }, { status: 400 });
+    return NextResponse.json({ error: 'Please fill in all password fields.' }, { status: 400 });
   }
 
   if (newPassword !== confirmNewPassword) {
-    return NextResponse.json({ error: 'New passwords do not match' }, { status: 400 });
+    return NextResponse.json({ error: 'New passwords do not match.' }, { status: 400 });
   }
 
   if (newPassword.length < MIN_PASSWORD_LENGTH) {
     return NextResponse.json(
-      { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` },
+      { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` },
       { status: 400 }
     );
   }
@@ -49,17 +49,17 @@ export async function POST(req: NextRequest) {
     select: { passwordHash: true },
   });
   if (!user) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    return NextResponse.json({ error: 'User not found.' }, { status: 404 });
   }
 
   const valid = await verifyPassword(currentPassword, user.passwordHash);
   if (!valid) {
-    return NextResponse.json({ error: 'Current password is incorrect' }, { status: 400 });
+    return NextResponse.json({ error: 'Current password is incorrect.' }, { status: 400 });
   }
 
   if (currentPassword === newPassword) {
     return NextResponse.json(
-      { error: 'New password must be different from the current password' },
+      { error: 'New password must be different from the current password.' },
       { status: 400 }
     );
   }

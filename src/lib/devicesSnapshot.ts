@@ -70,7 +70,7 @@ async function fetchEnrichedDevicesWithFallback(
         '[devicesSnapshot] Failed to fetch devices from HA (cloud-first) after fallback:',
         fallbackErr
       );
-      throw new Error('Failed to fetch HA devices');
+      throw new Error('Dinodia Hub did not respond when loading devices.');
     }
   }
 

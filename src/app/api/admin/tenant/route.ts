@@ -7,14 +7,14 @@ import { getUserWithHaConnection } from '@/lib/haConnection';
 export async function POST(req: NextRequest) {
   const me = await getCurrentUser();
   if (!me || me.role !== Role.ADMIN) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Your session has ended. Please sign in again.' }, { status: 401 });
   }
 
   const body = await req.json();
   const { username, password, area, areas } = body;
 
   if (!username || !password) {
-    return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
+    return NextResponse.json({ error: 'Please enter a username and password.' }, { status: 400 });
   }
 
   const normalizedAreas = (() => {
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
 
   if (normalizedAreas.length === 0) {
     return NextResponse.json(
-      { error: 'At least one area is required for the tenant' },
+      { error: 'Add at least one room or area this tenant can access.' },
       { status: 400 }
     );
   }
@@ -47,14 +47,14 @@ export async function POST(req: NextRequest) {
     ({ haConnection } = await getUserWithHaConnection(me.id));
   } catch (err) {
     return NextResponse.json(
-      { error: (err as Error).message || 'Admin HA setup missing' },
+      { error: (err as Error).message || 'The Dinodia Hub connection isn’t set up yet for this home.' },
       { status: 400 }
     );
   }
 
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) {
-    return NextResponse.json({ error: 'Username already exists' }, { status: 400 });
+    return NextResponse.json({ error: 'That username is already in use. Try another one.' }, { status: 400 });
   }
 
   const passwordHash = await hashPassword(password);

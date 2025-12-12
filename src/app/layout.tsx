@@ -4,7 +4,7 @@ import { GlobalRefreshProvider } from '@/components/GlobalRefreshProvider';
 
 export const metadata: Metadata = {
   title: 'Dinodia Platform',
-  description: 'Dinodia smart home portal for Home Assistant',
+  description: 'Dinodia smart home portal for the Dinodia Hub (Home Assistant)',
 };
 
 export default function RootLayout({

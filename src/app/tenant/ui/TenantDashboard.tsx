@@ -78,6 +78,25 @@ export default function TenantDashboard(props: Props) {
   const areaMenuRef = useRef<HTMLDivElement | null>(null);
   const [showAlexaLink, setShowAlexaLink] = useState(false);
 
+  const resolveDeviceErrorMessage = useCallback(async (dataError?: string) => {
+    const fallback =
+      dataError ||
+      'We couldn’t load your devices. Please check your connection and try again.';
+    try {
+      const remoteRes = await fetch('/api/alexa/devices', {
+        cache: 'no-store',
+        credentials: 'include',
+      });
+      const remoteData = await remoteRes.json().catch(() => ({}));
+      if (remoteRes.ok && Array.isArray(remoteData.devices) && remoteData.devices.length === 0) {
+        return 'We couldn’t reach your home yet. The homeowner needs to finish setting up remote access in Dinodia Cloud.';
+      }
+    } catch {
+      // Ignore and fall back to the original message.
+    }
+    return fallback;
+  }, []);
+
   const loadDevices = useCallback(
     async (opts?: { silent?: boolean; force?: boolean }) => {
       const silent = opts?.silent ?? false;
@@ -115,7 +134,9 @@ export default function TenantDashboard(props: Props) {
         abortControllerRef.current = null;
 
         if (!res.ok) {
-          setError(data.error || 'Failed to load devices');
+          const friendly = await resolveDeviceErrorMessage(data.error);
+          if (latestRequestRef.current !== requestId) return;
+          setError(friendly);
           return;
         }
 
@@ -136,10 +157,12 @@ export default function TenantDashboard(props: Props) {
         console.error(err);
         setLoading(false);
         abortControllerRef.current = null;
-        setError('Failed to load devices');
+        const friendly = await resolveDeviceErrorMessage();
+        if (latestRequestRef.current !== requestId) return;
+        setError(friendly);
       }
     },
-    []
+    [resolveDeviceErrorMessage]
   );
 
   useEffect(() => {
@@ -480,8 +503,8 @@ export default function TenantDashboard(props: Props) {
 
           {sortedLabels.length === 0 && !isLoading && (
             <p className="rounded-3xl border border-slate-200/70 bg-white/70 px-6 py-10 text-center text-sm text-slate-500">
-              No devices available. Ask your Dinodia admin to confirm your
-              access.
+              No devices are linked to your account yet. Ask the homeowner who set up
+              Dinodia to confirm your access.
             </p>
           )}
         </div>

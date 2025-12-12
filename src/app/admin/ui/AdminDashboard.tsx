@@ -97,6 +97,25 @@ export default function AdminDashboard(props: Props) {
   const [areaMenuOpen, setAreaMenuOpen] = useState(false);
   const areaMenuRef = useRef<HTMLDivElement | null>(null);
 
+  const resolveDeviceErrorMessage = useCallback(async (dataError?: string) => {
+    const fallback =
+      dataError ||
+      'We couldn’t load your devices. Please check your connection and try again.';
+    try {
+      const remoteRes = await fetch('/api/alexa/devices', {
+        cache: 'no-store',
+        credentials: 'include',
+      });
+      const remoteData = await remoteRes.json().catch(() => ({}));
+      if (remoteRes.ok && Array.isArray(remoteData.devices) && remoteData.devices.length === 0) {
+        return 'We couldn’t reach your home yet. Finish setting up remote access in Dinodia Cloud so Dinodia can connect.';
+      }
+    } catch {
+      // Ignore and fall back to the original message.
+    }
+    return fallback;
+  }, []);
+
   const loadDevices = useCallback(
     async (opts?: { silent?: boolean; force?: boolean }) => {
       const silent = opts?.silent ?? false;
@@ -135,7 +154,9 @@ export default function AdminDashboard(props: Props) {
         abortControllerRef.current = null;
 
         if (!res.ok) {
-          setError(data.error || 'Failed to load devices');
+          const friendly = await resolveDeviceErrorMessage(data.error);
+          if (latestRequestRef.current !== requestId) return;
+          setError(friendly);
           return;
         }
 
@@ -172,10 +193,12 @@ export default function AdminDashboard(props: Props) {
         console.error(err);
         setLoading(false);
         abortControllerRef.current = null;
-        setError('Failed to load devices');
+        const friendly = await resolveDeviceErrorMessage();
+        if (latestRequestRef.current !== requestId) return;
+        setError(friendly);
       }
     },
-    []
+    [resolveDeviceErrorMessage]
   );
 
   useEffect(() => {
@@ -331,7 +354,9 @@ export default function AdminDashboard(props: Props) {
 
     const data = await res.json();
     if (!res.ok) {
-      setMessage(data.error || 'Failed to save device');
+      setMessage(
+        data.error || 'We couldn’t save that device. Please check the details and try again.'
+      );
     } else {
       setMessage('Device settings saved');
       setEditingDeviceId(null);
@@ -371,7 +396,7 @@ export default function AdminDashboard(props: Props) {
         <header className="sticky top-4 z-30 flex flex-col gap-3 rounded-2xl border border-white/60 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between sm:rounded-full sm:px-6 sm:py-2.5">
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400">
-              Dinodia Admin
+              Homeowner dashboard
             </p>
             <div className="relative inline-block" ref={areaMenuRef}>
               <button
@@ -453,7 +478,7 @@ export default function AdminDashboard(props: Props) {
                       className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
                       onClick={() => setMenuOpen(false)}
                     >
-                      Admin Settings
+                      Homeowner Settings
                     </Link>
                     <button
                       type="button"

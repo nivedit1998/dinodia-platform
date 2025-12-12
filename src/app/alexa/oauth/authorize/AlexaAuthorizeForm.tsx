@@ -27,13 +27,13 @@ export function AlexaAuthorizeForm() {
       const scope = params.get('scope');
 
       if (!clientId || !redirectUri) {
-        setError('Missing client_id or redirect_uri.');
+        setError('The Alexa link is missing some information. Please start linking again from the Alexa app.');
       }
 
       setOauth({ clientId, redirectUri, responseType, state, scope });
     } catch (err) {
       console.error('Failed to parse OAuth parameters', err);
-      setError('Invalid Alexa link. Please try again.');
+      setError('We couldn’t read that Alexa link. Please start linking again from the Alexa app.');
     }
   }, []);
 
@@ -42,7 +42,7 @@ export function AlexaAuthorizeForm() {
     setError(null);
 
     if (!oauth || !oauth.clientId || !oauth.redirectUri || !oauth.responseType) {
-      setError('Missing OAuth details. Please relaunch linking from Alexa.');
+      setError('Some link details are missing. Please start linking again from the Alexa app.');
       return;
     }
 
@@ -66,13 +66,13 @@ export function AlexaAuthorizeForm() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setError(data.error || 'Unable to link Alexa right now.');
+        setError(data.error || 'We couldn’t finish linking with Alexa. Please try again in a moment.');
         setLoading(false);
         return;
       }
 
       if (!data.redirectTo) {
-        setError('Missing redirect target.');
+        setError('We couldn’t finish the last step of linking. Please start again from the Alexa app.');
         setLoading(false);
         return;
       }
@@ -80,7 +80,7 @@ export function AlexaAuthorizeForm() {
       window.location.href = data.redirectTo as string;
     } catch (err) {
       console.error('Alexa authorize failed', err);
-      setError('Network error. Please try again.');
+      setError('We couldn’t reach Alexa right now. Please try again.');
       setLoading(false);
     }
   }

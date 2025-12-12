@@ -39,7 +39,10 @@ export default function RegisterAdminPage() {
     setLoading(false);
 
     if (!res.ok) {
-      setError(data.error || 'Registration failed');
+      setError(
+        data.error ||
+          'We couldn’t finish setting up the homeowner account. Please check the details and try again.'
+      );
       return;
     }
 
@@ -50,7 +53,7 @@ export default function RegisterAdminPage() {
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-xl bg-white shadow-lg rounded-2xl p-8">
         <h1 className="text-2xl font-semibold mb-4 text-center">
-          Register Dinodia Admin
+          Set up the homeowner account
         </h1>
 
         {error && (
@@ -82,11 +85,11 @@ export default function RegisterAdminPage() {
 
           <div className="border-t pt-4">
             <p className="text-xs text-slate-500 mb-2">
-              Home Assistant connection (Nabu Casa URL or local URL).
+              Dinodia Hub connection (Home Assistant / Nabu Casa URL or local URL).
             </p>
             <div className="space-y-3">
               <div>
-                <label className="block font-medium mb-1">HA Base URL</label>
+                <label className="block font-medium mb-1">Dinodia Hub local address</label>
                 <input
                   placeholder="http://homeassistant.local:8123/"
                   className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
@@ -96,7 +99,7 @@ export default function RegisterAdminPage() {
               </div>
               <div>
                 <label className="block font-medium mb-1">
-                  HA Cloud URL (optional)
+                  Dinodia Hub remote (Nabu Casa) address (optional)
                 </label>
                 <input
                   placeholder="https://example.ui.nabu.casa/"
@@ -107,7 +110,7 @@ export default function RegisterAdminPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-medium mb-1">HA Username</label>
+                  <label className="block font-medium mb-1">Dinodia Hub username</label>
                   <input
                     className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
                     value={form.haUsername}
@@ -115,7 +118,7 @@ export default function RegisterAdminPage() {
                   />
                 </div>
                 <div>
-                  <label className="block font-medium mb-1">HA Password</label>
+                  <label className="block font-medium mb-1">Dinodia Hub password</label>
                   <input
                     type="password"
                     className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
@@ -126,7 +129,7 @@ export default function RegisterAdminPage() {
               </div>
               <div>
                 <label className="block font-medium mb-1">
-                  HA Long-lived Access Token
+                  Dinodia Hub long-lived access token
                 </label>
                 <input
                   type="password"
@@ -145,7 +148,7 @@ export default function RegisterAdminPage() {
             disabled={loading}
             className="w-full mt-2 bg-indigo-600 text-white rounded-lg py-2 font-medium hover:bg-indigo-700 disabled:opacity-50"
           >
-            {loading ? 'Creating admin…' : 'Create Admin & Connect HA'}
+            {loading ? 'Connecting Dinodia Hub…' : 'Connect your Dinodia Hub'}
           </button>
           <button
             type="button"

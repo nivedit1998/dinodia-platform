@@ -25,7 +25,10 @@ export default function LoginPage() {
     setLoading(false);
 
     if (!res.ok) {
-      setError(data.error || 'Login failed');
+      setError(
+        data.error ||
+          'We couldn’t log you in. Check your username and password and try again.'
+      );
       return;
     }
 
@@ -85,7 +88,7 @@ export default function LoginPage() {
             className="text-indigo-600 hover:underline"
             onClick={() => router.push('/register-admin')}
           >
-            Register as Admin
+            Set up this home
           </button>
         </p>
       </div>

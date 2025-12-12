@@ -6,7 +6,12 @@ import { Role } from '@prisma/client';
 
 export async function GET(req: NextRequest) {
   const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!me) {
+    return NextResponse.json(
+      { error: 'Your session has ended. Please sign in again.' },
+      { status: 401 }
+    );
+  }
 
   const fresh = req.nextUrl.searchParams.get('fresh');
   const bypassCache = fresh === '1';
@@ -17,7 +22,7 @@ export async function GET(req: NextRequest) {
     ({ user, haConnection } = await getUserWithHaConnection(me.id));
   } catch (err) {
     return NextResponse.json(
-      { error: (err as Error).message || 'HA connection not configured' },
+      { error: (err as Error).message || 'Dinodia Hub connection isn’t set up yet for this home.' },
       { status: 400 }
     );
   }
@@ -28,7 +33,7 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     console.error('Failed to fetch devices from HA (cloud-first):', err);
     return NextResponse.json(
-      { error: 'Failed to fetch HA devices' },
+      { error: 'Dinodia Hub did not respond when loading devices.' },
       { status: 502 }
     );
   }

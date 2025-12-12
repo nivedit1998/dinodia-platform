@@ -6,7 +6,10 @@ import { getUserWithHaConnection } from '@/lib/haConnection';
 export async function GET() {
   const me = await getCurrentUser();
   if (!me || (me.role !== Role.TENANT && me.role !== Role.ADMIN)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'Your session has ended. Please sign in again.' },
+      { status: 401 }
+    );
   }
 
   try {
@@ -17,7 +20,7 @@ export async function GET() {
     return NextResponse.json({ supportsHoliday });
   } catch (err) {
     return NextResponse.json(
-      { error: (err as Error).message || 'HA connection not configured' },
+      { error: (err as Error).message || 'Dinodia Hub connection isn’t set up yet for this home.' },
       { status: 400 }
     );
   }

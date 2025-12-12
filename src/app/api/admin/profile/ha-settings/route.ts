@@ -10,10 +10,10 @@ function normalizeHaBaseUrl(value: string) {
   try {
     parsed = new URL(trimmed);
   } catch {
-    throw new Error('Invalid HA base URL');
+    throw new Error('That doesn’t look like a valid Dinodia Hub address. It should start with http:// or https://');
   }
   if (!['http:', 'https:'].includes(parsed.protocol)) {
-    throw new Error('HA base URL must start with http:// or https://');
+    throw new Error('Dinodia Hub addresses must start with http:// or https://');
   }
   return trimmed.replace(/\/+$/, '');
 }
@@ -22,14 +22,14 @@ async function ensureAdminWithConnection(adminId: number) {
   try {
     return await getUserWithHaConnection(adminId);
   } catch {
-    throw new Error('HA connection not configured');
+    throw new Error('Dinodia Hub connection isn’t set up yet for this home.');
   }
 }
 
 export async function GET() {
   const me = await getCurrentUser();
   if (!me || me.role !== Role.ADMIN) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Your session has ended. Please sign in again.' }, { status: 401 });
   }
 
   try {
@@ -44,7 +44,7 @@ export async function GET() {
     });
   } catch (err) {
     return NextResponse.json(
-      { error: (err as Error).message || 'Unable to load HA settings' },
+      { error: (err as Error).message || 'We couldn’t load your Dinodia Hub settings. Please try again.' },
       { status: 400 }
     );
   }
@@ -53,7 +53,7 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   const me = await getCurrentUser();
   if (!me || me.role !== Role.ADMIN) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Your session has ended. Please sign in again.' }, { status: 401 });
   }
 
   let body: {
@@ -66,16 +66,22 @@ export async function PUT(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid request. Please check the details and try again.' }, { status: 400 });
   }
 
   const { haUsername, haPassword, haBaseUrl, haCloudUrl, haLongLivedToken } = body ?? {};
 
   if (typeof haUsername !== 'string' || !haUsername.trim()) {
-    return NextResponse.json({ error: 'HA username is required' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Enter the username you use to sign into your Dinodia Hub.' },
+      { status: 400 }
+    );
   }
   if (typeof haBaseUrl !== 'string' || !haBaseUrl.trim()) {
-    return NextResponse.json({ error: 'HA base URL is required' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Enter the local address of your Dinodia Hub (for example, http://homeassistant.local:8123).' },
+      { status: 400 }
+    );
   }
 
   let normalizedBaseUrl: string;
@@ -99,7 +105,7 @@ export async function PUT(req: NextRequest) {
     haContext = await ensureAdminWithConnection(me.id);
   } catch (err) {
     return NextResponse.json(
-      { error: (err as Error).message || 'HA connection not configured' },
+      { error: (err as Error).message || 'Dinodia Hub connection isn’t set up yet for this home.' },
       { status: 400 }
     );
   }

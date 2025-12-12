@@ -6,12 +6,18 @@ export async function POST(req: NextRequest) {
     const { username, password } = await req.json();
 
     if (!username || !password) {
-      return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Please enter both a username and password.' },
+        { status: 400 }
+      );
     }
 
     const user = await authenticateWithCredentials(username, password);
     if (!user) {
-      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Those details don’t match any Dinodia account.' },
+        { status: 401 }
+      );
     }
 
     await createSessionForUser(user);
@@ -19,7 +25,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, role: user.role });
   } catch (err) {
     console.error(err);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'We couldn’t log you in right now. Please try again in a moment.' },
+      { status: 500 }
+    );
   }
 }
 

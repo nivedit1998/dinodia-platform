@@ -9,7 +9,10 @@ import {
 export async function POST(req: NextRequest) {
   const authUser = await resolveAlexaAuthUser(req);
   if (!authUser) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'Your session has ended. Please sign in again.' },
+      { status: 401 }
+    );
   }
 
   const body = await req.json().catch(() => null);

@@ -80,7 +80,10 @@ export default function AdminSettings({ username }: Props) {
         const res = await fetch('/api/admin/profile/ha-settings');
         const data = await res.json();
         if (!res.ok) {
-          throw new Error(data.error || 'Unable to load HA settings');
+          throw new Error(
+            data.error ||
+              'We couldn’t load your Dinodia Hub settings. Please check the connection details or try again.'
+          );
         }
         if (!mounted) return;
         setHaForm((prev) => ({
@@ -99,7 +102,9 @@ export default function AdminSettings({ username }: Props) {
       } catch (err) {
         if (!mounted) return;
         setHaBootstrapError(
-          err instanceof Error ? err.message : 'Unable to load HA settings'
+          err instanceof Error
+            ? err.message
+            : 'We couldn’t load your Dinodia Hub settings. Please try again.'
         );
       } finally {
         if (mounted) {
@@ -180,7 +185,7 @@ export default function AdminSettings({ username }: Props) {
         status: hasDevices ? 'enabled' : 'disabled',
         message: hasDevices
           ? null
-          : 'Complete the steps below to finish enabling remote access.',
+          : 'Remote access isn’t turned on yet. Complete the steps below so Dinodia can reach your home when you’re away.',
       });
       setAlexaDevicesAvailable(hasDevices);
       if (hasDevices) {
@@ -192,7 +197,10 @@ export default function AdminSettings({ username }: Props) {
     } catch (err) {
       setRemoteStatus({
         status: 'error',
-        message: err instanceof Error ? err.message : 'Unable to check remote access',
+        message:
+          err instanceof Error
+            ? err.message
+            : 'We couldn’t check remote access. Make sure your Dinodia Hub is online and signed into Nabu Casa, then try again.',
       });
       setAlexaDevicesAvailable(false);
     }
@@ -227,7 +235,9 @@ export default function AdminSettings({ username }: Props) {
       const data = await res.json();
 
       if (!res.ok) {
-        setTenantMsg(data.error || 'Failed to create tenant');
+        setTenantMsg(
+          data.error || 'We couldn’t create this tenant right now. Please try again.'
+        );
         return;
       }
 
@@ -236,7 +246,7 @@ export default function AdminSettings({ username }: Props) {
       setNewAreaInput('');
     } catch (err) {
       console.error('Failed to create tenant', err);
-      setTenantMsg('Failed to create tenant');
+      setTenantMsg('We couldn’t create this tenant right now. Please try again.');
     } finally {
       setTenantLoading(false);
     }
@@ -247,7 +257,7 @@ export default function AdminSettings({ username }: Props) {
     setPasswordAlert(null);
 
     if (passwordForm.newPassword !== passwordForm.confirmNewPassword) {
-      setPasswordAlert({ type: 'error', message: 'New passwords do not match' });
+      setPasswordAlert({ type: 'error', message: 'New passwords do not match.' });
       return;
     }
 
@@ -260,14 +270,19 @@ export default function AdminSettings({ username }: Props) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Unable to update password');
+        throw new Error(
+          data.error || 'We couldn’t update your password right now. Please try again.'
+        );
       }
-      setPasswordAlert({ type: 'success', message: 'Password updated successfully' });
+      setPasswordAlert({ type: 'success', message: 'Password updated successfully.' });
       setPasswordForm(EMPTY_PASSWORD_FORM);
     } catch (err) {
       setPasswordAlert({
         type: 'error',
-        message: err instanceof Error ? err.message : 'Unable to update password',
+        message:
+          err instanceof Error
+            ? err.message
+            : 'We couldn’t update your password right now. Please try again.',
       });
     } finally {
       setPasswordLoading(false);
@@ -302,7 +317,10 @@ export default function AdminSettings({ username }: Props) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Unable to update HA settings');
+        throw new Error(
+          data.error ||
+            'We couldn’t save these Dinodia Hub settings. Please check the details and try again.'
+        );
       }
       setHaAlert({
         type: 'success',
@@ -327,7 +345,10 @@ export default function AdminSettings({ username }: Props) {
     } catch (err) {
       setHaAlert({
         type: 'error',
-        message: err instanceof Error ? err.message : 'Unable to save remote access link',
+        message:
+          err instanceof Error
+            ? err.message
+            : 'We couldn’t save your remote access link. Please try again.',
       });
     } finally {
       setHaLoading(false);
@@ -367,10 +388,11 @@ export default function AdminSettings({ username }: Props) {
 
   const remoteStatusCopy =
     remoteStatus.status === 'enabled'
-      ? 'Remote access enabled via Nabu Casa — Alexa can now reach your devices remotely.'
+      ? 'Remote access is enabled via Nabu Casa — Dinodia can reach your home when you’re away.'
       : remoteStatus.status === 'checking'
       ? 'Checking remote access status…'
-      : remoteStatus.message || 'Remote access is not configured yet.';
+      : remoteStatus.message ||
+        'Remote access isn’t turned on yet. Complete the steps below so Dinodia can reach your home when you’re away.';
   const showHaAdminCredentials =
     (haCredentials.username && haCredentials.username.trim().length > 0) ||
     (haCredentials.password && haCredentials.password.trim().length > 0);
@@ -379,7 +401,7 @@ export default function AdminSettings({ username }: Props) {
     <div className="w-full max-w-4xl bg-white rounded-2xl shadow-lg p-4 sm:p-6 flex flex-col gap-5 sm:gap-6">
       <header className="flex flex-col gap-3 border-b pb-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold leading-snug">Dinodia Admin Settings</h1>
+          <h1 className="text-2xl font-semibold leading-snug">Homeowner Settings</h1>
           <p className="text-xs text-slate-500">
             Logged in as <span className="font-medium">{username}</span>
           </p>
@@ -543,8 +565,8 @@ export default function AdminSettings({ username }: Props) {
                       Step 1 – Confirm you&apos;re at the property
                     </p>
                     <p className="mt-1 text-[11px] text-slate-500">
-                      You must be on the home Wi-Fi so the Dinodia tablet can reach Home
-                      Assistant locally while you finish the setup.
+                      You must be on the home Wi-Fi so the Dinodia tablet can reach your
+                      Dinodia Hub (Home Assistant) locally while you finish the setup.
                     </p>
                     <button
                       type="button"
@@ -567,7 +589,7 @@ export default function AdminSettings({ username }: Props) {
                     </p>
                     <p className="mt-1 text-[11px] text-slate-500">
                       You need a Nabu Casa account and subscription to unlock secure remote
-                      access.
+                      access for Dinodia Cloud.
                     </p>
                     <a
                       href="https://account.nabucasa.com/"
@@ -590,16 +612,16 @@ export default function AdminSettings({ username }: Props) {
 
                   <div className="rounded-xl border border-slate-200 p-4">
                     <p className="text-sm font-semibold">
-                      Step 3 – Connect Home Assistant to Nabu Casa
+                      Step 3 – Connect your Dinodia Hub (Home Assistant) to Nabu Casa
                     </p>
                     <p className="mt-1 text-[11px] text-slate-500">
-                      Log into Home Assistant with the admin credentials. Open the Cloud page
-                      and sign in with the same Nabu Casa email &amp; password.
+                      Open your Dinodia Hub (Home Assistant) with the homeowner login. Open
+                      the Cloud page and sign in with the same Nabu Casa email &amp; password.
                     </p>
                     {showHaAdminCredentials && (
                       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
                         <p className="text-sm font-semibold">
-                          Home Assistant admin login — keep this secret
+                          Dinodia Hub (Home Assistant) homeowner login — keep this secret
                         </p>
                         <dl className="mt-3 space-y-2 text-xs text-amber-900/90">
                           <div>
@@ -631,7 +653,7 @@ export default function AdminSettings({ username }: Props) {
                       rel="noreferrer"
                       className="mt-3 inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
                     >
-                      Open Home Assistant Cloud settings
+                      Open Dinodia Hub (Home Assistant) Cloud settings
                     </a>
                     <label className="mt-3 flex items-center gap-2 text-xs text-slate-600">
                       <input
@@ -640,7 +662,7 @@ export default function AdminSettings({ username }: Props) {
                         checked={haCloudConfirmed}
                         onChange={(e) => setHaCloudConfirmed(e.target.checked)}
                       />
-                      I&apos;ve logged into Home Assistant and Nabu Casa Cloud.
+                      I&apos;ve logged into my Dinodia Hub (Home Assistant) and Nabu Casa Cloud.
                     </label>
                   </div>
 
@@ -649,7 +671,7 @@ export default function AdminSettings({ username }: Props) {
                       Step 4 – Save your remote access link
                     </p>
                     <p className="mt-1 text-[11px] text-slate-500">
-                      Home Assistant now shows a <strong>Remote access</strong> link at the
+                      Your Dinodia Hub (Home Assistant) now shows a <strong>Remote access</strong> link at the
                       top of that Cloud page. Copy it exactly and paste it below.
                     </p>
                     <form onSubmit={handleHaSubmit} className="mt-3 space-y-3">
@@ -665,8 +687,8 @@ export default function AdminSettings({ username }: Props) {
                           disabled={haInitialLoading}
                         />
                         <p className="text-[11px] text-slate-500 mt-1">
-                          This should match the URL under Remote access on the Home Assistant
-                          Cloud page.
+                          This should match the URL under Remote access on the Dinodia Hub
+                          (Home Assistant) Cloud page.
                         </p>
                       </div>
                       <button
@@ -788,7 +810,7 @@ export default function AdminSettings({ username }: Props) {
                 </div>
               )}
               <p className="mt-1 text-[11px] text-slate-500">
-                Add one or more rooms. Suggestions come from your Home Assistant areas.
+                Add one or more rooms. Suggestions come from your Dinodia Hub (Home Assistant) areas.
               </p>
             </div>
             <button
