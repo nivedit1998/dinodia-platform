@@ -149,8 +149,19 @@ export function getDeviceSecondaryText(label: string, device: UIDevice) {
       }
       return capitalizeState(device.state);
     }
-    case 'Blind':
+    case 'Blind': {
+      const rawPosition =
+        typeof attrs.current_position === 'number'
+          ? (attrs.current_position as number)
+          : typeof attrs.position === 'number'
+          ? (attrs.position as number)
+          : null;
+      if (rawPosition !== null) {
+        const position = Math.round(Math.min(100, Math.max(0, rawPosition)));
+        return `${position}% open`;
+      }
       return capitalizeState(device.state);
+    }
     case 'Motion Sensor':
       return device.state.toLowerCase() === 'on' ? 'Motion detected' : 'No motion';
     case 'Spotify':

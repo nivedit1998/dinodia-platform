@@ -234,28 +234,46 @@ function renderBlindControls({
   pendingCommand: string | null;
   sendCommand: (payload: ControlPayload) => Promise<void>;
 }) {
+  const attrs = device.attributes || {};
+  const rawPosition =
+    typeof attrs.current_position === 'number'
+      ? (attrs.current_position as number)
+      : typeof attrs.position === 'number'
+      ? (attrs.position as number)
+      : null;
+  const position =
+    rawPosition === null ? null : Math.round(Math.min(100, Math.max(0, rawPosition)));
+
   return (
-    <div className="grid grid-cols-2 gap-4">
-      <button
-        type="button"
-        onClick={() =>
-          sendCommand({ entityId: device.entityId, command: 'blind/open' })
-        }
-        disabled={pendingCommand !== null}
-        className="rounded-2xl bg-gradient-to-br from-sky-200 to-sky-100 py-4 text-sky-900 font-semibold shadow-sm"
-      >
-        Open
-      </button>
-      <button
-        type="button"
-        onClick={() =>
-          sendCommand({ entityId: device.entityId, command: 'blind/close' })
-        }
-        disabled={pendingCommand !== null}
-        className="rounded-2xl bg-gradient-to-br from-slate-200 to-slate-100 py-4 text-slate-800 font-semibold shadow-sm"
-      >
-        Close
-      </button>
+    <div className="space-y-4">
+      {position !== null && (
+        <div className="text-sm text-slate-600">
+          Position:{' '}
+          <span className="font-semibold text-slate-900">{position}% open</span>
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-4">
+        <button
+          type="button"
+          onClick={() =>
+            sendCommand({ entityId: device.entityId, command: 'blind/open' })
+          }
+          disabled={pendingCommand !== null}
+          className="rounded-2xl bg-gradient-to-br from-sky-200 to-sky-100 py-4 text-sky-900 font-semibold shadow-sm"
+        >
+          Open
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            sendCommand({ entityId: device.entityId, command: 'blind/close' })
+          }
+          disabled={pendingCommand !== null}
+          className="rounded-2xl bg-gradient-to-br from-slate-200 to-slate-100 py-4 text-slate-800 font-semibold shadow-sm"
+        >
+          Close
+        </button>
+      </div>
     </div>
   );
 }

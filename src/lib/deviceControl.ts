@@ -1,5 +1,10 @@
 import { callHaService, fetchHaState, HaConnectionLike } from '@/lib/homeAssistant';
 
+const BLIND_OPEN_SCRIPT_ENTITY_ID =
+  process.env.HA_BLIND_OPEN_SCRIPT_ENTITY_ID || 'script.openblind';
+const BLIND_CLOSE_SCRIPT_ENTITY_ID =
+  process.env.HA_BLIND_CLOSE_SCRIPT_ENTITY_ID || 'script.closeblind';
+
 export const DEVICE_CONTROL_NUMERIC_COMMANDS = new Set([
   'light/set_brightness',
   'media/volume_set',
@@ -39,10 +44,14 @@ export async function executeDeviceCommand(
       });
       break;
     case 'blind/open':
-      await callHaService(haConnection, 'cover', 'open_cover', { entity_id: entityId });
+      await callHaService(haConnection, 'script', 'turn_on', {
+        entity_id: BLIND_OPEN_SCRIPT_ENTITY_ID,
+      });
       break;
     case 'blind/close':
-      await callHaService(haConnection, 'cover', 'close_cover', { entity_id: entityId });
+      await callHaService(haConnection, 'script', 'turn_on', {
+        entity_id: BLIND_CLOSE_SCRIPT_ENTITY_ID,
+      });
       break;
     case 'media/play_pause':
       await callHaService(
