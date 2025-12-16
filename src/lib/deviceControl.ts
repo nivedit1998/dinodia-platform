@@ -47,6 +47,12 @@ export async function executeDeviceCommand(
   options?: { source?: DeviceCommandSource }
 ) {
   const source: DeviceCommandSource = options?.source ?? 'app';
+  console.log('AlexaChangeReport: executeDeviceCommand', {
+    entityId,
+    command,
+    source,
+    alexaLabel: getAlexaLabelForCommand(command) ?? null,
+  });
   const state = await fetchHaState(haConnection, entityId);
   const currentState = String(state.state ?? '');
   const domain = entityId.split('.')[0];
@@ -188,11 +194,21 @@ function scheduleAlexaChangeReport(
   source: DeviceCommandSource
 ) {
   if (!shouldSendAlexaEvents()) {
+    console.log('AlexaChangeReport: skipping scheduleAlexaChangeReport', {
+      entityId: snapshot.entityId,
+      commandLabel: snapshot.label,
+      source,
+      reason: 'shouldSendAlexaEvents=false',
+    });
     return;
   }
 
   const previousProperties = buildAlexaPropertiesForDevice(snapshot, snapshot.label);
   if (previousProperties.length === 0) {
+    console.log('AlexaChangeReport: skipping, no previous properties', {
+      entityId: snapshot.entityId,
+      label: snapshot.label,
+    });
     return;
   }
 
@@ -235,14 +251,28 @@ function scheduleAlexaChangeReport(
     );
 
     if (nextProperties.length === 0) {
+      console.log('AlexaChangeReport: skipping, no next properties', {
+        entityId: snapshot.entityId,
+        label: snapshot.label,
+      });
       return;
     }
 
     if (!haveAlexaPropertiesChanged(previousProperties, nextProperties)) {
+      console.log('AlexaChangeReport: skipping, properties unchanged', {
+        entityId: snapshot.entityId,
+        label: snapshot.label,
+      });
       return;
     }
 
     try {
+      console.log('AlexaChangeReport: sending', {
+        endpointId: snapshot.entityId,
+        label: snapshot.label,
+        causeType,
+        namespaces: nextProperties.map((p) => p.namespace),
+      });
       await sendAlexaChangeReport(snapshot.entityId, nextProperties, causeType);
     } catch (err) {
       console.error(
@@ -269,10 +299,19 @@ function haveAlexaPropertiesChanged(prev: AlexaProperty[], next: AlexaProperty[]
   return JSON.stringify(normalize(prev)) !== JSON.stringify(normalize(next));
 }
 
-function shouldSendAlexaEvents() {
-  return Boolean(
-    process.env.ALEXA_EVENT_GATEWAY_ENDPOINT &&
-      process.env.ALEXA_CLIENT_ID &&
-      process.env.ALEXA_CLIENT_SECRET
-  );
+function shouldSendAlexaEvents(): boolean {
+  const hasGateway = !!process.env.ALEXA_EVENT_GATEWAY_ENDPOINT;
+  const hasClientId = !!process.env.ALEXA_CLIENT_ID;
+  const hasClientSecret = !!process.env.ALEXA_CLIENT_SECRET;
+
+  const ok = hasGateway && hasClientId && hasClientSecret;
+
+  console.log('AlexaChangeReport: shouldSendAlexaEvents', {
+    hasGateway,
+    hasClientId,
+    hasClientSecret,
+    ok,
+  });
+
+  return ok;
 }

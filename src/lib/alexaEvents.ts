@@ -100,6 +100,13 @@ export async function sendAlexaChangeReport(
   const gateway = getGatewayEndpoint();
   const token = await getAlexaEventAccessToken();
 
+  console.log('[alexaEvents] ChangeReport POST', {
+    endpoint: gateway,
+    endpointId,
+    causeType,
+    namespaces: properties.map((p) => p.namespace),
+  });
+
   const changePayload = {
     event: {
       header: {
@@ -134,8 +141,16 @@ export async function sendAlexaChangeReport(
     body: JSON.stringify(changePayload),
   });
 
+  const text = await res.text().catch(() => '');
+
+  console.log('[alexaEvents] ChangeReport response', {
+    endpointId,
+    status: res.status,
+    ok: res.ok,
+    bodySnippet: text.slice(0, 200),
+  });
+
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
     console.error(
       '[alexaEvents] ChangeReport failed',
       endpointId,
