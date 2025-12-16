@@ -53,6 +53,11 @@ export async function getAlexaEventAccessToken(): Promise<string> {
     scope: 'alexa::async_event:send',
   });
 
+  console.log('[alexaEvents] Requesting LWA token', {
+    endpoint: 'https://api.amazon.com/auth/o2/token',
+    scope: 'alexa::async_event:send',
+  });
+
   const res = await fetch('https://api.amazon.com/auth/o2/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
