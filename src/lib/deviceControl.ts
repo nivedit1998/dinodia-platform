@@ -1,3 +1,9 @@
+import {
+  AlexaDeviceStateLike,
+  AlexaProperty,
+  buildAlexaPropertiesForDevice,
+} from '@/lib/alexaProperties';
+import { sendAlexaChangeReport } from '@/lib/alexaEvents';
 import { callHaService, fetchHaState, HaConnectionLike } from '@/lib/homeAssistant';
 
 const BLIND_OPEN_SCRIPT_ENTITY_ID =
@@ -18,6 +24,21 @@ export const DEVICE_CONTROL_NUMERIC_COMMANDS = new Set([
 
 type DeviceCommandSource = 'app' | 'alexa';
 
+const ALEXA_REPORTABLE_COMMANDS: Record<string, { label: string }> = {
+  'light/toggle': { label: 'light' },
+  'light/set_brightness': { label: 'light' },
+  'blind/open': { label: 'blind' },
+  'blind/close': { label: 'blind' },
+  'tv/toggle_power': { label: 'tv' },
+  'speaker/toggle_power': { label: 'speaker' },
+  'boiler/temp_up': { label: 'boiler' },
+  'boiler/temp_down': { label: 'boiler' },
+};
+
+function getAlexaLabelForCommand(command: string): string | null {
+  return ALEXA_REPORTABLE_COMMANDS[command]?.label ?? null;
+}
+
 export async function executeDeviceCommand(
   haConnection: HaConnectionLike,
   entityId: string,
@@ -30,6 +51,15 @@ export async function executeDeviceCommand(
   const currentState = String(state.state ?? '');
   const domain = entityId.split('.')[0];
   const attrs = (state.attributes ?? {}) as Record<string, unknown>;
+  const alexaLabel = getAlexaLabelForCommand(command);
+  const previousSnapshot: AlexaChangeReportSnapshot | null = alexaLabel
+    ? {
+        entityId,
+        state: currentState,
+        attributes: attrs,
+        label: alexaLabel,
+      }
+    : null;
 
   switch (command) {
     case 'light/toggle':
@@ -131,8 +161,118 @@ export async function executeDeviceCommand(
     default:
       throw new Error(`Unsupported command ${command}`);
   }
+
+  if (previousSnapshot) {
+    scheduleAlexaChangeReport(haConnection, previousSnapshot, source);
+  }
 }
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+const DEFAULT_CHANGE_REPORT_DELAY_MS = 500;
+
+function getChangeReportDelayMs() {
+  const raw = process.env.ALEXA_EVENT_STATE_REFRESH_DELAY_MS;
+  if (!raw) return DEFAULT_CHANGE_REPORT_DELAY_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_CHANGE_REPORT_DELAY_MS;
+}
+
+type AlexaChangeReportSnapshot = AlexaDeviceStateLike & { label: string };
+
+function scheduleAlexaChangeReport(
+  haConnection: HaConnectionLike,
+  snapshot: AlexaChangeReportSnapshot,
+  source: DeviceCommandSource
+) {
+  if (!shouldSendAlexaEvents()) {
+    return;
+  }
+
+  const previousProperties = buildAlexaPropertiesForDevice(snapshot, snapshot.label);
+  if (previousProperties.length === 0) {
+    return;
+  }
+
+  const causeType =
+    source === 'alexa'
+      ? 'VOICE_INTERACTION'
+      : source === 'app'
+      ? 'APP_INTERACTION'
+      : 'PHYSICAL_INTERACTION';
+
+  const delayMs = getChangeReportDelayMs();
+
+  const runner = async () => {
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+
+    let latestState = snapshot.state;
+    let latestAttrs = snapshot.attributes;
+    try {
+      const refreshed = await fetchHaState(haConnection, snapshot.entityId);
+      latestState = String(refreshed.state ?? latestState);
+      latestAttrs = (refreshed.attributes ?? {}) as Record<string, unknown>;
+    } catch (err) {
+      console.warn(
+        '[deviceControl] Failed to refresh HA state for Alexa ChangeReport',
+        snapshot.entityId,
+        err
+      );
+    }
+
+    const nextProperties = buildAlexaPropertiesForDevice(
+      {
+        entityId: snapshot.entityId,
+        state: latestState,
+        attributes: latestAttrs,
+        label: snapshot.label,
+      },
+      snapshot.label
+    );
+
+    if (nextProperties.length === 0) {
+      return;
+    }
+
+    if (!haveAlexaPropertiesChanged(previousProperties, nextProperties)) {
+      return;
+    }
+
+    try {
+      await sendAlexaChangeReport(snapshot.entityId, nextProperties, causeType);
+    } catch (err) {
+      console.error(
+        '[deviceControl] Failed to send Alexa ChangeReport',
+        snapshot.entityId,
+        err
+      );
+    }
+  };
+
+  void runner();
+}
+
+function haveAlexaPropertiesChanged(prev: AlexaProperty[], next: AlexaProperty[]) {
+  if (prev.length !== next.length) return true;
+  const normalize = (props: AlexaProperty[]) =>
+    props.map((prop) => ({
+      namespace: prop.namespace,
+      name: prop.name,
+      instance: prop.instance ?? null,
+      value: prop.value,
+    }));
+
+  return JSON.stringify(normalize(prev)) !== JSON.stringify(normalize(next));
+}
+
+function shouldSendAlexaEvents() {
+  return Boolean(
+    process.env.ALEXA_EVENT_GATEWAY_ENDPOINT &&
+      process.env.ALEXA_CLIENT_ID &&
+      process.env.ALEXA_CLIENT_SECRET
+  );
 }
