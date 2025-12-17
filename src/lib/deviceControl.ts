@@ -178,12 +178,33 @@ function clamp(value: number, min: number, max: number) {
 }
 
 const DEFAULT_CHANGE_REPORT_DELAY_MS = 500;
+const DEFAULT_LIGHT_CHANGE_REPORT_DELAY_MS = 4000;
+const DEFAULT_BLIND_CHANGE_REPORT_DELAY_MS = 30000;
 
-function getChangeReportDelayMs() {
-  const raw = process.env.ALEXA_EVENT_STATE_REFRESH_DELAY_MS;
-  if (!raw) return DEFAULT_CHANGE_REPORT_DELAY_MS;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_CHANGE_REPORT_DELAY_MS;
+function getChangeReportDelayMs(label: string) {
+  const normalized = label.toLowerCase();
+
+  const parseDelay = (raw: string | undefined | null, fallback: number) => {
+    if (!raw) return fallback;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  };
+
+  if (normalized === 'blind') {
+    return parseDelay(
+      process.env.ALEXA_EVENT_STATE_REFRESH_DELAY_BLIND_MS,
+      DEFAULT_BLIND_CHANGE_REPORT_DELAY_MS
+    );
+  }
+
+  if (normalized === 'light') {
+    return parseDelay(
+      process.env.ALEXA_EVENT_STATE_REFRESH_DELAY_LIGHT_MS,
+      DEFAULT_LIGHT_CHANGE_REPORT_DELAY_MS
+    );
+  }
+
+  return parseDelay(process.env.ALEXA_EVENT_STATE_REFRESH_DELAY_MS, DEFAULT_CHANGE_REPORT_DELAY_MS);
 }
 
 type AlexaChangeReportSnapshot = AlexaDeviceStateLike & { label: string };
@@ -219,7 +240,7 @@ async function scheduleAlexaChangeReport(
       ? 'APP_INTERACTION'
       : 'PHYSICAL_INTERACTION';
 
-  const delayMs = getChangeReportDelayMs();
+  const delayMs = getChangeReportDelayMs(snapshot.label);
 
   if (delayMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, delayMs));
