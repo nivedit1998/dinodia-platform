@@ -6,22 +6,20 @@ import {
 import { sendAlexaChangeReport } from '@/lib/alexaEvents';
 import { callHaService, fetchHaState, HaConnectionLike } from '@/lib/homeAssistant';
 
-const BLIND_OPEN_SCRIPT_ENTITY_ID =
-  process.env.HA_BLIND_OPEN_SCRIPT_ENTITY_ID || 'script.openblind';
-const BLIND_CLOSE_SCRIPT_ENTITY_ID =
-  process.env.HA_BLIND_CLOSE_SCRIPT_ENTITY_ID || 'script.closeblind';
-
-// Alexa-specific blind scripts (fallback to generic ones if not set)
-const ALEXA_BLIND_OPEN_SCRIPT_ENTITY_ID =
-  process.env.HA_ALEXA_BLIND_OPEN_SCRIPT_ENTITY_ID || BLIND_OPEN_SCRIPT_ENTITY_ID;
-const ALEXA_BLIND_CLOSE_SCRIPT_ENTITY_ID =
-  process.env.HA_ALEXA_BLIND_CLOSE_SCRIPT_ENTITY_ID || BLIND_CLOSE_SCRIPT_ENTITY_ID;
+const BLIND_GLOBAL_CONTROLLER_SCRIPT_ENTITY_ID =
+  process.env.HA_BLIND_GLOBAL_CONTROLLER_SCRIPT_ENTITY_ID ||
+  'script.global_blind_controller';
+const BLIND_GLOBAL_CONTROLLER_SCRIPT_SERVICE =
+  BLIND_GLOBAL_CONTROLLER_SCRIPT_ENTITY_ID.startsWith('script.')
+    ? BLIND_GLOBAL_CONTROLLER_SCRIPT_ENTITY_ID.slice('script.'.length)
+    : null;
 
 const DEFAULT_BLIND_TRAVEL_SECONDS = Number(process.env.HA_BLIND_TRAVEL_SECONDS || '22');
 
 export const DEVICE_CONTROL_NUMERIC_COMMANDS = new Set([
   'light/set_brightness',
   'media/volume_set',
+  'blind/set_position',
 ]);
 
 type DeviceCommandSource = 'app' | 'alexa';
@@ -33,6 +31,7 @@ type DeviceCommandOptions = {
 const ALEXA_REPORTABLE_COMMANDS: Record<string, { label: string }> = {
   'light/toggle': { label: 'light' },
   'light/set_brightness': { label: 'light' },
+  'blind/set_position': { label: 'blind' },
   'blind/open': { label: 'blind' },
   'blind/close': { label: 'blind' },
   'tv/toggle_power': { label: 'tv' },
@@ -96,27 +95,28 @@ export async function executeDeviceCommand(
         brightness_pct: clamp(value ?? 0, 0, 100),
       });
       break;
+    case 'blind/set_position': {
+      const target = clamp(value ?? 0, 0, 100);
+      await callBlindGlobalController(haConnection, {
+        target_cover: entityId,
+        target_position: target,
+        travel_seconds: DEFAULT_BLIND_TRAVEL_SECONDS,
+      });
+      break;
+    }
     case 'blind/open': {
-      const scriptEntityId =
-        source === 'alexa' ? ALEXA_BLIND_OPEN_SCRIPT_ENTITY_ID : BLIND_OPEN_SCRIPT_ENTITY_ID;
-      await callHaService(haConnection, 'script', 'turn_on', {
-        entity_id: scriptEntityId,
-        variables: {
-          target_cover: entityId,
-          travel_seconds: DEFAULT_BLIND_TRAVEL_SECONDS,
-        },
+      await callBlindGlobalController(haConnection, {
+        target_cover: entityId,
+        target_position: 100,
+        travel_seconds: DEFAULT_BLIND_TRAVEL_SECONDS,
       });
       break;
     }
     case 'blind/close': {
-      const scriptEntityId =
-        source === 'alexa' ? ALEXA_BLIND_CLOSE_SCRIPT_ENTITY_ID : BLIND_CLOSE_SCRIPT_ENTITY_ID;
-      await callHaService(haConnection, 'script', 'turn_on', {
-        entity_id: scriptEntityId,
-        variables: {
-          target_cover: entityId,
-          travel_seconds: DEFAULT_BLIND_TRAVEL_SECONDS,
-        },
+      await callBlindGlobalController(haConnection, {
+        target_cover: entityId,
+        target_position: 0,
+        travel_seconds: DEFAULT_BLIND_TRAVEL_SECONDS,
       });
       break;
     }
@@ -186,6 +186,25 @@ export async function executeDeviceCommand(
   if (previousSnapshot) {
     await scheduleAlexaChangeReport(haConnection, previousSnapshot, source, userId);
   }
+}
+
+async function callBlindGlobalController(
+  haConnection: HaConnectionLike,
+  payload: {
+    target_cover: string;
+    target_position: number;
+    travel_seconds: number;
+  }
+) {
+  if (BLIND_GLOBAL_CONTROLLER_SCRIPT_SERVICE) {
+    await callHaService(haConnection, 'script', BLIND_GLOBAL_CONTROLLER_SCRIPT_SERVICE, payload);
+    return;
+  }
+
+  await callHaService(haConnection, 'script', 'turn_on', {
+    entity_id: BLIND_GLOBAL_CONTROLLER_SCRIPT_ENTITY_ID,
+    variables: payload,
+  });
 }
 
 function clamp(value: number, min: number, max: number) {
