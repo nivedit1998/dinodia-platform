@@ -42,12 +42,26 @@ export function buildAlexaPropertiesForDevice(
       ];
     }
     case 'blind': {
-      return [
+      const position = getBlindPosition(device.attributes ?? {});
+      const properties: AlexaProperty[] = [
         buildPowerProperty({
           isOn: isBlindOpenFromState(device.state, device.attributes),
           sampleTime,
         }),
       ];
+
+      if (position !== null) {
+        properties.push({
+          namespace: 'Alexa.RangeController',
+          instance: 'Blind.Position',
+          name: 'rangeValue',
+          value: clamp(Math.round(position), 0, 100),
+          timeOfSample: sampleTime,
+          uncertaintyInMilliseconds: DEFAULT_UNCERTAINTY_MS,
+        });
+      }
+
+      return properties;
     }
     case 'boiler': {
       const temperature = getNumericTemperature(device);
