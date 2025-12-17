@@ -253,6 +253,7 @@ function BlindControls({
 
   useEffect(() => {
     if (position !== null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTargetPosition(position);
     }
   }, [position]);

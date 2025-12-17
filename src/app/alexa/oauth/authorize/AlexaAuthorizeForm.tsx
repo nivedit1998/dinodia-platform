@@ -27,12 +27,15 @@ export function AlexaAuthorizeForm() {
       const scope = params.get('scope');
 
       if (!clientId || !redirectUri) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setError('The Alexa link is missing some information. Please start linking again from the Alexa app.');
       }
 
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOauth({ clientId, redirectUri, responseType, state, scope });
     } catch (err) {
       console.error('Failed to parse OAuth parameters', err);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setError('We couldn’t read that Alexa link. Please start linking again from the Alexa app.');
     }
   }, []);
