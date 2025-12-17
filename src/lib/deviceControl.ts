@@ -23,6 +23,10 @@ export const DEVICE_CONTROL_NUMERIC_COMMANDS = new Set([
 ]);
 
 type DeviceCommandSource = 'app' | 'alexa';
+type DeviceCommandOptions = {
+  source?: DeviceCommandSource;
+  userId?: number;
+};
 
 const ALEXA_REPORTABLE_COMMANDS: Record<string, { label: string }> = {
   'light/toggle': { label: 'light' },
@@ -44,9 +48,10 @@ export async function executeDeviceCommand(
   entityId: string,
   command: string,
   value?: number,
-  options?: { source?: DeviceCommandSource }
+  options?: DeviceCommandOptions
 ) {
   const source: DeviceCommandSource = options?.source ?? 'app';
+  const userId = options?.userId;
   console.log('AlexaChangeReport: executeDeviceCommand', {
     entityId,
     command,
@@ -164,12 +169,12 @@ export async function executeDeviceCommand(
         { entity_id: entityId }
       );
       break;
-  default:
+    default:
       throw new Error(`Unsupported command ${command}`);
   }
 
   if (previousSnapshot) {
-    await scheduleAlexaChangeReport(haConnection, previousSnapshot, source);
+    await scheduleAlexaChangeReport(haConnection, previousSnapshot, source, userId);
   }
 }
 
@@ -212,7 +217,8 @@ type AlexaChangeReportSnapshot = AlexaDeviceStateLike & { label: string };
 async function scheduleAlexaChangeReport(
   haConnection: HaConnectionLike,
   snapshot: AlexaChangeReportSnapshot,
-  source: DeviceCommandSource
+  source: DeviceCommandSource,
+  userId?: number
 ) {
   if (!shouldSendAlexaEvents()) {
     console.log('AlexaChangeReport: skipping scheduleAlexaChangeReport', {
@@ -286,6 +292,14 @@ async function scheduleAlexaChangeReport(
     return;
   }
 
+  if (!userId) {
+    console.log('AlexaChangeReport: skipping, missing userId', {
+      entityId: snapshot.entityId,
+      label: snapshot.label,
+    });
+    return;
+  }
+
   try {
     console.log('AlexaChangeReport: sending', {
       endpointId: snapshot.entityId,
@@ -293,7 +307,7 @@ async function scheduleAlexaChangeReport(
       causeType,
       namespaces: nextProperties.map((p) => p.namespace),
     });
-    await sendAlexaChangeReport(snapshot.entityId, nextProperties, causeType);
+    await sendAlexaChangeReport(userId, snapshot.entityId, nextProperties, causeType);
   } catch (err) {
     console.error(
       '[deviceControl] Failed to send Alexa ChangeReport',

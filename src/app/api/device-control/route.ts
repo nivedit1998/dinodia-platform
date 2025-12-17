@@ -55,7 +55,10 @@ export async function POST(req: NextRequest) {
   try {
     const { haConnection } = await getUserWithHaConnection(user.id);
     const effectiveHa = resolveHaCloudFirst(haConnection);
-    await executeDeviceCommand(effectiveHa, entityId, command, value);
+    await executeDeviceCommand(effectiveHa, entityId, command, value, {
+      source: 'app',
+      userId: user.id,
+    });
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
     console.error('Device control error', err);

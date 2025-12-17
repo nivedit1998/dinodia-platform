@@ -1,9 +1,11 @@
 import { randomUUID } from 'crypto';
+import { prisma } from '@/lib/prisma';
 import { AlexaProperty } from '@/lib/alexaProperties';
 
-type AlexaEventTokenCache = {
-  token: string;
-  expiresAt: number;
+type AlexaEventTokenPayload = {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number; // epoch ms
 };
 
 type AlexaChangeReportCause =
@@ -13,15 +15,11 @@ type AlexaChangeReportCause =
   | 'PERIODIC_POLL'
   | 'RULE_TRIGGER';
 
-const globalForCache = globalThis as typeof globalThis & {
-  __alexaEventTokenCache?: AlexaEventTokenCache;
-};
-
 function getGatewayEndpoint() {
   return process.env.ALEXA_EVENT_GATEWAY_ENDPOINT || 'https://api.amazonalexa.com/v3/events';
 }
 
-function getClientCredentials() {
+function getEventsClientCredentials() {
   const clientId = process.env.ALEXA_EVENTS_CLIENT_ID;
   const clientSecret = process.env.ALEXA_EVENTS_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
@@ -30,32 +28,16 @@ function getClientCredentials() {
   return { clientId, clientSecret };
 }
 
-function getCache() {
-  if (!globalForCache.__alexaEventTokenCache) {
-    globalForCache.__alexaEventTokenCache = { token: '', expiresAt: 0 };
-  }
-  return globalForCache.__alexaEventTokenCache;
-}
-
-export async function getAlexaEventAccessToken(): Promise<string> {
-  const cache = getCache();
-  const now = Date.now();
-  if (cache.token && cache.expiresAt - 5000 > now) {
-    return cache.token;
-  }
-
-  const { clientId, clientSecret } = getClientCredentials();
+export async function exchangeAcceptGrantCode(
+  code: string
+): Promise<AlexaEventTokenPayload> {
+  const { clientId, clientSecret } = getEventsClientCredentials();
 
   const body = new URLSearchParams({
-    grant_type: 'client_credentials',
+    grant_type: 'authorization_code',
+    code,
     client_id: clientId,
     client_secret: clientSecret,
-    scope: 'alexa::async_event:send',
-  });
-
-  console.log('[alexaEvents] Requesting LWA token', {
-    endpoint: 'https://api.amazon.com/auth/o2/token',
-    scope: 'alexa::async_event:send',
   });
 
   const res = await fetch('https://api.amazon.com/auth/o2/token', {
@@ -66,28 +48,82 @@ export async function getAlexaEventAccessToken(): Promise<string> {
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    console.error('[alexaEvents] Failed to fetch LWA token', res.status, text);
-    throw new Error('Failed to fetch Alexa event gateway token');
+    console.error('[alexaEvents] AcceptGrant exchange failed', res.status, text);
+    throw new Error('Failed to exchange AcceptGrant code');
   }
 
-  type TokenResponse = { access_token: string; expires_in?: number };
-  const data = (await res.json()) as TokenResponse;
-  if (!data.access_token) {
-    throw new Error('Alexa token response missing access_token');
+  const data = await res.json();
+  const now = Date.now();
+  const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : 3600;
+
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    expiresAt: now + expiresIn * 1000,
+  };
+}
+
+export async function refreshAlexaEventToken(
+  refreshToken: string
+): Promise<AlexaEventTokenPayload> {
+  const { clientId, clientSecret } = getEventsClientCredentials();
+
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    client_id: clientId,
+    client_secret: clientSecret,
+  });
+
+  const res = await fetch('https://api.amazon.com/auth/o2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    console.error('[alexaEvents] Token refresh failed', res.status, text);
+    throw new Error('Failed to refresh Alexa event token');
   }
 
-  const defaultTtl = typeof data.expires_in === 'number' ? data.expires_in : 3600;
-  const maxTtl =
-    Number(process.env.ALEXA_ACCESS_TOKEN_TTL_SECONDS ?? Number.MAX_SAFE_INTEGER) || Number.MAX_SAFE_INTEGER;
-  const effectiveTtl = Math.max(30, Math.min(defaultTtl, maxTtl));
+  const data = await res.json();
+  const now = Date.now();
+  const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : 3600;
 
-  cache.token = data.access_token;
-  cache.expiresAt = now + (effectiveTtl - 10) * 1000;
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token ?? refreshToken,
+    expiresAt: now + expiresIn * 1000,
+  };
+}
 
-  return cache.token;
+export async function getAlexaEventAccessTokenForUser(userId: number): Promise<string> {
+  let record = await prisma.alexaEventToken.findUnique({ where: { userId } });
+
+  if (!record) {
+    console.warn('[alexaEvents] No Event Gateway token for user', userId);
+    throw new Error('No Alexa Event Gateway token for user');
+  }
+
+  const now = Date.now();
+  if (record.expiresAt.getTime() - 5000 < now) {
+    const refreshed = await refreshAlexaEventToken(record.refreshToken);
+    record = await prisma.alexaEventToken.update({
+      where: { userId },
+      data: {
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshed.refreshToken,
+        expiresAt: new Date(refreshed.expiresAt),
+      },
+    });
+  }
+
+  return record.accessToken;
 }
 
 export async function sendAlexaChangeReport(
+  userId: number,
   endpointId: string,
   properties: AlexaProperty[],
   causeType: AlexaChangeReportCause = 'PHYSICAL_INTERACTION'
@@ -103,7 +139,7 @@ export async function sendAlexaChangeReport(
   }
 
   const gateway = getGatewayEndpoint();
-  const token = await getAlexaEventAccessToken();
+  const token = await getAlexaEventAccessTokenForUser(userId);
 
   console.log('[alexaEvents] ChangeReport POST', {
     endpoint: gateway,
