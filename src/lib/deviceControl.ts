@@ -291,9 +291,25 @@ function getChangeReportDelayMs(label: string) {
   return parseDelay(process.env.ALEXA_EVENT_STATE_REFRESH_DELAY_MS, DEFAULT_CHANGE_REPORT_DELAY_MS);
 }
 
-type AlexaChangeReportSnapshot = AlexaDeviceStateLike & { label: string };
+export type AlexaChangeReportSnapshot = AlexaDeviceStateLike & { label: string };
 
-async function scheduleAlexaChangeReport(
+export async function buildAlexaChangeReportSnapshotForEntity(
+  haConnection: HaConnectionLike,
+  entityId: string,
+  label: string
+): Promise<AlexaChangeReportSnapshot> {
+  const state = await fetchHaState(haConnection, entityId);
+  const attrs = (state.attributes ?? {}) as Record<string, unknown>;
+
+  return {
+    entityId,
+    state: String(state.state ?? ''),
+    attributes: attrs,
+    label,
+  };
+}
+
+export async function scheduleAlexaChangeReport(
   haConnection: HaConnectionLike,
   snapshot: AlexaChangeReportSnapshot,
   source: DeviceCommandSource,

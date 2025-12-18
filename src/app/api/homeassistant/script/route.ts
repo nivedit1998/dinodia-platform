@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
+import {
+  buildAlexaChangeReportSnapshotForEntity,
+  scheduleAlexaChangeReport,
+} from '@/lib/deviceControl';
 import { getUserWithHaConnection, resolveHaCloudFirst } from '@/lib/haConnection';
 import { callHaService } from '@/lib/homeAssistant';
 import { prisma } from '@/lib/prisma';
@@ -103,6 +107,17 @@ export async function POST(req: NextRequest) {
       ? travel_seconds
       : await resolveBlindTravelSecondsForScript(haConnectionId, entityId);
 
+  let alexaSnapshot: Awaited<ReturnType<typeof buildAlexaChangeReportSnapshotForEntity>> | null =
+    null;
+  try {
+    alexaSnapshot = await buildAlexaChangeReportSnapshotForEntity(effectiveHa, entityId, 'blind');
+  } catch (err) {
+    console.warn('[api/homeassistant/script] Failed to capture Alexa snapshot', {
+      entityId,
+      err,
+    });
+  }
+
   try {
     if (isGlobalController) {
       const targetPosition = target_position as number;
@@ -132,6 +147,10 @@ export async function POST(req: NextRequest) {
           travel_seconds: travelSeconds,
         },
       });
+    }
+
+    if (alexaSnapshot) {
+      await scheduleAlexaChangeReport(effectiveHa, alexaSnapshot, 'app', user.id);
     }
 
     return NextResponse.json({ ok: true });
