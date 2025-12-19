@@ -334,14 +334,21 @@ export async function scheduleAlexaChangeReportForEntityStateChange(
     label,
   };
 
-  await scheduleAlexaChangeReport(haConnection, snapshot, source, userId);
+  await scheduleAlexaChangeReport(haConnection, snapshot, source, userId, {
+    skipPropertyComparison: source === 'physical',
+  });
 }
+
+type ChangeReportOptions = {
+  skipPropertyComparison?: boolean;
+};
 
 export async function scheduleAlexaChangeReport(
   haConnection: HaConnectionLike,
   snapshot: AlexaChangeReportSnapshot,
   source: DeviceCommandSource,
-  userId?: number
+  userId?: number,
+  options?: ChangeReportOptions
 ) {
   if (!shouldSendAlexaEvents()) {
     console.log('AlexaChangeReport: skipping scheduleAlexaChangeReport', {
@@ -407,7 +414,8 @@ export async function scheduleAlexaChangeReport(
     return;
   }
 
-  if (!haveAlexaPropertiesChanged(previousProperties, nextProperties)) {
+  const skipComparison = options?.skipPropertyComparison === true;
+  if (!skipComparison && !haveAlexaPropertiesChanged(previousProperties, nextProperties)) {
     console.log('AlexaChangeReport: skipping, properties unchanged', {
       entityId: snapshot.entityId,
       label: snapshot.label,
