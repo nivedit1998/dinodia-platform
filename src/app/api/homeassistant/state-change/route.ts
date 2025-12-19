@@ -25,22 +25,6 @@ function getBearerToken(req: NextRequest) {
 }
 
 async function resolveHaForEntity(entityId: string): Promise<HaResolution | null> {
-  try {
-    const device = await prisma.device.findFirst({
-      where: { entityId },
-      include: { haConnection: true },
-    });
-    if (device?.haConnection) {
-      return {
-        haConnection: device.haConnection,
-        haConnectionId: device.haConnection.id,
-        userId: device.haConnection.ownerId,
-      };
-    }
-  } catch (err) {
-    console.warn('[api/homeassistant/state-change] Failed to resolve device', { entityId, err });
-  }
-
   if (Number.isFinite(FALLBACK_EVENTS_USER_ID)) {
     try {
       const { user, haConnection } = await getUserWithHaConnection(FALLBACK_EVENTS_USER_ID);
@@ -55,12 +39,31 @@ async function resolveHaForEntity(entityId: string): Promise<HaResolution | null
         userId: user.id,
       };
     } catch (err) {
-      console.warn('[api/homeassistant/state-change] Failed fallback HA resolution', {
+      console.warn('[api/homeassistant/state-change] Failed to resolve HA connection for Alexa events user', {
         entityId,
         userId: FALLBACK_EVENTS_USER_ID,
         err,
       });
     }
+  }
+
+  try {
+    const device = await prisma.device.findFirst({
+      where: { entityId },
+      include: { haConnection: true },
+    });
+    if (device?.haConnection) {
+      return {
+        haConnection: device.haConnection,
+        haConnectionId: device.haConnection.id,
+        userId: device.haConnection.ownerId,
+      };
+    }
+  } catch (err) {
+    console.warn('[api/homeassistant/state-change] Failed to resolve device for HA connection fallback', {
+      entityId,
+      err,
+    });
   }
 
   return null;
