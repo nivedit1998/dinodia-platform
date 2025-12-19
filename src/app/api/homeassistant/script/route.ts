@@ -150,7 +150,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (alexaSnapshot) {
-      await scheduleAlexaChangeReport(effectiveHa, alexaSnapshot, 'app', user.id);
+      await scheduleAlexaChangeReport(effectiveHa, alexaSnapshot, 'app', {
+        haConnectionId,
+      });
     }
 
     return NextResponse.json({ ok: true });

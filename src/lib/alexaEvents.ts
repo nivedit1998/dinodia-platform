@@ -203,3 +203,50 @@ export async function sendAlexaChangeReport(
 
   console.log('[alexaEvents] ChangeReport sent', endpointId, causeType);
 }
+
+export async function sendAlexaChangeReportForHaConnection(
+  haConnectionId: number,
+  endpointId: string,
+  properties: AlexaProperty[],
+  causeType: AlexaChangeReportCause
+) {
+  try {
+    const users = await prisma.user.findMany({
+      where: {
+        OR: [
+          { haConnectionId },
+          { ownedHaConnection: { id: haConnectionId } },
+        ],
+        alexaEventToken: { isNot: null },
+      },
+      select: { id: true },
+    });
+
+    if (users.length === 0) {
+      console.warn('[alexaEvents] No Alexa Event Gateway users for haConnection', {
+        haConnectionId,
+        endpointId,
+      });
+      return;
+    }
+
+    for (const { id: userId } of users) {
+      try {
+        await sendAlexaChangeReport(userId, endpointId, properties, causeType);
+      } catch (err) {
+        console.warn('[alexaEvents] ChangeReport failed for user on HA connection', {
+          haConnectionId,
+          userId,
+          endpointId,
+          err,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[alexaEvents] Failed to fan out ChangeReport for haConnection', {
+      haConnectionId,
+      endpointId,
+      err,
+    });
+  }
+}

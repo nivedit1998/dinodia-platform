@@ -3,7 +3,7 @@ import {
   AlexaProperty,
   buildAlexaPropertiesForDevice,
 } from '@/lib/alexaProperties';
-import { sendAlexaChangeReport } from '@/lib/alexaEvents';
+import { sendAlexaChangeReportForHaConnection } from '@/lib/alexaEvents';
 import { callHaService, fetchHaState, HaConnectionLike } from '@/lib/homeAssistant';
 import { prisma } from '@/lib/prisma';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
@@ -86,7 +86,6 @@ export async function executeDeviceCommand(
   options?: DeviceCommandOptions
 ) {
   const source: DeviceCommandSource = options?.source ?? 'app';
-  const userId = options?.userId;
   const haConnectionId = options?.haConnectionId;
   console.log('AlexaChangeReport: executeDeviceCommand', {
     entityId,
@@ -222,7 +221,9 @@ export async function executeDeviceCommand(
   }
 
   if (previousSnapshot) {
-    await scheduleAlexaChangeReport(haConnection, previousSnapshot, source, userId);
+    await scheduleAlexaChangeReport(haConnection, previousSnapshot, source, {
+      haConnectionId: haConnectionId ?? null,
+    });
   }
 }
 
@@ -315,8 +316,7 @@ export async function scheduleAlexaChangeReportForEntityStateChange(
   haConnection: HaConnectionLike,
   haConnectionId: number | null,
   entityId: string,
-  source: DeviceCommandSource,
-  userId: number
+  source: DeviceCommandSource
 ) {
   const state = await fetchHaState(haConnection, entityId);
   const attrs = (state.attributes ?? {}) as Record<string, unknown>;
@@ -334,20 +334,21 @@ export async function scheduleAlexaChangeReportForEntityStateChange(
     label,
   };
 
-  await scheduleAlexaChangeReport(haConnection, snapshot, source, userId, {
+  await scheduleAlexaChangeReport(haConnection, snapshot, source, {
+    haConnectionId,
     skipPropertyComparison: source === 'physical',
   });
 }
 
 type ChangeReportOptions = {
   skipPropertyComparison?: boolean;
+  haConnectionId?: number | null;
 };
 
 export async function scheduleAlexaChangeReport(
   haConnection: HaConnectionLike,
   snapshot: AlexaChangeReportSnapshot,
   source: DeviceCommandSource,
-  userId?: number,
   options?: ChangeReportOptions
 ) {
   if (!shouldSendAlexaEvents()) {
@@ -423,8 +424,9 @@ export async function scheduleAlexaChangeReport(
     return;
   }
 
-  if (!userId) {
-    console.log('AlexaChangeReport: skipping, missing userId', {
+  const haConnectionId = options?.haConnectionId ?? null;
+  if (!haConnectionId) {
+    console.log('AlexaChangeReport: skipping, missing haConnectionId', {
       entityId: snapshot.entityId,
       label: snapshot.label,
     });
@@ -438,7 +440,12 @@ export async function scheduleAlexaChangeReport(
       causeType,
       namespaces: nextProperties.map((p) => p.namespace),
     });
-    await sendAlexaChangeReport(userId, snapshot.entityId, nextProperties, causeType);
+    await sendAlexaChangeReportForHaConnection(
+      haConnectionId,
+      snapshot.entityId,
+      nextProperties,
+      causeType
+    );
   } catch (err) {
     console.error(
       '[deviceControl] Failed to send Alexa ChangeReport',
