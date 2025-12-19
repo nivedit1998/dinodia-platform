@@ -8,10 +8,12 @@ const FALLBACK_EVENTS_USER_ID = Number(process.env.ALEXA_EVENTS_USER_ID || NaN);
 
 type HaResolution = {
   haConnection: {
+    id: number;
     baseUrl: string;
     cloudUrl: string | null;
     longLivedToken: string;
   };
+  haConnectionId: number;
   userId: number;
 };
 
@@ -31,6 +33,7 @@ async function resolveHaForEntity(entityId: string): Promise<HaResolution | null
     if (device?.haConnection) {
       return {
         haConnection: device.haConnection,
+        haConnectionId: device.haConnection.id,
         userId: device.haConnection.ownerId,
       };
     }
@@ -41,7 +44,16 @@ async function resolveHaForEntity(entityId: string): Promise<HaResolution | null
   if (Number.isFinite(FALLBACK_EVENTS_USER_ID)) {
     try {
       const { user, haConnection } = await getUserWithHaConnection(FALLBACK_EVENTS_USER_ID);
-      return { haConnection, userId: user.id };
+      return {
+        haConnection: {
+          id: haConnection.id,
+          baseUrl: haConnection.baseUrl,
+          cloudUrl: haConnection.cloudUrl,
+          longLivedToken: haConnection.longLivedToken,
+        },
+        haConnectionId: haConnection.id,
+        userId: user.id,
+      };
     } catch (err) {
       console.warn('[api/homeassistant/state-change] Failed fallback HA resolution', {
         entityId,
@@ -90,11 +102,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { haConnection, userId } = haResolution;
+  const { haConnection, haConnectionId, userId } = haResolution;
   const effectiveHa = resolveHaCloudFirst(haConnection);
 
   try {
-    await scheduleAlexaChangeReportForEntityStateChange(effectiveHa, entityId, 'physical', userId);
+    await scheduleAlexaChangeReportForEntityStateChange(
+      effectiveHa,
+      haConnectionId,
+      entityId,
+      'physical',
+      userId
+    );
   } catch (err) {
     console.warn('[api/homeassistant/state-change] Failed to schedule Alexa ChangeReport', {
       entityId,

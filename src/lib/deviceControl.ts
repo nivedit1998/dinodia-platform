@@ -6,6 +6,8 @@ import {
 import { sendAlexaChangeReport } from '@/lib/alexaEvents';
 import { callHaService, fetchHaState, HaConnectionLike } from '@/lib/homeAssistant';
 import { prisma } from '@/lib/prisma';
+import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
+import { getGroupLabel } from '@/lib/deviceLabels';
 
 const BLIND_GLOBAL_CONTROLLER_SCRIPT_ENTITY_ID =
   process.env.HA_BLIND_GLOBAL_CONTROLLER_SCRIPT_ENTITY_ID ||
@@ -311,13 +313,14 @@ export async function buildAlexaChangeReportSnapshotForEntity(
 
 export async function scheduleAlexaChangeReportForEntityStateChange(
   haConnection: HaConnectionLike,
+  haConnectionId: number | null,
   entityId: string,
   source: DeviceCommandSource,
   userId: number
 ) {
   const state = await fetchHaState(haConnection, entityId);
   const attrs = (state.attributes ?? {}) as Record<string, unknown>;
-  const label = await resolveAlexaLabelForEntity(entityId, attrs);
+  const label = await resolveAlexaLabelForEntity(entityId, attrs, haConnectionId);
 
   if (!label) {
     console.log('AlexaChangeReport: skipping, unsupported label for entity', { entityId });
@@ -486,10 +489,16 @@ function normalizeAlexaLabel(label: string | null | undefined): string | null {
 
 async function resolveAlexaLabelForEntity(
   entityId: string,
-  attributes: Record<string, unknown>
+  attributes: Record<string, unknown>,
+  haConnectionId?: number | null
 ): Promise<string | null> {
   const dbLabel = await resolveLabelFromDatabase(entityId);
   if (dbLabel) return dbLabel;
+
+  if (haConnectionId && Number.isFinite(haConnectionId)) {
+    const labelFromDevices = await resolveLabelFromDevicesSnapshot(haConnectionId, entityId);
+    if (labelFromDevices) return labelFromDevices;
+  }
 
   const domain = entityId.split('.')[0];
   const deviceClass =
@@ -532,6 +541,39 @@ async function resolveLabelFromDatabase(entityId: string): Promise<string | null
     return normalizeAlexaLabel(device?.label ?? null);
   } catch (err) {
     console.warn('[deviceControl] Failed to resolve label from DB', { entityId, err });
+    return null;
+  }
+}
+
+async function resolveLabelFromDevicesSnapshot(
+  haConnectionId: number,
+  entityId: string
+): Promise<string | null> {
+  try {
+    const devices = await getDevicesForHaConnection(haConnectionId);
+    const device = devices.find((d) => d.entityId === entityId);
+    if (!device) return null;
+
+    const groupLabel = getGroupLabel({
+      label: device.label,
+      labels: device.labels ?? [],
+      labelCategory: device.labelCategory ?? null,
+    });
+
+    const normalized = normalizeAlexaLabel(groupLabel);
+    if (normalized) return normalized;
+
+    if (groupLabel === 'Spotify') {
+      return 'speaker';
+    }
+
+    return null;
+  } catch (err) {
+    console.warn('[deviceControl] Failed to resolve label from devices snapshot', {
+      haConnectionId,
+      entityId,
+      err,
+    });
     return null;
   }
 }
