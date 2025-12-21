@@ -3,14 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import Link from 'next/link';
-
-type UIDevice = {
-  entityId: string;
-  name: string;
-  areaName: string | null;
-  label?: string | null;
-  domain?: string | null;
-};
+import type { UIDevice } from '@/types/device';
+import { isSensorEntity } from '@/lib/deviceSensors';
 
 type AutomationListItem = {
   id: string;
@@ -249,16 +243,16 @@ export default function TenantAutomations() {
   }, [selectedEntityId]);
 
   const deviceOptions = useMemo(() => {
-    const sensorDomains = new Set(['sensor', 'binary_sensor', 'device_tracker', 'person']);
     const primary: { value: string; label: string }[] = [];
     const sensors: { value: string; label: string }[] = [];
     for (const d of devices) {
-      const label = `${d.name}${d.areaName ? ` (${d.areaName})` : ''}`;
-      const domain = (d.domain ?? '').toLowerCase();
-      const isSensor =
-        sensorDomains.has(domain) || (d.label ?? '').toLowerCase().includes('sensor');
-      if (isSensor) sensors.push({ value: d.entityId, label });
-      else primary.push({ value: d.entityId, label });
+      const areaName = (d.areaName ?? d.area ?? '').trim();
+      const label = areaName ? `${d.name} (${areaName})` : d.name;
+      if (isSensorEntity(d)) {
+        sensors.push({ value: d.entityId, label });
+      } else {
+        primary.push({ value: d.entityId, label });
+      }
     }
     return {
       primary,
