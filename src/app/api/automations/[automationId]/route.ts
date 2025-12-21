@@ -73,7 +73,7 @@ function parseDraft(body: unknown): AutomationDraft | null {
       triggerRaw.scheduleType === 'daily' ||
       triggerRaw.scheduleType === 'weekly' ||
       triggerRaw.scheduleType === 'monthly'
-        ? (triggerRaw.scheduleType as AutomationDraft['trigger']['scheduleType'])
+        ? (triggerRaw.scheduleType as 'daily' | 'weekly' | 'monthly')
         : null;
     const at = typeof triggerRaw.at === 'string' ? (triggerRaw.at as string) : null;
     if (!scheduleType || !at) return null;
@@ -133,7 +133,7 @@ function parseDraft(body: unknown): AutomationDraft | null {
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { automationId: string } }
+  context: { params: Promise<{ automationId: string }> }
 ) {
   const user = await getCurrentUser();
   if (!user) {
@@ -143,7 +143,7 @@ export async function PATCH(
     );
   }
 
-  const automationId = params.automationId;
+  const { automationId } = await context.params;
   if (!automationId) return badRequest('Missing automation id');
 
   const draft = parseDraft(await req.json().catch(() => null));
@@ -190,7 +190,7 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { automationId: string } }
+  context: { params: Promise<{ automationId: string }> }
 ) {
   const user = await getCurrentUser();
   if (!user) {
@@ -200,7 +200,7 @@ export async function DELETE(
     );
   }
 
-  const automationId = params.automationId;
+  const { automationId } = await context.params;
   if (!automationId) return badRequest('Missing automation id');
 
   let haConnectionId: number;

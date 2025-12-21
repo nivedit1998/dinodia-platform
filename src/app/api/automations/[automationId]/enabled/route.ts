@@ -29,7 +29,7 @@ async function getAllowedEntitiesForUser(userId: number, role: Role, haConnectio
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { automationId: string } }
+  context: { params: Promise<{ automationId: string }> }
 ) {
   const user = await getCurrentUser();
   if (!user) {
@@ -39,7 +39,7 @@ export async function POST(
     );
   }
 
-  const automationId = params.automationId;
+  const { automationId } = await context.params;
   if (!automationId) return badRequest('Missing automation id');
 
   const body = await req.json().catch(() => null);
