@@ -157,18 +157,42 @@ async function listViaRest(ha: HaConnectionLike): Promise<HaAutomationConfig[]> 
   return await callHomeAssistantAPI<HaAutomationConfig[]>(ha, '/api/config/automation/config');
 }
 
-async function listViaWs(ha: HaConnectionLike): Promise<HaAutomationConfig[]> {
+async function callAutomationWs<T>(
+  ha: HaConnectionLike,
+  types: string[],
+  payload: Record<string, unknown> = {}
+): Promise<T> {
   const client = await HaWsClient.connect(ha);
   try {
-    const result = await client.call<HaAutomationConfig[] | { automations?: HaAutomationConfig[] }>(
-      'automation/config/list'
-    );
-    if (Array.isArray(result)) return result;
-    if (result && Array.isArray(result.automations)) return result.automations;
-    throw new Error('Unexpected HA automation list payload');
+    let lastErr: unknown = null;
+    for (const type of types) {
+      try {
+        return await client.call<T>(type, payload);
+      } catch (err) {
+        const maybe = err as { error?: { code?: string } };
+        if (maybe?.error?.code === 'unknown_command') {
+          lastErr = err;
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastErr ?? new Error('No supported automation WS command found');
   } finally {
     client.close();
   }
+}
+
+async function listViaWs(ha: HaConnectionLike): Promise<HaAutomationConfig[]> {
+  const result = await callAutomationWs<HaAutomationConfig[] | { automations?: HaAutomationConfig[] }>(
+    ha,
+    ['config/automation/list', 'automation/config/list']
+  );
+  if (Array.isArray(result)) return result;
+  if (result && Array.isArray((result as { automations?: HaAutomationConfig[] }).automations)) {
+    return (result as { automations: HaAutomationConfig[] }).automations;
+  }
+  throw new Error('Unexpected HA automation list payload');
 }
 
 export async function listAutomationConfigs(ha: HaConnectionLike): Promise<HaAutomationConfig[]> {
@@ -181,12 +205,7 @@ export async function listAutomationConfigs(ha: HaConnectionLike): Promise<HaAut
 }
 
 export async function createAutomation(ha: HaConnectionLike, config: HaAutomationConfig) {
-  const client = await HaWsClient.connect(ha);
-  try {
-    return await client.call<{ id: string }>('automation/config/create', config);
-  } finally {
-    client.close();
-  }
+  return await callAutomationWs<{ id: string }>(ha, ['config/automation/create', 'automation/config/create'], config);
 }
 
 export async function updateAutomation(
@@ -194,24 +213,20 @@ export async function updateAutomation(
   automationId: string,
   config: HaAutomationConfig
 ) {
-  const client = await HaWsClient.connect(ha);
-  try {
-    return await client.call('automation/config/update', {
+  return await callAutomationWs(
+    ha,
+    ['config/automation/update', 'automation/config/update'],
+    {
       automation_id: automationId,
       ...config,
-    });
-  } finally {
-    client.close();
-  }
+    }
+  );
 }
 
 export async function deleteAutomation(ha: HaConnectionLike, automationId: string) {
-  const client = await HaWsClient.connect(ha);
-  try {
-    return await client.call('automation/config/delete', { automation_id: automationId });
-  } finally {
-    client.close();
-  }
+  return await callAutomationWs(ha, ['config/automation/delete', 'automation/config/delete'], {
+    automation_id: automationId,
+  });
 }
 
 export async function setAutomationEnabled(
