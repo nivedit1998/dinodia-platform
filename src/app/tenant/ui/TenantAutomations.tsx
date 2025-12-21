@@ -60,18 +60,131 @@ const defaultFormState: CreateFormState = {
   description: '',
   triggerType: 'state',
   triggerEntityId: '',
-  triggerTo: 'on',
+  triggerTo: '',
   triggerFrom: '',
   triggerForSeconds: '',
   scheduleType: 'daily',
-  scheduleAt: '11:00',
-  scheduleWeekdays: ['mon'],
-  scheduleDay: 1,
+  scheduleAt: '',
+  scheduleWeekdays: [],
+  scheduleDay: '',
   actionType: 'turn_on',
   actionEntityId: '',
   actionValue: '',
   enabled: true,
 };
+
+type ControlMeta =
+  | { kind: 'toggle'; options?: string[] }
+  | { kind: 'slider'; min: number; max: number; step?: number }
+  | { kind: 'number'; min?: number; max?: number; step?: number }
+  | { kind: 'select'; options: string[] }
+  | { kind: 'unknown' };
+
+function getControlForDevice(device?: UIDevice): ControlMeta {
+  if (!device) return { kind: 'unknown' };
+  const label = device.label?.toLowerCase() ?? '';
+  const domain = device.domain?.toLowerCase() ?? '';
+  const isLight = label.includes('light') || domain === 'light';
+  const isBlind = label.includes('blind') || domain === 'cover';
+  const isMotion = label.includes('motion');
+  const isTv = label.includes('tv') || label.includes('speaker') || domain === 'media_player';
+  const isBoiler = label.includes('boiler') || domain === 'climate';
+  const isDoorbell = label.includes('doorbell');
+  const isSecurity = label.includes('security') || label.includes('alarm');
+  const isSpotify = label.includes('spotify');
+
+  if (isLight) return { kind: 'slider', min: 0, max: 100, step: 1 };
+  if (isBlind) return { kind: 'slider', min: 0, max: 100, step: 1 };
+  if (isMotion) return { kind: 'select', options: ['on', 'off'] };
+  if (isTv || isSpotify) return { kind: 'toggle' };
+  if (isBoiler) return { kind: 'number', min: 5, max: 35, step: 0.5 };
+  if (isDoorbell) return { kind: 'select', options: ['pressed', 'idle'] };
+  if (isSecurity) return { kind: 'select', options: ['armed', 'disarmed', 'triggered'] };
+  return { kind: 'toggle' };
+}
+
+function renderControlInput(
+  meta: ControlMeta,
+  value: string | number | '',
+  onChange: (v: string | number | '') => void,
+  placeholder?: string
+) {
+  switch (meta.kind) {
+    case 'toggle':
+      return (
+        <select
+          value={value === '' ? '' : value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="">Select state</option>
+          <option value="on">On</option>
+          <option value="off">Off</option>
+        </select>
+      );
+    case 'slider':
+      return (
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={meta.min}
+            max={meta.max}
+            step={meta.step ?? 1}
+            value={typeof value === 'number' ? value : meta.min}
+            onChange={(e) => onChange(Number(e.target.value))}
+            className="flex-1 accent-indigo-600"
+          />
+          <input
+            type="number"
+            min={meta.min}
+            max={meta.max}
+            step={meta.step ?? 1}
+            value={value}
+            onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+            className="w-20 rounded-lg border border-slate-200 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+      );
+    case 'number':
+      return (
+        <input
+          type="number"
+          min={meta.min}
+          max={meta.max}
+          step={meta.step ?? 1}
+          value={value}
+          onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+          placeholder={placeholder}
+        />
+      );
+    case 'select':
+      return (
+        <select
+          value={value === '' ? '' : value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="">Select state</option>
+          {meta.options.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      );
+    default:
+      return (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+          placeholder={placeholder ?? 'Enter state'}
+        />
+      );
+  }
+}
 
 export default function TenantAutomations() {
   const [devices, setDevices] = useState<UIDevice[]>([]);
@@ -84,13 +197,22 @@ export default function TenantAutomations() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const triggerDevice = useMemo(
+    () => devices.find((d) => d.entityId === form.triggerEntityId),
+    [devices, form.triggerEntityId]
+  );
+  const actionDevice = useMemo(
+    () => devices.find((d) => d.entityId === form.actionEntityId),
+    [devices, form.actionEntityId]
+  );
   const fetchAutomations = async (entityId: string) => {
-    if (!entityId) return;
     setLoadingAutomations(true);
     try {
-      const res = await fetch(`/api/automations?entityId=${encodeURIComponent(entityId)}`, {
-        credentials: 'include',
-      });
+      const url =
+        entityId && entityId.length > 0
+          ? `/api/automations?entityId=${encodeURIComponent(entityId)}`
+          : '/api/automations';
+      const res = await fetch(url, { credentials: 'include' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load automations');
       const list: AutomationListItem[] = Array.isArray(data.automations)
@@ -113,14 +235,6 @@ export default function TenantAutomations() {
         if (!res.ok) throw new Error(data.error || 'Failed to load devices');
         const list: UIDevice[] = Array.isArray(data.devices) ? data.devices : [];
         setDevices(list);
-        if (list.length > 0) {
-          setSelectedEntityId(list[0].entityId);
-          setForm((prev) => ({
-            ...prev,
-            triggerEntityId: prev.triggerEntityId || list[0].entityId,
-            actionEntityId: prev.actionEntityId || list[0].entityId,
-          }));
-        }
       } catch (err) {
         setError((err as Error).message || 'Failed to load devices');
       } finally {
@@ -131,15 +245,15 @@ export default function TenantAutomations() {
   }, []);
 
   useEffect(() => {
-    if (!selectedEntityId) return;
     void fetchAutomations(selectedEntityId);
   }, [selectedEntityId]);
 
   const deviceOptions = useMemo(() => {
-    return devices.map((d) => ({
+    const opts = devices.map((d) => ({
       value: d.entityId,
       label: `${d.name}${d.areaName ? ` (${d.areaName})` : ''}`,
     }));
+    return [{ value: '', label: 'None' }, ...opts];
   }, [devices]);
 
   function updateForm<K extends keyof CreateFormState>(key: K, value: CreateFormState[K]) {
@@ -191,15 +305,13 @@ export default function TenantAutomations() {
           return {
             type: 'set_brightness',
             entityId: form.actionEntityId,
-            value:
-              typeof form.actionValue === 'number' ? form.actionValue : 50,
+            value: typeof form.actionValue === 'number' ? form.actionValue : undefined,
           };
         case 'set_temperature':
           return {
             type: 'set_temperature',
             entityId: form.actionEntityId,
-            value:
-              typeof form.actionValue === 'number' ? form.actionValue : 20,
+            value: typeof form.actionValue === 'number' ? form.actionValue : undefined,
           };
         default:
           return { type: 'turn_on', entityId: form.actionEntityId };
@@ -290,9 +402,23 @@ export default function TenantAutomations() {
         </div>
       )}
 
-      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col gap-1">
+      <section className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm space-y-3">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">View automations</h2>
+              <p className="text-xs text-slate-500">
+                Choose a device to see automations whose <strong>actions</strong> target it.
+              </p>
+            </div>
+            <Link
+              href="/tenant/dashboard"
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+            >
+              Back to dashboard
+            </Link>
+          </div>
+          <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
             <label className="text-xs font-medium text-slate-600">Device / Entity</label>
             <select
               value={selectedEntityId}
@@ -307,21 +433,15 @@ export default function TenantAutomations() {
               ))}
             </select>
           </div>
-          <Link
-            href="/tenant/dashboard"
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-          >
-            Back to dashboard
-          </Link>
         </div>
-      </div>
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">Automations for this device</h2>
-          {loadingAutomations && (
-            <span className="text-xs text-slate-500">Loading…</span>
-          )}
+          <h2 className="text-lg font-semibold text-slate-900">
+            {selectedEntityId ? 'Automations affecting this device' : 'All automations'}
+          </h2>
+          {loadingAutomations && <span className="text-xs text-slate-500">Loading…</span>}
         </div>
         {automations.length === 0 && !loadingAutomations && (
           <p className="text-sm text-slate-500">No automations found for this device.</p>
@@ -452,12 +572,11 @@ export default function TenantAutomations() {
                   <div className="grid gap-3 md:grid-cols-3">
                     <div>
                       <label className="mb-1 block text-xs">To state</label>
-                      <input
-                        type="text"
-                        value={form.triggerTo}
-                        onChange={(e) => updateForm('triggerTo', e.target.value)}
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
+                      {renderControlInput(
+                        getControlForDevice(triggerDevice),
+                        form.triggerTo,
+                        (v) => updateForm('triggerTo', v as string | number | '')
+                      )}
                     </div>
                     <div>
                       <label className="mb-1 block text-xs">From state</label>
@@ -601,17 +720,13 @@ export default function TenantAutomations() {
                   <label className="mb-1 block text-xs">
                     {form.actionType === 'set_brightness' ? 'Brightness (0-100)' : 'Temperature'}
                   </label>
-                  <input
-                    type="number"
-                    value={form.actionValue}
-                    onChange={(e) =>
-                      updateForm(
-                        'actionValue',
-                        e.target.value === '' ? '' : Number(e.target.value)
-                      )
-                    }
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                  {renderControlInput(
+                    form.actionType === 'set_brightness'
+                      ? { kind: 'slider', min: 0, max: 100, step: 1 }
+                      : getControlForDevice(actionDevice),
+                    form.actionValue,
+                    (v) => updateForm('actionValue', v === '' ? '' : Number(v))
+                  )}
                 </div>
               )}
               <div className="flex items-center gap-2 pt-1">

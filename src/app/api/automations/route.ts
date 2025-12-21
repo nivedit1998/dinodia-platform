@@ -168,20 +168,26 @@ export async function GET(req: NextRequest) {
 
   const shaped = configs
     .map((config) => {
-      const { entities, hasTemplates } = extractEntityIdsFromAutomationConfig(config);
-      const entityList = Array.from(entities);
-      const allowed =
-        entityList.length === 0 ||
-        entityList.every((e) => allowedEntities.has(e));
+      const { triggerEntities, conditionEntities, actionEntities, hasTemplates } =
+        extractEntityIdsFromAutomationConfig(config);
+      const actionList = Array.from(actionEntities);
+      const allEntities = new Set<string>([
+        ...triggerEntities,
+        ...conditionEntities,
+        ...actionEntities,
+      ]);
+      const allowed = Array.from(allEntities).every((e) => allowedEntities.has(e));
       const matchesFilter =
-        !entityFilter || entityList.includes(entityFilter) || (entityList.length === 0 && hasTemplates);
+        !entityFilter ||
+        actionList.includes(entityFilter) ||
+        (actionList.length === 0 && hasTemplates);
       return {
         id: config.id,
         entityId: config.entityId ?? `automation.${config.id}`,
         alias: config.alias,
         description: config.description ?? '',
         mode: config.mode ?? 'single',
-        entities: entityList,
+        entities: actionList,
         hasTemplates,
         canEdit: allowed && !hasTemplates,
         raw: config,

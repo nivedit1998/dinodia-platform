@@ -213,13 +213,13 @@ export async function listAutomationConfigs(ha: HaConnectionLike): Promise<HaAut
 
 export async function createAutomation(ha: HaConnectionLike, config: HaAutomationConfig) {
   // HA frontend: POST /api/config/automation/config/<id>
-  const payload = { ...config };
+  const payload: Record<string, unknown> = { ...config };
   // Ensure we only send plural keys and required fields
-  delete (payload as any).trigger;
-  delete (payload as any).condition;
-  delete (payload as any).action;
-  delete (payload as any).entityId;
-  delete (payload as any).enabled;
+  delete payload.trigger;
+  delete payload.condition;
+  delete payload.action;
+  delete payload.entityId;
+  delete payload.enabled;
 
   await callHomeAssistantAPI<unknown>(ha, `/api/config/automation/config/${encodeURIComponent(config.id)}`, {
     method: 'POST',
@@ -233,12 +233,12 @@ export async function updateAutomation(
   automationId: string,
   config: HaAutomationConfig
 ) {
-  const payload = { ...config, id: automationId };
-  delete (payload as any).trigger;
-  delete (payload as any).condition;
-  delete (payload as any).action;
-  delete (payload as any).entityId;
-  delete (payload as any).enabled;
+  const payload: Record<string, unknown> = { ...config, id: automationId };
+  delete payload.trigger;
+  delete payload.condition;
+  delete payload.action;
+  delete payload.entityId;
+  delete payload.enabled;
 
   await callHomeAssistantAPI<unknown>(ha, `/api/config/automation/config/${encodeURIComponent(automationId)}`, {
     method: 'POST',
@@ -266,7 +266,9 @@ export async function setAutomationEnabled(
 }
 
 export function extractEntityIdsFromAutomationConfig(config: HaAutomationConfig) {
-  const entities = new Set<string>();
+  const triggerEntities = new Set<string>();
+  const conditionEntities = new Set<string>();
+  const actionEntities = new Set<string>();
   let hasTemplates = false;
 
   // Normalize singular/plural to arrays for traversal.
@@ -292,7 +294,7 @@ export function extractEntityIdsFromAutomationConfig(config: HaAutomationConfig)
       : [config.action]
     : [];
 
-  function visit(node: unknown) {
+  function visit(node: unknown, collector: Set<string>) {
     if (node == null) return;
     if (typeof node === 'string') {
       if (node.includes('{{')) {
@@ -302,7 +304,7 @@ export function extractEntityIdsFromAutomationConfig(config: HaAutomationConfig)
       return;
     }
     if (Array.isArray(node)) {
-      node.forEach(visit);
+      node.forEach((n) => visit(n, collector));
       return;
     }
     if (typeof node === 'object') {
@@ -310,36 +312,36 @@ export function extractEntityIdsFromAutomationConfig(config: HaAutomationConfig)
       for (const [key, value] of Object.entries(obj)) {
         if (key === 'entity_id' || key === 'entityId') {
           if (typeof value === 'string') {
-            if (!value.includes('{{')) entities.add(value);
+            if (!value.includes('{{')) collector.add(value);
             else hasTemplates = true;
           } else if (Array.isArray(value)) {
             for (const v of value) {
-              if (typeof v === 'string' && !v.includes('{{')) entities.add(v);
+              if (typeof v === 'string' && !v.includes('{{')) collector.add(v);
               else if (typeof v === 'string') hasTemplates = true;
             }
           }
         } else if (key === 'target' && typeof value === 'object' && value) {
           const target = value as Record<string, unknown>;
           if (typeof target.entity_id === 'string' && !target.entity_id.includes('{{')) {
-            entities.add(target.entity_id);
+            collector.add(target.entity_id);
           } else if (
             Array.isArray(target.entity_id) &&
             target.entity_id.every((v) => typeof v === 'string')
           ) {
-            (target.entity_id as string[]).forEach((e) => entities.add(e));
+            (target.entity_id as string[]).forEach((e) => collector.add(e));
           } else if (typeof target.entity_id === 'string') {
             hasTemplates = true;
           }
         } else {
-          visit(value);
+          visit(value, collector);
         }
       }
     }
   }
 
-  visit(triggers);
-  visit(conditions);
-  visit(actions);
+  visit(triggers, triggerEntities);
+  visit(conditions, conditionEntities);
+  visit(actions, actionEntities);
 
-  return { entities, hasTemplates };
+  return { triggerEntities, conditionEntities, actionEntities, hasTemplates };
 }
