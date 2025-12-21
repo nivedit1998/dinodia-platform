@@ -1,4 +1,5 @@
 import { classifyDeviceByLabel, LabelCategory } from './labelCatalog';
+import { HaWsClient } from '@/lib/haWebSocket';
 
 const DEFAULT_HA_TIMEOUT_MS = 6000;
 const TEMPLATE_TIMEOUT_MS = 4000;
@@ -153,12 +154,13 @@ async function fetchTemplateMeta(
 }
 
 export async function getEntityRegistryMap(ha: HaConnectionLike) {
+  const map = new Map<string, string | null>();
+  // REST path is not available on some HA setups; try it first, then fall back to WS.
   try {
     const registry = await callHomeAssistantAPI<HAEntityRegistryEntry[]>(
       ha,
       '/api/config/entity_registry'
     );
-    const map = new Map<string, string | null>();
     for (const entry of registry) {
       if (!entry?.entity_id) continue;
       map.set(entry.entity_id, entry.device_id ?? null);
@@ -166,8 +168,30 @@ export async function getEntityRegistryMap(ha: HaConnectionLike) {
     return map;
   } catch (err) {
     console.warn('HA entity registry fetch failed (continuing without device ids):', err);
-    return new Map<string, string | null>();
   }
+
+  try {
+    const client = await HaWsClient.connect(ha);
+    try {
+      const result = await client.call<{ result?: HAEntityRegistryEntry[] }>(
+        'config/entity_registry/list'
+      );
+      const entries =
+        (result && Array.isArray((result as { result?: HAEntityRegistryEntry[] }).result)
+          ? (result as { result: HAEntityRegistryEntry[] }).result
+          : []) ?? [];
+      for (const entry of entries) {
+        if (!entry?.entity_id) continue;
+        map.set(entry.entity_id, entry.device_id ?? null);
+      }
+    } finally {
+      client.close();
+    }
+  } catch (err) {
+    console.warn('HA entity registry WS fetch failed (continuing without device ids):', err);
+  }
+
+  return map;
 }
 
 export async function getDevicesWithMetadata(
