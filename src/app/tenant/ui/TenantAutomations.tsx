@@ -5,13 +5,12 @@ import type { FormEvent } from 'react';
 import Link from 'next/link';
 import type { UIDevice } from '@/types/device';
 import { isDetailState } from '@/lib/deviceSensors';
-import { getGroupLabel, normalizeLabel, OTHER_LABEL } from '@/lib/deviceLabels';
 import {
   DeviceActionSpec,
   DeviceTriggerSpec,
   getActionsForDevice,
+  getEligibleDevicesForAutomations,
   getTriggersForDevice,
-  isAutomationExcluded,
 } from '@/lib/deviceCapabilities';
 
 type AutomationListItem = {
@@ -83,18 +82,7 @@ function buildLabel(d: UIDevice) {
 }
 
 function buildDeviceOptions(devices: UIDevice[]): DeviceOptions {
-  const baseEligible = devices.filter((d) => {
-    if (isAutomationExcluded(d)) return false;
-    const areaName = (d.area ?? d.areaName ?? '').trim();
-    if (!areaName) return false;
-    const labels = Array.isArray(d.labels) ? d.labels : [];
-    const hasLabel =
-      normalizeLabel(d.label).length > 0 ||
-      labels.some((lbl) => normalizeLabel(lbl).length > 0);
-    if (!hasLabel) return false;
-    return getGroupLabel(d) !== OTHER_LABEL;
-  });
-
+  const baseEligible = getEligibleDevicesForAutomations(devices);
   const tileEligible = baseEligible.filter((d) => !isDetailState(d.state));
 
   const tile = tileEligible.map((d) => ({ value: d.entityId, label: buildLabel(d) }));
@@ -110,18 +98,8 @@ function renderActionInput(
 ) {
   if (!spec) return null;
   switch (spec.kind) {
-    case 'toggle':
-      return (
-        <select
-          value={value === '' ? '' : value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="">Select action</option>
-          <option value="on">On</option>
-          <option value="off">Off</option>
-        </select>
-      );
+    case 'command':
+      return <p className="text-sm text-slate-500">No additional input required.</p>;
     case 'slider':
       return (
         <div className="flex items-center gap-3">
@@ -195,7 +173,7 @@ function renderTriggerInput(
           onChange={(e) =>
             onChange({
               triggerDirection: e.target.value as CreateFormState['triggerDirection'],
-              triggerAttribute: spec.attribute,
+              triggerAttribute: spec.attributes[0] ?? '',
             })
           }
           className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
@@ -215,7 +193,7 @@ function renderTriggerInput(
           onChange={(e) =>
             onChange({
               triggerTo: Number(e.target.value),
-              triggerAttribute: spec.attribute,
+              triggerAttribute: spec.attributes[0] ?? '',
             })
           }
           className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
@@ -251,11 +229,11 @@ export default function TenantAutomations() {
   const deviceOptions = useMemo(() => buildDeviceOptions(devices), [devices]);
 
   const triggerSpecs = useMemo(
-    () => (triggerDevice ? getTriggersForDevice(triggerDevice) : []),
+    () => (triggerDevice ? getTriggersForDevice(triggerDevice, 'automation') : []),
     [triggerDevice]
   );
   const actionSpecs = useMemo(
-    () => (actionDevice ? getActionsForDevice(actionDevice) : []),
+    () => (actionDevice ? getActionsForDevice(actionDevice, 'automation') : []),
     [actionDevice]
   );
 
@@ -318,7 +296,7 @@ export default function TenantAutomations() {
         actionCommand: first.id,
         actionValue: val,
       }));
-    } else {
+    } else if (first.kind === 'command') {
       setForm((prev) => ({ ...prev, actionCommand: first.id, actionValue: '' }));
     }
   }
@@ -342,9 +320,9 @@ export default function TenantAutomations() {
       triggerDirection: first.type === 'attribute_delta' ? first.directionOptions[0] ?? '' : '',
       triggerAttribute:
         first.type === 'attribute_delta'
-          ? first.attribute
+          ? first.attributes[0] ?? ''
           : first.type === 'position_equals'
-          ? first.attribute
+          ? first.attributes[0] ?? ''
           : '',
     }));
   }

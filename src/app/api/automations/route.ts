@@ -12,6 +12,7 @@ import {
   setAutomationEnabled,
 } from '@/lib/homeAssistantAutomations';
 import type { DeviceCommandId } from '@/lib/deviceCapabilities';
+import { isDeviceCommandId } from '@/lib/deviceCapabilities';
 
 function badRequest(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 400 });
@@ -63,6 +64,12 @@ function parseDraft(body: unknown): AutomationDraft | null {
         ? (triggerRaw.mode as 'state_equals' | 'attribute_delta' | 'position_equals')
         : null;
     if (!entityId || !mode) return null;
+    const attribute =
+      typeof triggerRaw.attribute === 'string'
+        ? (triggerRaw.attribute as string)
+        : Array.isArray(triggerRaw.attribute) && triggerRaw.attribute.every((v) => typeof v === 'string')
+        ? (triggerRaw.attribute as string[])
+        : undefined;
     trigger = {
       type: 'device',
       entityId,
@@ -72,10 +79,10 @@ function parseDraft(body: unknown): AutomationDraft | null {
           ? (triggerRaw.to as string | number)
           : undefined,
       direction:
-        triggerRaw.direction === 'increased' || triggerRaw.direction === 'decreased'
-          ? (triggerRaw.direction as 'increased' | 'decreased')
-          : undefined,
-      attribute: typeof triggerRaw.attribute === 'string' ? triggerRaw.attribute : undefined,
+          triggerRaw.direction === 'increased' || triggerRaw.direction === 'decreased'
+            ? (triggerRaw.direction as 'increased' | 'decreased')
+            : undefined,
+      attribute,
     };
   } else if (triggerRaw.type === 'schedule') {
     const scheduleType =
@@ -128,26 +135,7 @@ function parseDraft(body: unknown): AutomationDraft | null {
     const entityId =
       typeof actionRaw.entityId === 'string' ? (actionRaw.entityId as string) : null;
     const rawCommand = typeof actionRaw.command === 'string' ? actionRaw.command : null;
-    const allowedCommands: DeviceCommandId[] = [
-      'light/toggle',
-      'light/set_brightness',
-      'blind/set_position',
-      'media/play_pause',
-      'media/next',
-      'media/previous',
-      'media/volume_set',
-      'media/volume_up',
-      'media/volume_down',
-      'tv/toggle_power',
-      'speaker/toggle_power',
-      'boiler/temp_up',
-      'boiler/temp_down',
-      'boiler/set_temperature',
-    ];
-    const command =
-      rawCommand && (allowedCommands as readonly string[]).includes(rawCommand)
-        ? (rawCommand as DeviceCommandId)
-        : null;
+    const command = rawCommand && isDeviceCommandId(rawCommand) ? (rawCommand as DeviceCommandId) : null;
     const value =
       typeof actionRaw.value === 'number' || typeof actionRaw.value === 'string'
         ? (actionRaw.value as number | string)

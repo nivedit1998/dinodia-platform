@@ -2,7 +2,8 @@
 
 import { JSX } from 'react';
 import { UIDevice } from '@/types/device';
-import { formatTemperature, getBrightnessPercent } from './DeviceControls';
+import { getBrightnessPercent } from '@/lib/deviceCapabilities';
+import { formatTemperature } from './DeviceControls';
 
 export type IconProps = { className?: string };
 export type DeviceVisual = {

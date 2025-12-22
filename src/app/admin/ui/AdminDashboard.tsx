@@ -11,7 +11,6 @@ import { UIDevice } from '@/types/device';
 import {
   getGroupLabel,
   sortLabels,
-  normalizeLabel,
   getPrimaryLabel,
   OTHER_LABEL,
 } from '@/lib/deviceLabels';
@@ -23,6 +22,7 @@ import { DeviceDetailSheet } from '@/components/device/DeviceDetailSheet';
 import { DeviceEditSheet } from '@/components/device/DeviceEditSheet';
 import { subscribeToRefresh } from '@/lib/refreshBus';
 import { logout as performLogout } from '@/lib/logout';
+import { getTileEligibleDevicesForTenantDashboard } from '@/lib/deviceCapabilities';
 
 type Props = {
   username: string;
@@ -279,7 +279,8 @@ export default function AdminDashboard(props: Props) {
 
   const areaOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const d of devices) {
+    const eligible = getTileEligibleDevicesForTenantDashboard(devices);
+    for (const d of eligible) {
       const areaName = (d.area ?? d.areaName ?? '').trim();
       if (areaName) set.add(areaName);
     }
@@ -300,26 +301,24 @@ export default function AdminDashboard(props: Props) {
     }
   }, [resolvedSelectedArea]);
 
+  const eligibleDevices = useMemo(
+    () => getTileEligibleDevicesForTenantDashboard(devices),
+    [devices]
+  );
+
   const visibleDevices = useMemo(
     () =>
-      devices.filter((d) => {
+      eligibleDevices.filter((d) => {
         const areaName = (d.area ?? d.areaName ?? '').trim();
-        if (!areaName) return false;
-
         if (
           resolvedSelectedArea !== ALL_AREAS &&
           areaName !== resolvedSelectedArea
         ) {
           return false;
         }
-
-        const labels = Array.isArray(d.labels) ? d.labels : [];
-        const hasLabel =
-          normalizeLabel(d.label).length > 0 ||
-          labels.some((lbl) => normalizeLabel(lbl).length > 0);
-        return hasLabel;
+        return true;
       }),
-    [devices, resolvedSelectedArea]
+    [eligibleDevices, resolvedSelectedArea]
   );
 
   const labelGroups = useMemo(() => {

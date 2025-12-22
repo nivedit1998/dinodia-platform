@@ -1,7 +1,14 @@
 'use client';
 
+import { useMemo } from 'react';
 import { UIDevice } from '@/types/device';
 import { getPrimaryLabel } from '@/lib/deviceLabels';
+import {
+  DeviceActionSpec,
+  DeviceCommandId,
+  getActionsForDevice,
+  getBlindPosition,
+} from '@/lib/deviceCapabilities';
 import {
   getDeviceArea,
   getDeviceSecondaryText,
@@ -27,12 +34,16 @@ export function DeviceTile({
   showAdminControls = false,
 }: DeviceTileProps) {
   const label = getPrimaryLabel(device);
+  const actions = useMemo(() => getActionsForDevice(device, 'dashboard'), [device]);
   const visual = getVisualPreset(label);
   const isActive = isDeviceActive(label, device);
   const secondary = getDeviceSecondaryText(label, device);
   const area = getDeviceArea(device);
   const { pendingCommand, sendCommand } = useDeviceCommand(onActionComplete);
-  const primaryAction = getPrimaryAction(label, device);
+  const primaryAction = useMemo(
+    () => getPrimaryAction(label, device, actions),
+    [actions, device, label]
+  );
 
   const baseClasses =
     'relative rounded-[26px] p-5 sm:p-6 shadow-[0_20px_40px_rgba(15,23,42,0.08)] transition duration-300 cursor-pointer select-none';
@@ -112,27 +123,74 @@ export function DeviceTile({
   );
 }
 
-type PrimaryAction = { command: string; value?: number } | null;
+type PrimaryAction = { command: DeviceCommandId; value?: number } | null;
 
-function getPrimaryAction(label: string, device: UIDevice): PrimaryAction {
+function getPrimaryAction(
+  label: string,
+  device: UIDevice,
+  actions: DeviceActionSpec[]
+): PrimaryAction {
+  const powerOn = actions.find(
+    (action) => action.kind === 'command' && action.id.endsWith('/turn_on')
+  )?.id as DeviceCommandId | undefined;
+  const powerOff = actions.find(
+    (action) => action.kind === 'command' && action.id.endsWith('/turn_off')
+  )?.id as DeviceCommandId | undefined;
+
   switch (label) {
-    case 'Light':
-      return { command: 'light/toggle' };
+    case 'Light': {
+      if (powerOn && powerOff) {
+        const isOn = device.state.toLowerCase() === 'on';
+        return { command: isOn ? powerOff : powerOn };
+      }
+      break;
+    }
     case 'Blind': {
+      const sliderAction = actions.find(
+        (action) => action.kind === 'slider' && action.id === 'blind/set_position'
+      );
+      const fixedAction = actions.find(
+        (action) => action.kind === 'fixed-position' && action.id === 'blind/set_position'
+      ) as Extract<DeviceActionSpec, { kind: 'fixed-position' }> | undefined;
+      const position = getBlindPosition(device.attributes ?? {});
       const normalized = device.state.toLowerCase();
       const isOpen =
-        normalized === 'open' ||
-        normalized === 'opening' ||
-        normalized === 'on';
-      return { command: isOpen ? 'blind/close' : 'blind/open' };
+        position !== null
+          ? position > 0
+          : normalized === 'open' || normalized === 'opening' || normalized === 'on';
+      if (sliderAction) {
+        return {
+          command: sliderAction.id,
+          value: isOpen ? 0 : 100,
+        };
+      }
+      if (fixedAction) {
+        const target = isOpen
+          ? fixedAction.positions.find((p) => p.value === 0)
+          : fixedAction.positions.find((p) => p.value === 100);
+        if (target) {
+          return { command: fixedAction.id, value: target.value };
+        }
+      }
+      break;
     }
-    case 'Spotify':
-      return { command: 'media/play_pause' };
+    case 'Spotify': {
+      const playPause = actions.find(
+        (action) => action.kind === 'command' && action.id === 'media/play_pause'
+      );
+      if (playPause) return { command: playPause.id };
+      break;
+    }
     case 'TV':
-      return { command: 'tv/toggle_power' };
-    case 'Speaker':
-      return { command: 'speaker/toggle_power' };
+    case 'Speaker': {
+      if (powerOn && powerOff) {
+        const isOn = device.state.toLowerCase() !== 'off' && device.state.toLowerCase() !== 'standby';
+        return { command: isOn ? powerOff : powerOn };
+      }
+      break;
+    }
     default:
-      return null;
+      break;
   }
+  return null;
 }

@@ -11,6 +11,7 @@ import {
   updateAutomation,
   deleteAutomation as deleteAutomationConfig,
 } from '@/lib/homeAssistantAutomations';
+import { isDeviceCommandId, type DeviceCommandId } from '@/lib/deviceCapabilities';
 
 function badRequest(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 400 });
@@ -66,6 +67,36 @@ function parseDraft(body: unknown): AutomationDraft | null {
           ? (triggerRaw.to as string | number)
           : undefined,
     };
+  } else if (triggerRaw.type === 'device') {
+    const entityId =
+      typeof triggerRaw.entityId === 'string' ? (triggerRaw.entityId as string) : null;
+    const mode =
+      triggerRaw.mode === 'state_equals' ||
+      triggerRaw.mode === 'attribute_delta' ||
+      triggerRaw.mode === 'position_equals'
+        ? (triggerRaw.mode as 'state_equals' | 'attribute_delta' | 'position_equals')
+        : null;
+    if (!entityId || !mode) return null;
+    const attribute =
+      typeof triggerRaw.attribute === 'string'
+        ? (triggerRaw.attribute as string)
+        : Array.isArray(triggerRaw.attribute) && triggerRaw.attribute.every((v) => typeof v === 'string')
+        ? (triggerRaw.attribute as string[])
+        : undefined;
+    trigger = {
+      type: 'device',
+      entityId,
+      mode,
+      to:
+        typeof triggerRaw.to === 'string' || typeof triggerRaw.to === 'number'
+          ? (triggerRaw.to as string | number)
+          : undefined,
+      direction:
+        triggerRaw.direction === 'increased' || triggerRaw.direction === 'decreased'
+          ? (triggerRaw.direction as 'increased' | 'decreased')
+          : undefined,
+      attribute,
+    };
   } else if (triggerRaw.type === 'schedule') {
     const scheduleType =
       triggerRaw.scheduleType === 'weekly'
@@ -113,6 +144,17 @@ function parseDraft(body: unknown): AutomationDraft | null {
       typeof actionRaw.entityId === 'string' ? (actionRaw.entityId as string) : null;
     if (!entityId || typeof actionRaw.value !== 'number') return null;
     action = { type: 'set_cover_position', entityId, value: actionRaw.value };
+  } else if (actionRaw.type === 'device_command') {
+    const entityId =
+      typeof actionRaw.entityId === 'string' ? (actionRaw.entityId as string) : null;
+    const rawCommand = typeof actionRaw.command === 'string' ? actionRaw.command : null;
+    const command = rawCommand && isDeviceCommandId(rawCommand) ? (rawCommand as DeviceCommandId) : null;
+    const value =
+      typeof actionRaw.value === 'number' || typeof actionRaw.value === 'string'
+        ? (actionRaw.value as number | string)
+        : undefined;
+    if (!entityId || !command) return null;
+    action = { type: 'device_command', entityId, command, value };
   }
 
   if (!action) return null;

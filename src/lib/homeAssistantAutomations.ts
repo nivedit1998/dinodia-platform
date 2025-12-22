@@ -33,7 +33,7 @@ export type AutomationDraftTrigger =
       mode: 'state_equals' | 'attribute_delta' | 'position_equals';
       to?: string | number;
       direction?: 'increased' | 'decreased';
-      attribute?: string;
+      attribute?: string | string[];
     }
   | {
       type: 'schedule';
@@ -90,6 +90,14 @@ function buildSchedulePieces(trigger: Extract<AutomationDraftTrigger, { type: 's
   return { triggers: [baseTrigger], conditions };
 }
 
+function normalizeAttributes(attribute: string | string[] | undefined, fallback: string) {
+  if (Array.isArray(attribute)) {
+    return attribute.filter((attr) => typeof attr === 'string' && attr.length > 0);
+  }
+  if (typeof attribute === 'string' && attribute.length > 0) return [attribute];
+  return [fallback];
+}
+
 function buildDeviceTriggerPieces(trigger: Extract<AutomationDraftTrigger, { type: 'device' }>) {
   const triggers: unknown[] = [];
   const conditions: unknown[] = [];
@@ -97,29 +105,39 @@ function buildDeviceTriggerPieces(trigger: Extract<AutomationDraftTrigger, { typ
   if (trigger.mode === 'state_equals') {
     triggers.push({ platform: 'state', entity_id: trigger.entityId, to: trigger.to });
   } else if (trigger.mode === 'position_equals') {
-    triggers.push({
-      platform: 'state',
-      entity_id: trigger.entityId,
-      attribute: trigger.attribute || 'current_position',
-      to: trigger.to,
+    const attributes = normalizeAttributes(trigger.attribute, 'current_position');
+    const uniqueAttributes = Array.from(new Set([...attributes, 'position']));
+    uniqueAttributes.forEach((attribute) => {
+      triggers.push({
+        platform: 'state',
+        entity_id: trigger.entityId,
+        attribute,
+        to: trigger.to,
+      });
     });
   } else if (trigger.mode === 'attribute_delta') {
-    const attribute = trigger.attribute || 'brightness';
-    triggers.push({
-      platform: 'state',
-      entity_id: trigger.entityId,
-      attribute,
+    const attributes = normalizeAttributes(trigger.attribute, 'brightness');
+    attributes.forEach((attribute) => {
+      triggers.push({
+        platform: 'state',
+        entity_id: trigger.entityId,
+        attribute,
+      });
     });
-    if (trigger.direction === 'increased') {
-      conditions.push({
-        condition: 'template',
-        value_template: `{{ trigger.to_state.attributes.${attribute} > trigger.from_state.attributes.${attribute} }}`,
+    const comparisonOperator =
+      trigger.direction === 'increased' ? '>' : trigger.direction === 'decreased' ? '<' : null;
+    if (comparisonOperator) {
+      const comparisons = attributes.map((attribute) => {
+        const toValue = `(trigger.to_state.attributes['${attribute}'] | default(0)) if (trigger.to_state is not none and trigger.to_state.attributes is defined) else 0`;
+        const fromValue = `(trigger.from_state.attributes['${attribute}'] | default(0)) if (trigger.from_state is not none and trigger.from_state.attributes is defined) else 0`;
+        return `${toValue} ${comparisonOperator} ${fromValue}`;
       });
-    } else if (trigger.direction === 'decreased') {
-      conditions.push({
-        condition: 'template',
-        value_template: `{{ trigger.to_state.attributes.${attribute} < trigger.from_state.attributes.${attribute} }}`,
-      });
+      if (comparisons.length > 0) {
+        conditions.push({
+          condition: 'template',
+          value_template: `{{ ${comparisons.join(' or ')} }}`,
+        });
+      }
     }
   }
 
@@ -170,6 +188,10 @@ function buildDeviceCommandAction(command: DeviceCommandId, entityId: string, va
   switch (command) {
     case 'light/toggle':
       return { service: 'homeassistant.toggle', target };
+    case 'light/turn_on':
+      return { service: 'homeassistant.turn_on', target };
+    case 'light/turn_off':
+      return { service: 'homeassistant.turn_off', target };
     case 'light/set_brightness':
       return {
         service: 'light.turn_on',
@@ -182,6 +204,10 @@ function buildDeviceCommandAction(command: DeviceCommandId, entityId: string, va
         target,
         data: { position: clamp(Number(value ?? 0), 0, 100) },
       };
+    case 'blind/open':
+      return { service: 'cover.open_cover', target };
+    case 'blind/close':
+      return { service: 'cover.close_cover', target };
     case 'media/play_pause':
       return { service: 'media_player.media_play_pause', target };
     case 'media/next':
@@ -198,6 +224,12 @@ function buildDeviceCommandAction(command: DeviceCommandId, entityId: string, va
       return { service: 'media_player.volume_up', target };
     case 'media/volume_down':
       return { service: 'media_player.volume_down', target };
+    case 'tv/turn_on':
+    case 'speaker/turn_on':
+      return { service: 'media_player.turn_on', target };
+    case 'tv/turn_off':
+    case 'speaker/turn_off':
+      return { service: 'media_player.turn_off', target };
     case 'tv/toggle_power':
     case 'speaker/toggle_power':
       return { service: 'media_player.toggle', target };

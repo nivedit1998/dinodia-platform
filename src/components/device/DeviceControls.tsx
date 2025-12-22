@@ -3,6 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { UIDevice } from '@/types/device';
 import { getPrimaryLabel } from '@/lib/deviceLabels';
+import {
+  DeviceActionSpec,
+  DeviceCommandId,
+  getActionsForDevice,
+  getBlindPosition,
+  getBrightnessPercent,
+  getCurrentTemperature,
+  getTargetTemperature,
+  getVolumePercent,
+} from '@/lib/deviceCapabilities';
 
 const CAMERA_REFRESH_INTERVAL_MS = 15000;
 
@@ -41,6 +51,82 @@ export function useDeviceCommand(onActionComplete?: () => void) {
   return { pendingCommand, sendCommand };
 }
 
+type ActionMap = {
+  powerOn?: DeviceCommandId;
+  powerOff?: DeviceCommandId;
+  brightness?: Extract<DeviceActionSpec, { kind: 'slider' }>;
+  blindSlider?: Extract<DeviceActionSpec, { kind: 'slider' }>;
+  blindPositions?: Extract<DeviceActionSpec, { kind: 'fixed-position' }>;
+  volume?: Extract<DeviceActionSpec, { kind: 'slider' }>;
+  volumeUp?: DeviceCommandId;
+  volumeDown?: DeviceCommandId;
+  boilerTempUp?: DeviceCommandId;
+  boilerTempDown?: DeviceCommandId;
+  setTemperature?: Extract<DeviceActionSpec, { kind: 'slider' }>;
+  playPause?: DeviceCommandId;
+  next?: DeviceCommandId;
+  previous?: DeviceCommandId;
+};
+
+function buildActionMap(actions: DeviceActionSpec[]): ActionMap {
+  const map: ActionMap = {};
+  actions.forEach((action) => {
+    if (action.kind === 'command') {
+      switch (action.id) {
+        case 'light/turn_on':
+        case 'tv/turn_on':
+        case 'speaker/turn_on':
+          map.powerOn = action.id;
+          break;
+        case 'light/turn_off':
+        case 'tv/turn_off':
+        case 'speaker/turn_off':
+          map.powerOff = action.id;
+          break;
+        case 'media/volume_up':
+          map.volumeUp = action.id;
+          break;
+        case 'media/volume_down':
+          map.volumeDown = action.id;
+          break;
+        case 'boiler/temp_up':
+          map.boilerTempUp = action.id;
+          break;
+        case 'boiler/temp_down':
+          map.boilerTempDown = action.id;
+          break;
+        case 'media/play_pause':
+          map.playPause = action.id;
+          break;
+        case 'media/next':
+          map.next = action.id;
+          break;
+        case 'media/previous':
+          map.previous = action.id;
+          break;
+        default:
+          break;
+      }
+    } else if (action.kind === 'slider') {
+      if (action.id === 'light/set_brightness') map.brightness = action;
+      if (action.id === 'blind/set_position') map.blindSlider = action;
+      if (action.id === 'media/volume_set') map.volume = action;
+      if (action.id === 'boiler/set_temperature') map.setTemperature = action;
+    } else if (action.kind === 'fixed-position') {
+      if (action.id === 'blind/set_position') map.blindPositions = action;
+    }
+  });
+  return map;
+}
+
+function isPowerOn(label: string, state: string) {
+  const normalized = state.toLowerCase();
+  if (label === 'TV' || label === 'Speaker') {
+    return normalized !== 'off' && normalized !== 'standby';
+  }
+  return normalized === 'on';
+}
+
 type DeviceControlsProps = {
   device: UIDevice;
   onActionComplete?: () => void;
@@ -54,11 +140,15 @@ export function DeviceControls({
 }: DeviceControlsProps) {
   const label = getPrimaryLabel(device);
   const attrs = device.attributes || {};
+  const actions = useMemo(() => getActionsForDevice(device, 'dashboard'), [device]);
+  const actionMap = useMemo(() => buildActionMap(actions), [actions]);
   const { pendingCommand, sendCommand } = useDeviceCommand(onActionComplete);
   const brightnessValue = getBrightnessPercent(attrs);
   const volumeValue = getVolumePercent(attrs);
+  const blindPosition = getBlindPosition(attrs);
   const [brightnessPct, setBrightnessPct] = useState(brightnessValue ?? 0);
   const [volumePct, setVolumePct] = useState(volumeValue ?? 0);
+  const [targetPosition, setTargetPosition] = useState(blindPosition ?? 0);
   const [cameraRefreshToken, setCameraRefreshToken] = useState(() => Date.now());
 
   useEffect(() => {
@@ -74,6 +164,13 @@ export function DeviceControls({
       setVolumePct(volumeValue);
     }
   }, [volumeValue]);
+
+  useEffect(() => {
+    if (blindPosition !== null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTargetPosition(blindPosition);
+    }
+  }, [blindPosition]);
 
   useEffect(() => {
     if (label === 'Doorbell' || label === 'Home Security') {
@@ -99,8 +196,10 @@ export function DeviceControls({
         return renderLightControls({
           device,
           brightnessPct,
-          supportsBrightness: brightnessValue !== null,
+          brightnessAction: actionMap.brightness,
           setBrightnessPct,
+          powerOn: actionMap.powerOn,
+          powerOff: actionMap.powerOff,
           pendingCommand,
           sendCommand,
         });
@@ -108,14 +207,31 @@ export function DeviceControls({
         return (
           <BlindControls
             device={device}
+            position={blindPosition}
+            targetPosition={targetPosition}
+            setTargetPosition={setTargetPosition}
+            sliderAction={actionMap.blindSlider}
             pendingCommand={pendingCommand}
             sendCommand={sendCommand}
           />
         );
       case 'Spotify':
-        return renderSpotifyControls({ device, pendingCommand, sendCommand });
+        return renderSpotifyControls({
+          device,
+          pendingCommand,
+          sendCommand,
+          playPause: actionMap.playPause,
+          next: actionMap.next,
+          previous: actionMap.previous,
+        });
       case 'Boiler':
-        return renderBoilerControls({ device, pendingCommand, sendCommand });
+        return renderBoilerControls({
+          device,
+          pendingCommand,
+          sendCommand,
+          tempUp: actionMap.boilerTempUp,
+          tempDown: actionMap.boilerTempDown,
+        });
       case 'Doorbell':
         return renderDoorbellControls({ device, cameraRefreshToken });
       case 'Home Security':
@@ -130,6 +246,11 @@ export function DeviceControls({
           setVolumePct,
           pendingCommand,
           sendCommand,
+          powerOn: actionMap.powerOn,
+          powerOff: actionMap.powerOff,
+          volumeAction: actionMap.volume,
+          volumeUp: actionMap.volumeUp,
+          volumeDown: actionMap.volumeDown,
         });
       case 'Speaker':
         return renderSpeakerControls({
@@ -138,6 +259,11 @@ export function DeviceControls({
           setVolumePct,
           pendingCommand,
           sendCommand,
+          powerOn: actionMap.powerOn,
+          powerOff: actionMap.powerOff,
+          volumeAction: actionMap.volume,
+          volumeUp: actionMap.volumeUp,
+          volumeDown: actionMap.volumeDown,
         });
       case 'Motion Sensor':
         return renderMotionSensorControls({ device });
@@ -149,15 +275,17 @@ export function DeviceControls({
         );
     }
   }, [
-    label,
-    device,
+    actionMap,
+    blindPosition,
     brightnessPct,
-    brightnessValue,
-    volumePct,
-    sendCommand,
-    pendingCommand,
     cameraRefreshToken,
+    device,
+    label,
+    pendingCommand,
     relatedDevices,
+    sendCommand,
+    targetPosition,
+    volumePct,
   ]);
 
   return <div className="space-y-6">{content}</div>;
@@ -166,36 +294,55 @@ export function DeviceControls({
 function renderLightControls({
   device,
   brightnessPct,
-  supportsBrightness,
+  brightnessAction,
   setBrightnessPct,
+  powerOn,
+  powerOff,
   pendingCommand,
   sendCommand,
 }: {
   device: UIDevice;
   brightnessPct: number;
-  supportsBrightness: boolean;
+  brightnessAction?: Extract<DeviceActionSpec, { kind: 'slider' }>;
   setBrightnessPct: (value: number) => void;
+  powerOn?: DeviceCommandId;
+  powerOff?: DeviceCommandId;
   pendingCommand: string | null;
   sendCommand: (payload: ControlPayload) => Promise<void>;
 }) {
-  const isOn = device.state === 'on';
+  const hasPowerCommands = !!powerOn && !!powerOff;
+  const isOn = hasPowerCommands ? isPowerOn('Light', device.state) : device.state === 'on';
+
+  if (!hasPowerCommands && !brightnessAction) {
+    return (
+      <p className="text-sm text-slate-500">
+        No interactive controls available.
+      </p>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <button
-        type="button"
-        onClick={() =>
-          sendCommand({ entityId: device.entityId, command: 'light/toggle' })
-        }
-        disabled={pendingCommand !== null}
-        className={`w-full rounded-2xl py-4 text-center text-lg font-semibold transition shadow-inner ${
-          isOn
-            ? 'bg-amber-400/80 text-amber-950 shadow-amber-200/60'
-            : 'bg-slate-200/70 text-slate-600'
-        }`}
-      >
-        {isOn ? 'Turn light off' : 'Turn light on'}
-      </button>
-      {device.domain === 'light' && supportsBrightness && (
+      {hasPowerCommands && (
+        <button
+          type="button"
+          onClick={() =>
+            sendCommand({
+              entityId: device.entityId,
+              command: isOn ? powerOff! : powerOn!,
+            })
+          }
+          disabled={pendingCommand !== null}
+          className={`w-full rounded-2xl py-4 text-center text-lg font-semibold transition shadow-inner ${
+            isOn
+              ? 'bg-amber-400/80 text-amber-950 shadow-amber-200/60'
+              : 'bg-slate-200/70 text-slate-600'
+          }`}
+        >
+          {isOn ? 'Turn light off' : 'Turn light on'}
+        </button>
+      )}
+      {device.domain === 'light' && brightnessAction && (
         <div className="space-y-3">
           <div className="flex items-center justify-between text-sm text-slate-500">
             <span>Brightness</span>
@@ -205,21 +352,22 @@ function renderLightControls({
           </div>
           <input
             type="range"
-            min={0}
-            max={100}
+            min={brightnessAction.min}
+            max={brightnessAction.max}
+            step={brightnessAction.step ?? 1}
             value={brightnessPct}
             onChange={(e) => setBrightnessPct(Number(e.target.value))}
             onMouseUp={(e) =>
               sendCommand({
                 entityId: device.entityId,
-                command: 'light/set_brightness',
+                command: brightnessAction.id,
                 value: Number((e.target as HTMLInputElement).value),
               })
             }
             onTouchEnd={(e) =>
               sendCommand({
                 entityId: device.entityId,
-                command: 'light/set_brightness',
+                command: brightnessAction.id,
                 value: Number((e.target as HTMLInputElement).value),
               })
             }
@@ -233,30 +381,26 @@ function renderLightControls({
 
 function BlindControls({
   device,
+  position,
+  targetPosition,
+  setTargetPosition,
+  sliderAction,
   pendingCommand,
   sendCommand,
 }: {
   device: UIDevice;
+  position: number | null;
+  targetPosition: number;
+  setTargetPosition: (value: number) => void;
+  sliderAction?: Extract<DeviceActionSpec, { kind: 'slider' }>;
   pendingCommand: string | null;
   sendCommand: (payload: ControlPayload) => Promise<void>;
 }) {
-  const attrs = device.attributes || {};
-  const rawPosition =
-    typeof attrs.current_position === 'number'
-      ? (attrs.current_position as number)
-      : typeof attrs.position === 'number'
-      ? (attrs.position as number)
-      : null;
-  const position =
-    rawPosition === null ? null : Math.round(Math.min(100, Math.max(0, rawPosition)));
-  const [targetPosition, setTargetPosition] = useState(position ?? 0);
-
-  useEffect(() => {
-    if (position !== null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setTargetPosition(position);
-    }
-  }, [position]);
+  if (!sliderAction) {
+    return (
+      <p className="text-sm text-slate-500">No interactive controls available.</p>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -275,21 +419,22 @@ function BlindControls({
         </div>
         <input
           type="range"
-          min={0}
-          max={100}
+          min={sliderAction.min}
+          max={sliderAction.max}
+          step={sliderAction.step ?? 1}
           value={targetPosition}
           onChange={(e) => setTargetPosition(Number(e.target.value))}
           onMouseUp={(e) =>
             sendCommand({
               entityId: device.entityId,
-              command: 'blind/set_position',
+              command: sliderAction.id,
               value: Number((e.target as HTMLInputElement).value),
             })
           }
           onTouchEnd={(e) =>
             sendCommand({
               entityId: device.entityId,
-              command: 'blind/set_position',
+              command: sliderAction.id,
               value: Number((e.target as HTMLInputElement).value),
             })
           }
@@ -303,13 +448,23 @@ function BlindControls({
 
 function renderSpotifyControls({
   device,
+  playPause,
+  next,
+  previous,
   pendingCommand,
   sendCommand,
 }: {
   device: UIDevice;
+  playPause?: DeviceCommandId;
+  next?: DeviceCommandId;
+  previous?: DeviceCommandId;
   pendingCommand: string | null;
   sendCommand: (payload: ControlPayload) => Promise<void>;
 }) {
+  if (!playPause || !next || !previous) {
+    return <p className="text-sm text-slate-500">No interactive controls available.</p>;
+  }
+
   const attrs = device.attributes || {};
   const cover = readImageAttr(attrs);
   const title = readStringAttr(attrs, 'media_title');
@@ -365,7 +520,7 @@ function renderSpotifyControls({
               onClick={() =>
                 sendCommand({
                   entityId: device.entityId,
-                  command: 'media/previous',
+                  command: previous,
                 })
               }
               disabled={pendingCommand !== null}
@@ -378,7 +533,7 @@ function renderSpotifyControls({
               onClick={() =>
                 sendCommand({
                   entityId: device.entityId,
-                  command: 'media/play_pause',
+                  command: playPause,
                 })
               }
               disabled={pendingCommand !== null}
@@ -391,7 +546,7 @@ function renderSpotifyControls({
               onClick={() =>
                 sendCommand({
                   entityId: device.entityId,
-                  command: 'media/next',
+                  command: next,
                 })
               }
               disabled={pendingCommand !== null}
@@ -408,16 +563,24 @@ function renderSpotifyControls({
 
 function renderBoilerControls({
   device,
+  tempUp,
+  tempDown,
   pendingCommand,
   sendCommand,
 }: {
   device: UIDevice;
+  tempUp?: DeviceCommandId;
+  tempDown?: DeviceCommandId;
   pendingCommand: string | null;
   sendCommand: (payload: ControlPayload) => Promise<void>;
 }) {
+  if (!tempUp || !tempDown) {
+    return <p className="text-sm text-slate-500">No interactive controls available.</p>;
+  }
+
   const attrs = device.attributes || {};
-  const target = attrs.temperature;
-  const current = attrs.current_temperature;
+  const target = getTargetTemperature(attrs);
+  const current = getCurrentTemperature(attrs);
 
   return (
     <div className="space-y-6">
@@ -438,7 +601,7 @@ function renderBoilerControls({
         <button
           type="button"
           onClick={() =>
-            sendCommand({ entityId: device.entityId, command: 'boiler/temp_down' })
+            sendCommand({ entityId: device.entityId, command: tempDown })
           }
           disabled={pendingCommand !== null}
           className="h-16 w-16 rounded-2xl border bg-white text-2xl shadow"
@@ -448,7 +611,7 @@ function renderBoilerControls({
         <button
           type="button"
           onClick={() =>
-            sendCommand({ entityId: device.entityId, command: 'boiler/temp_up' })
+            sendCommand({ entityId: device.entityId, command: tempUp })
           }
           disabled={pendingCommand !== null}
           className="h-16 w-16 rounded-2xl border bg-white text-2xl shadow"
@@ -519,89 +682,112 @@ function renderTvControls({
   device,
   volumePct,
   setVolumePct,
+  powerOn,
+  powerOff,
+  volumeAction,
+  volumeUp,
+  volumeDown,
   pendingCommand,
   sendCommand,
 }: {
   device: UIDevice;
   volumePct: number;
   setVolumePct: (value: number) => void;
+  powerOn?: DeviceCommandId;
+  powerOff?: DeviceCommandId;
+  volumeAction?: Extract<DeviceActionSpec, { kind: 'slider' }>;
+  volumeUp?: DeviceCommandId;
+  volumeDown?: DeviceCommandId;
   pendingCommand: string | null;
   sendCommand: (payload: ControlPayload) => Promise<void>;
 }) {
+  const hasPower = !!powerOn && !!powerOff;
+  const isOn = hasPower ? isPowerOn('TV', device.state) : false;
+  const hasVolumeControls = !!volumeAction;
+
+  if (!hasPower && !hasVolumeControls) {
+    return <p className="text-sm text-slate-500">No interactive controls available.</p>;
+  }
+
   return (
     <div className="space-y-5">
-      <button
-        type="button"
-        onClick={() =>
-          sendCommand({ entityId: device.entityId, command: 'tv/toggle_power' })
-        }
-        disabled={pendingCommand !== null}
-        className={`w-full rounded-2xl py-4 text-lg font-semibold ${
-          device.state === 'off'
-            ? 'bg-slate-200 text-slate-600'
-            : 'bg-indigo-500/90 text-white'
-        }`}
-      >
-        {device.state === 'off' ? 'Power on' : 'Power off'}
-      </button>
-      <div>
-        <div className="flex items-center justify-between text-sm text-slate-500">
-          <span>Volume</span>
-          <span className="text-base font-semibold text-slate-900">
-            {volumePct}%
-          </span>
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={volumePct}
-          onChange={(e) => setVolumePct(Number(e.target.value))}
-          onMouseUp={(e) =>
-            sendCommand({
-              entityId: device.entityId,
-              command: 'media/volume_set',
-              value: Number((e.target as HTMLInputElement).value),
-            })
+      {hasPower && (
+        <button
+          type="button"
+          onClick={() =>
+            sendCommand({ entityId: device.entityId, command: isOn ? powerOff! : powerOn! })
           }
-          onTouchEnd={(e) =>
-            sendCommand({
-              entityId: device.entityId,
-              command: 'media/volume_set',
-              value: Number((e.target as HTMLInputElement).value),
-            })
-          }
-          className="w-full accent-indigo-500"
-        />
-        <div className="mt-4 flex gap-3">
-          <button
-            type="button"
-            onClick={() =>
+          disabled={pendingCommand !== null}
+          className={`w-full rounded-2xl py-4 text-lg font-semibold ${
+            isOn ? 'bg-indigo-500/90 text-white' : 'bg-slate-200 text-slate-600'
+          }`}
+        >
+          {isOn ? 'Power off' : 'Power on'}
+        </button>
+      )}
+      {hasVolumeControls && (
+        <div>
+          <div className="flex items-center justify-between text-sm text-slate-500">
+            <span>Volume</span>
+            <span className="text-base font-semibold text-slate-900">
+              {volumePct}%
+            </span>
+          </div>
+          <input
+            type="range"
+            min={volumeAction?.min ?? 0}
+            max={volumeAction?.max ?? 100}
+            step={volumeAction?.step ?? 1}
+            value={volumePct}
+            onChange={(e) => setVolumePct(Number(e.target.value))}
+            onMouseUp={(e) =>
               sendCommand({
                 entityId: device.entityId,
-                command: 'media/volume_down',
+                command: volumeAction!.id,
+                value: Number((e.target as HTMLInputElement).value),
               })
             }
-            disabled={pendingCommand !== null}
-            className="flex-1 rounded-2xl border border-slate-200 py-3"
-          >
-            Volume -
-          </button>
-          <button
-            type="button"
-            onClick={() =>
+            onTouchEnd={(e) =>
               sendCommand({
                 entityId: device.entityId,
-                command: 'media/volume_up',
+                command: volumeAction!.id,
+                value: Number((e.target as HTMLInputElement).value),
               })
             }
-            disabled={pendingCommand !== null}
-            className="flex-1 rounded-2xl border border-slate-200 py-3"
-          >
-            Volume +
-          </button>
+            className="w-full accent-indigo-500"
+          />
+          {volumeDown && volumeUp && (
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={() =>
+                  sendCommand({
+                    entityId: device.entityId,
+                    command: volumeDown,
+                  })
+                }
+                disabled={pendingCommand !== null}
+                className="flex-1 rounded-2xl border border-slate-200 py-3"
+              >
+                Volume -
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  sendCommand({
+                    entityId: device.entityId,
+                    command: volumeUp,
+                  })
+                }
+                disabled={pendingCommand !== null}
+                className="flex-1 rounded-2xl border border-slate-200 py-3"
+              >
+                Volume +
+              </button>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -610,92 +796,115 @@ function renderSpeakerControls({
   device,
   volumePct,
   setVolumePct,
+  powerOn,
+  powerOff,
+  volumeAction,
+  volumeUp,
+  volumeDown,
   pendingCommand,
   sendCommand,
 }: {
   device: UIDevice;
   volumePct: number;
   setVolumePct: (value: number) => void;
+  powerOn?: DeviceCommandId;
+  powerOff?: DeviceCommandId;
+  volumeAction?: Extract<DeviceActionSpec, { kind: 'slider' }>;
+  volumeUp?: DeviceCommandId;
+  volumeDown?: DeviceCommandId;
   pendingCommand: string | null;
   sendCommand: (payload: ControlPayload) => Promise<void>;
 }) {
+  const hasPower = !!powerOn && !!powerOff;
+  const isOn = hasPower ? isPowerOn('Speaker', device.state) : false;
+  const hasVolumeControls = !!volumeAction;
+
+  if (!hasPower && !hasVolumeControls) {
+    return <p className="text-sm text-slate-500">No interactive controls available.</p>;
+  }
+
   return (
     <div className="space-y-5">
-      <button
-        type="button"
-        onClick={() =>
-          sendCommand({
-            entityId: device.entityId,
-            command: 'speaker/toggle_power',
-          })
-        }
-        disabled={pendingCommand !== null}
-        className={`w-full rounded-2xl py-4 text-lg font-semibold ${
-          device.state === 'off'
-            ? 'bg-slate-200 text-slate-600'
-            : 'bg-purple-500/90 text-white'
-        }`}
-      >
-        {device.state === 'off' ? 'Power on' : 'Power off'}
-      </button>
-      <div>
-        <div className="flex items-center justify-between text-sm text-slate-500">
-          <span>Volume</span>
-          <span className="text-base font-semibold text-slate-900">
-            {volumePct}%
-          </span>
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={volumePct}
-          onChange={(e) => setVolumePct(Number(e.target.value))}
-          onMouseUp={(e) =>
+      {hasPower && (
+        <button
+          type="button"
+          onClick={() =>
             sendCommand({
               entityId: device.entityId,
-              command: 'media/volume_set',
-              value: Number((e.target as HTMLInputElement).value),
+              command: isOn ? powerOff! : powerOn!,
             })
           }
-          onTouchEnd={(e) =>
-            sendCommand({
-              entityId: device.entityId,
-              command: 'media/volume_set',
-              value: Number((e.target as HTMLInputElement).value),
-            })
-          }
-          className="w-full accent-purple-500"
-        />
-        <div className="mt-4 flex gap-3">
-          <button
-            type="button"
-            onClick={() =>
+          disabled={pendingCommand !== null}
+          className={`w-full rounded-2xl py-4 text-lg font-semibold ${
+            isOn ? 'bg-purple-500/90 text-white' : 'bg-slate-200 text-slate-600'
+          }`}
+        >
+          {isOn ? 'Power off' : 'Power on'}
+        </button>
+      )}
+      {hasVolumeControls && (
+        <div>
+          <div className="flex items-center justify-between text-sm text-slate-500">
+            <span>Volume</span>
+            <span className="text-base font-semibold text-slate-900">
+              {volumePct}%
+            </span>
+          </div>
+          <input
+            type="range"
+            min={volumeAction?.min ?? 0}
+            max={volumeAction?.max ?? 100}
+            step={volumeAction?.step ?? 1}
+            value={volumePct}
+            onChange={(e) => setVolumePct(Number(e.target.value))}
+            onMouseUp={(e) =>
               sendCommand({
                 entityId: device.entityId,
-                command: 'media/volume_down',
+                command: volumeAction!.id,
+                value: Number((e.target as HTMLInputElement).value),
               })
             }
-            disabled={pendingCommand !== null}
-            className="flex-1 rounded-2xl border border-slate-200 py-3"
-          >
-            Volume -
-          </button>
-          <button
-            type="button"
-            onClick={() =>
+            onTouchEnd={(e) =>
               sendCommand({
                 entityId: device.entityId,
-                command: 'media/volume_up',
+                command: volumeAction!.id,
+                value: Number((e.target as HTMLInputElement).value),
               })
             }
-            disabled={pendingCommand !== null}
-            className="flex-1 rounded-2xl border border-slate-200 py-3"
-          >
-            Volume +
-          </button>
+            className="w-full accent-purple-500"
+          />
+          {volumeDown && volumeUp && (
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={() =>
+                  sendCommand({
+                    entityId: device.entityId,
+                    command: volumeDown,
+                  })
+                }
+                disabled={pendingCommand !== null}
+                className="flex-1 rounded-2xl border border-slate-200 py-3"
+              >
+                Volume -
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  sendCommand({
+                    entityId: device.entityId,
+                    command: volumeUp,
+                  })
+                }
+                disabled={pendingCommand !== null}
+                className="flex-1 rounded-2xl border border-slate-200 py-3"
+              >
+                Volume +
+              </button>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -722,26 +931,6 @@ function renderMotionSensorControls({ device }: { device: UIDevice }) {
       </p>
     </div>
   );
-}
-
-export function getBrightnessPercent(attrs: Record<string, unknown>) {
-  const brightnessPct = attrs['brightness_pct'];
-  if (typeof brightnessPct === 'number') {
-    return Math.round(brightnessPct);
-  }
-  const brightness = attrs['brightness'];
-  if (typeof brightness === 'number') {
-    return Math.round((brightness / 255) * 100);
-  }
-  return null;
-}
-
-export function getVolumePercent(attrs: Record<string, unknown>) {
-  const volumeLevel = attrs['volume_level'];
-  if (typeof volumeLevel === 'number') {
-    return Math.round(volumeLevel * 100);
-  }
-  return null;
 }
 
 export function formatTemperature(value: unknown) {

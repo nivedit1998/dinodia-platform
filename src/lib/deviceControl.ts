@@ -23,6 +23,7 @@ export const DEVICE_CONTROL_NUMERIC_COMMANDS = new Set([
   'light/set_brightness',
   'media/volume_set',
   'blind/set_position',
+  'boiler/set_temperature',
 ]);
 
 type DeviceCommandSource = 'app' | 'alexa' | 'physical';
@@ -34,14 +35,21 @@ type DeviceCommandOptions = {
 
 const ALEXA_REPORTABLE_COMMANDS: Record<string, { label: string }> = {
   'light/toggle': { label: 'light' },
+  'light/turn_on': { label: 'light' },
+  'light/turn_off': { label: 'light' },
   'light/set_brightness': { label: 'light' },
   'blind/set_position': { label: 'blind' },
   'blind/open': { label: 'blind' },
   'blind/close': { label: 'blind' },
   'tv/toggle_power': { label: 'tv' },
+  'tv/turn_on': { label: 'tv' },
+  'tv/turn_off': { label: 'tv' },
   'speaker/toggle_power': { label: 'speaker' },
+  'speaker/turn_on': { label: 'speaker' },
+  'speaker/turn_off': { label: 'speaker' },
   'boiler/temp_up': { label: 'boiler' },
   'boiler/temp_down': { label: 'boiler' },
+  'boiler/set_temperature': { label: 'boiler' },
 };
 
 function getAlexaLabelForCommand(command: string): string | null {
@@ -108,6 +116,12 @@ export async function executeDeviceCommand(
     : null;
 
   switch (command) {
+    case 'light/turn_on':
+      await callHaService(haConnection, 'homeassistant', 'turn_on', { entity_id: entityId });
+      break;
+    case 'light/turn_off':
+      await callHaService(haConnection, 'homeassistant', 'turn_off', { entity_id: entityId });
+      break;
     case 'light/toggle':
       if (domain === 'light') {
         await callHaService(
@@ -207,6 +221,29 @@ export async function executeDeviceCommand(
       });
       break;
     }
+    case 'boiler/set_temperature': {
+      const temp =
+        typeof value === 'number'
+          ? value
+          : typeof attrs.temperature === 'number'
+          ? (attrs.temperature as number)
+          : typeof attrs.current_temperature === 'number'
+          ? (attrs.current_temperature as number)
+          : 20;
+      await callHaService(haConnection, 'climate', 'set_temperature', {
+        entity_id: entityId,
+        temperature: temp,
+      });
+      break;
+    }
+    case 'tv/turn_on':
+    case 'speaker/turn_on':
+      await callHaService(haConnection, 'media_player', 'turn_on', { entity_id: entityId });
+      break;
+    case 'tv/turn_off':
+    case 'speaker/turn_off':
+      await callHaService(haConnection, 'media_player', 'turn_off', { entity_id: entityId });
+      break;
     case 'tv/toggle_power':
     case 'speaker/toggle_power':
       await callHaService(

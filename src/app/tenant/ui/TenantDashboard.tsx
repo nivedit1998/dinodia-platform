@@ -6,15 +6,15 @@ import { UIDevice } from '@/types/device';
 import {
   getGroupLabel,
   sortLabels,
-  normalizeLabel,
   OTHER_LABEL,
 } from '@/lib/deviceLabels';
-import { isDetailState, isSensorEntity } from '@/lib/deviceSensors';
+import { isSensorEntity } from '@/lib/deviceSensors';
 import { getDeviceGroupingId } from '@/lib/deviceIdentity';
 import { DeviceTile } from '@/components/device/DeviceTile';
 import { DeviceDetailSheet } from '@/components/device/DeviceDetailSheet';
 import { subscribeToRefresh } from '@/lib/refreshBus';
 import { logout as performLogout } from '@/lib/logout';
+import { getTileEligibleDevicesForTenantDashboard } from '@/lib/deviceCapabilities';
 
 type Props = {
   username: string;
@@ -263,7 +263,8 @@ export default function TenantDashboard(props: Props) {
 
   const areaOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const d of devices) {
+    const eligible = getTileEligibleDevicesForTenantDashboard(devices);
+    for (const d of eligible) {
       const areaName = (d.area ?? d.areaName ?? '').trim();
       if (areaName) set.add(areaName);
     }
@@ -284,9 +285,14 @@ export default function TenantDashboard(props: Props) {
     }
   }, [resolvedSelectedArea]);
 
+  const eligibleDevices = useMemo(
+    () => getTileEligibleDevicesForTenantDashboard(devices),
+    [devices]
+  );
+
   const visibleDevices = useMemo(
     () =>
-      devices.filter((d) => {
+      eligibleDevices.filter((d) => {
         const areaName = (d.area ?? d.areaName ?? '').trim();
         if (
           resolvedSelectedArea !== ALL_AREAS &&
@@ -294,14 +300,9 @@ export default function TenantDashboard(props: Props) {
         ) {
           return false;
         }
-        const labels = Array.isArray(d.labels) ? d.labels : [];
-        const hasLabel =
-          normalizeLabel(d.label).length > 0 ||
-          labels.some((lbl) => normalizeLabel(lbl).length > 0);
-        const primary = !isDetailState(d.state);
-        return areaName.length > 0 && hasLabel && primary;
+        return true;
       }),
-    [devices, resolvedSelectedArea]
+    [eligibleDevices, resolvedSelectedArea]
   );
 
   const labelGroups = useMemo(() => {
