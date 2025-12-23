@@ -44,6 +44,7 @@ export function DeviceDetailSheet({
   );
   const area = useMemo(() => getDeviceArea(device), [device]);
   const [visible, setVisible] = useState(false);
+  const [showAllSensors, setShowAllSensors] = useState(false);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setVisible(true));
@@ -57,98 +58,134 @@ export function DeviceDetailSheet({
     };
   }, [onClose]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.matchMedia('(min-width: 768px)').matches) {
+      setShowAllSensors(true);
+    }
+  }, []);
+
+  const previewCount = 2;
+  const hasMoreSensors =
+    Array.isArray(linkedSensors) && linkedSensors.length > previewCount;
+  const visibleSensors = Array.isArray(linkedSensors)
+    ? showAllSensors
+      ? linkedSensors
+      : linkedSensors.slice(0, previewCount)
+    : [];
+
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center px-4 py-6 transition ${
+      className={`fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-4 py-6 transition sm:items-center ${
         visible ? 'bg-slate-900/40' : 'bg-slate-900/0'
       }`}
       onClick={onClose}
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className={`w-full max-w-4xl rounded-[32px] border border-white/30 bg-white/90 shadow-2xl backdrop-blur-2xl transition-all duration-300 ${
+        className={`w-full max-w-4xl overflow-hidden rounded-[32px] border border-white/30 bg-white/90 shadow-2xl backdrop-blur-2xl transition-all duration-300 ${
           visible ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'
         }`}
       >
-        <div
-          className={`rounded-[32px] bg-gradient-to-br ${accent} p-6 sm:p-8`}
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-2 text-slate-900">
-              <p className="text-xs uppercase tracking-[0.4em] text-slate-500">
-                {label}
-              </p>
-              <h2 className="text-3xl font-semibold">{device.name}</h2>
-              <p className="text-sm text-slate-600">{secondary}</p>
-              <p className="text-xs uppercase tracking-[0.4em] text-slate-400">
-                Area
-              </p>
-              <p className="text-sm text-slate-700">{area}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {showAdminControls && (
+        <div className="flex max-h-[90vh] flex-col sm:max-h-[85vh]">
+          <div
+            className={`rounded-[32px] bg-gradient-to-br ${accent} p-5 sm:p-8`}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1.5 text-slate-900">
+                <p className="text-[11px] uppercase tracking-[0.38em] text-slate-500">
+                  {label}
+                </p>
+                <h2 className="text-2xl font-semibold sm:text-3xl">
+                  {device.name}
+                </h2>
+                <p className="text-sm text-slate-600">{secondary}</p>
+                <p className="text-xs text-slate-500">
+                  Area • <span className="text-slate-700">{area}</span>
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {showAdminControls && (
+                  <button
+                    type="button"
+                    aria-label="Edit device"
+                    onClick={() => onOpenAdminEdit?.()}
+                    className="rounded-full bg-white/80 px-3 py-2 text-lg text-slate-500 shadow"
+                  >
+                    ⋯
+                  </button>
+                )}
                 <button
                   type="button"
-                  aria-label="Edit device"
-                  onClick={() => onOpenAdminEdit?.()}
-                  className="rounded-full bg-white/80 px-3 py-2 text-lg text-slate-500 shadow"
+                  aria-label="Close"
+                  onClick={onClose}
+                  className="rounded-full bg-white/80 p-2 text-slate-500 shadow"
                 >
-                  ⋯
+                  ×
                 </button>
-              )}
-              <button
-                type="button"
-                aria-label="Close"
-                onClick={onClose}
-                className="rounded-full bg-white/80 p-2 text-slate-500 shadow"
-              >
-                ×
-              </button>
+              </div>
+            </div>
+            <div className="mt-5 flex items-center gap-4 text-slate-700">
+              <div className="rounded-3xl bg-white/70 p-4 shadow">
+                <Icon className="h-9 w-9 text-slate-900 sm:h-10 sm:w-10" />
+              </div>
+              <div className="text-sm text-slate-600">
+                Live controls for{' '}
+                <span className="font-medium text-slate-900">{device.name}</span>
+              </div>
             </div>
           </div>
-          <div className="mt-6 flex items-center gap-4 text-slate-700">
-            <div className="rounded-3xl bg-white/70 p-4 shadow">
-              <Icon className="h-10 w-10 text-slate-900" />
-            </div>
-            <div className="text-sm text-slate-600">
-              Live controls for{' '}
-              <span className="font-medium text-slate-900">{device.name}</span>
-            </div>
-          </div>
-        </div>
-        <div className="p-6 sm:p-8">
-          <DeviceControls
-            device={device}
-            onActionComplete={onActionComplete}
-            relatedDevices={relatedDevices}
-          />
-          {Array.isArray(linkedSensors) && linkedSensors.length > 0 && (
-            <div className="mt-8 space-y-4 rounded-3xl border border-slate-100 bg-white/70 p-4 shadow-sm sm:p-6">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
-                    Sensors for this device
-                  </p>
-                  <p className="text-sm text-slate-600">
-                    Live readouts from linked entities
-                  </p>
+          <div className="flex-1 overflow-y-auto p-5 sm:p-8">
+            <DeviceControls
+              device={device}
+              onActionComplete={onActionComplete}
+              relatedDevices={relatedDevices}
+            />
+            {Array.isArray(linkedSensors) && linkedSensors.length > 0 && (
+              <div className="mt-8 space-y-4 rounded-3xl border border-slate-100 bg-white/70 p-4 shadow-sm sm:p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+                      Linked sensors
+                    </p>
+                    <p className="text-sm text-slate-600">
+                      Live readouts from linked entities
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
+                      {linkedSensors.length} linked
+                    </span>
+                    {hasMoreSensors && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllSensors((prev) => !prev)}
+                        aria-expanded={showAllSensors}
+                        className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-white"
+                      >
+                        {showAllSensors ? 'Show fewer' : 'Show all'}
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
-                  {linkedSensors.length} linked
-                </span>
+                <div className="relative">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {visibleSensors.map((sensor) => (
+                      <SensorCard
+                        key={sensor.entityId}
+                        sensor={sensor}
+                        allowSensorHistory={allowSensorHistory}
+                        historyEndpoint={historyEndpoint}
+                      />
+                    ))}
+                  </div>
+                  {!showAllSensors && hasMoreSensors && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-white/95 to-transparent" />
+                  )}
+                </div>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {linkedSensors.map((sensor) => (
-                  <SensorCard
-                    key={sensor.entityId}
-                    sensor={sensor}
-                    allowSensorHistory={allowSensorHistory}
-                    historyEndpoint={historyEndpoint}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
