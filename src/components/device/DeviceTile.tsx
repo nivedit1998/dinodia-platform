@@ -20,6 +20,7 @@ import { useDeviceCommand } from './DeviceControls';
 
 type DeviceTileProps = {
   device: UIDevice;
+  batteryPercent?: number | null;
   onOpenDetails: () => void;
   onActionComplete?: () => void;
   onOpenAdminEdit?: () => void;
@@ -28,6 +29,7 @@ type DeviceTileProps = {
 
 export function DeviceTile({
   device,
+  batteryPercent = null,
   onOpenDetails,
   onActionComplete,
   onOpenAdminEdit,
@@ -41,6 +43,7 @@ export function DeviceTile({
   const area = getDeviceArea(device);
   const { pendingCommand, sendCommand } = useDeviceCommand(onActionComplete);
   const primaryAction = getPrimaryAction(label, device, actions);
+  const batteryDisplay = batteryPercent != null ? formatBatteryForTile(batteryPercent) : null;
 
   const baseClasses =
     'relative rounded-[26px] p-5 sm:p-6 shadow-[0_20px_40px_rgba(15,23,42,0.08)] transition duration-300 cursor-pointer select-none';
@@ -81,6 +84,13 @@ export function DeviceTile({
           </p>
           <p className="text-lg font-semibold text-slate-900">{device.name}</p>
           <p className="text-sm text-slate-500">{secondary}</p>
+          {batteryDisplay && (
+            <p
+              className={`inline-flex w-fit items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${batteryDisplay.className}`}
+            >
+              {batteryDisplay.text}
+            </p>
+          )}
         </div>
         <div className="flex items-end justify-between gap-3">
           <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
@@ -190,4 +200,25 @@ function getPrimaryAction(
       break;
   }
   return null;
+}
+
+function formatBatteryForTile(percent: number) {
+  if (!Number.isFinite(percent)) return null;
+  const rounded = Math.round(percent);
+  if (rounded <= 0) {
+    return {
+      text: `Battery ${rounded}% • Change Batteries !`,
+      className: 'bg-rose-100/90 text-rose-700',
+    };
+  }
+  if (rounded < 20) {
+    return {
+      text: `Battery ${rounded}% • Low Battery !`,
+      className: 'bg-amber-100/90 text-amber-800',
+    };
+  }
+  return {
+    text: `Battery ${rounded}%`,
+    className: 'bg-slate-100/80 text-slate-600',
+  };
 }

@@ -16,6 +16,10 @@ import { subscribeToRefresh } from '@/lib/refreshBus';
 import { logout as performLogout } from '@/lib/logout';
 import Image from 'next/image';
 import { getTileEligibleDevicesForTenantDashboard } from '@/lib/deviceCapabilities';
+import {
+  buildBatteryPercentByDeviceGroup,
+  getBatteryPercentForDevice,
+} from '@/lib/deviceBattery';
 
 type Props = {
   username: string;
@@ -313,6 +317,11 @@ export default function TenantDashboard(props: Props) {
     [devices]
   );
 
+  const batteryByGroup = useMemo(
+    () => buildBatteryPercentByDeviceGroup(devices),
+    [devices]
+  );
+
   const visibleDevices = useMemo(
     () =>
       eligibleDevices.filter((d) => {
@@ -574,6 +583,7 @@ export default function TenantDashboard(props: Props) {
                       <DeviceTile
                         key={device.entityId}
                         device={device}
+                        batteryPercent={getBatteryPercentForDevice(device, batteryByGroup)}
                         onOpenDetails={() => setOpenDeviceId(device.entityId)}
                         onActionComplete={() => loadDevices({ silent: true, force: true })}
                       />
