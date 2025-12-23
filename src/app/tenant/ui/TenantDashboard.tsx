@@ -66,6 +66,8 @@ export default function TenantDashboard(props: Props) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
+  const deviceMenuRef = useRef<HTMLDivElement | null>(null);
   const [selectedArea, setSelectedArea] = useState<string>(() => {
     if (typeof window === 'undefined') return ALL_AREAS;
     try {
@@ -170,6 +172,7 @@ export default function TenantDashboard(props: Props) {
     function onClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMenuOpen(false);
+        setDeviceMenuOpen(false);
       }
     }
     function onKey(event: KeyboardEvent) {
@@ -191,6 +194,7 @@ export default function TenantDashboard(props: Props) {
         !areaMenuRef.current.contains(event.target as Node)
       ) {
         setAreaMenuOpen(false);
+        setDeviceMenuOpen(false);
       }
     }
     function onKey(event: KeyboardEvent) {
@@ -203,6 +207,24 @@ export default function TenantDashboard(props: Props) {
       document.removeEventListener('keydown', onKey);
     };
   }, [areaMenuOpen]);
+
+  useEffect(() => {
+    if (!deviceMenuOpen) return;
+    function onClickOutside(event: MouseEvent) {
+      if (deviceMenuRef.current && !deviceMenuRef.current.contains(event.target as Node)) {
+        setDeviceMenuOpen(false);
+      }
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setDeviceMenuOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [deviceMenuOpen]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -413,18 +435,33 @@ export default function TenantDashboard(props: Props) {
               )}
             </div>
             <div className="flex items-center gap-3">
-              <Link
-                href="/tenant/devices/add"
-                className="rounded-full bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-              >
-                + Add device
-              </Link>
-              <Link
-                href="/tenant/devices/discovered"
-                className="rounded-full border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-white"
-              >
-                Discovered on network
-              </Link>
+              <div className="relative" ref={deviceMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setDeviceMenuOpen((v) => !v)}
+                  className="rounded-full bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+                >
+                  + Device
+                </button>
+                {deviceMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
+                    <Link
+                      href="/tenant/devices/discovered"
+                      className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                      onClick={() => setDeviceMenuOpen(false)}
+                    >
+                      Autodiscovered devices
+                    </Link>
+                    <Link
+                      href="/tenant/devices/add"
+                      className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                      onClick={() => setDeviceMenuOpen(false)}
+                    >
+                      Matter devices
+                    </Link>
+                  </div>
+                )}
+              </div>
               <div className="flex h-9 w-9 items-center justify-center text-slate-400">
                 {isLoading && (
                   <span
