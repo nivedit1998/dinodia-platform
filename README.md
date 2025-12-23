@@ -37,6 +37,12 @@ All deployments (local, preview, production) must define the following variables
 | `JWT_SECRET` | Secret string used to sign the auth JWT cookie. Generate a long random value. |
 | `NEXT_PUBLIC_APP_URL` | Base URL served to clients (e.g. `https://app.dinodiasmartliving.com`). Needed for share links or future deep links. |
 | `CRON_SECRET` | Shared secret used to secure the monitoring snapshot cron route (`/api/cron/monitoring-snapshot`). |
+| `AWS_REGION` | AWS region used by SES for outbound Dinodia emails (2FA/verification). |
+| `AWS_ACCESS_KEY_ID` | AWS access key with permission to send via SES. |
+| `AWS_SECRET_ACCESS_KEY` | Secret for the SES access key. |
+| `SES_FROM_EMAIL` | Verified SES sender address/name (e.g. `Dinodia Smart Living <no-reply@dinodiasmartliving.com>`). |
+
+SES variables are required for the new email verification/device-trust flows once they are enabled.
 
 > Production builds fail fast if `JWT_SECRET` or `DATABASE_URL` are missing.
 

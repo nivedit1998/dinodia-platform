@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer';
 import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
 import { authenticateWithCredentials, createSessionForUser } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 
 const BASIC_AUTH_ENABLED = process.env.ENABLE_BASIC_AUTH_AUTOLOGIN === 'true';
 const REALM = 'Dinodia Kiosk';
@@ -49,6 +50,17 @@ export async function GET(req: NextRequest) {
   const user = await authenticateWithCredentials(username, password);
   if (!user) {
     return unauthorized('Invalid credentials');
+  }
+
+  const userRecord = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { role: true, emailVerifiedAt: true },
+  });
+  if (!userRecord) {
+    return unauthorized('Invalid credentials');
+  }
+  if (userRecord.role === Role.ADMIN && !userRecord.emailVerifiedAt) {
+    return unauthorized('Admin email must be verified before kiosk access.');
   }
 
   await createSessionForUser(user);

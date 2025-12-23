@@ -27,10 +27,20 @@ enum CommissioningKind {
   DISCOVERY
 }
 
+enum AuthChallengePurpose {
+  ADMIN_EMAIL_VERIFY
+  TENANT_ENABLE_2FA
+  LOGIN_NEW_DEVICE
+}
+
 model User {
   id                Int           @id @default(autoincrement())
   username          String        @unique
   passwordHash      String
+  email             String?
+  emailPending      String?
+  emailVerifiedAt   DateTime?
+  email2faEnabled   Boolean       @default(false)
   role              Role          @default(TENANT)
   haConnection      HaConnection? @relation("AssignedHaConnection", fields: [haConnectionId], references: [id])
   haConnectionId    Int?
@@ -40,8 +50,43 @@ model User {
   alexaRefreshTokens AlexaRefreshToken[]
   alexaEventToken   AlexaEventToken?
   newDeviceCommissioningSessions NewDeviceCommissioningSession[]
+  trustedDevices    TrustedDevice[]
+  authChallenges    AuthChallenge[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
+}
+
+model TrustedDevice {
+  id          String   @id @default(uuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      Int
+  deviceId    String
+  label       String?
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  revokedAt   DateTime?
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@index([deviceId])
+}
+
+model AuthChallenge {
+  id         String               @id @default(uuid())
+  user       User                 @relation(fields: [userId], references: [id])
+  userId     Int
+  purpose    AuthChallengePurpose
+  email      String
+  deviceId   String?
+  tokenHash  String               @unique
+  expiresAt  DateTime
+  approvedAt DateTime?
+  consumedAt DateTime?
+  createdAt  DateTime             @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([approvedAt])
 }
 
 model HaConnection {

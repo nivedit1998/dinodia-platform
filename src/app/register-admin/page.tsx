@@ -1,13 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { getDeviceLabel, getOrCreateDeviceId } from '@/lib/clientDevice';
+
+type ChallengeStatus = 'PENDING' | 'APPROVED' | 'CONSUMED' | 'EXPIRED' | null;
 
 export default function RegisterAdminPage() {
   const router = useRouter();
   const [form, setForm] = useState({
     username: '',
     password: '',
+    email: '',
+    confirmEmail: '',
     haUsername: '',
     haPassword: '',
     haBaseUrl: 'http://homeassistant.local:8123/',
@@ -15,23 +20,126 @@ export default function RegisterAdminPage() {
     haLongLivedToken: '',
   });
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [challengeStatus, setChallengeStatus] = useState<ChallengeStatus>(null);
+  const [completing, setCompleting] = useState(false);
+  const [deviceId] = useState(() =>
+    typeof window === 'undefined' ? '' : getOrCreateDeviceId()
+  );
+  const [deviceLabel] = useState(() =>
+    typeof window === 'undefined' ? '' : getDeviceLabel()
+  );
 
-  function updateField(
-    key: keyof typeof form,
-    value: string
-  ) {
+  const awaitingVerification = !!challengeId;
+
+  function updateField(key: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
   }
+
+  const resetVerification = useCallback(() => {
+    setChallengeId(null);
+    setChallengeStatus(null);
+    setCompleting(false);
+    setInfo(null);
+  }, []);
+
+  const completeChallenge = useCallback(
+    async (id: string) => {
+      if (!deviceId) {
+        setError('Device information missing. Please try again.');
+        resetVerification();
+        return;
+      }
+
+      setCompleting(true);
+      const res = await fetch(`/api/auth/challenges/${id}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId, deviceLabel }),
+      });
+      const data = await res.json();
+      setCompleting(false);
+
+      if (!res.ok) {
+        setError(data.error || 'Verification failed. Please try again.');
+        resetVerification();
+        return;
+      }
+
+      router.push('/admin');
+    },
+    [deviceId, deviceLabel, resetVerification, router]
+  );
+
+  useEffect(() => {
+    if (!awaitingVerification || !challengeId) return;
+    const id = challengeId;
+    let cancelled = false;
+
+    async function pollStatus() {
+      try {
+        const res = await fetch(`/api/auth/challenges/${id}`);
+        if (!res.ok) {
+          if (!cancelled) {
+            setError('Verification expired. Please try again.');
+            resetVerification();
+          }
+          return;
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        setChallengeStatus(data.status);
+
+        if (data.status === 'APPROVED' && !completing) {
+          await completeChallenge(id);
+          return;
+        }
+
+        if (data.status === 'EXPIRED' || data.status === 'CONSUMED') {
+          setError('Verification expired. Please try again.');
+          resetVerification();
+        }
+      } catch {
+        // ignore transient errors
+      }
+    }
+
+    pollStatus();
+    const interval = setInterval(pollStatus, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [awaitingVerification, challengeId, completing, completeChallenge, resetVerification]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setLoading(true);
+    setInfo(null);
 
+    if (!deviceId) {
+      setError('Preparing your device info. Try again in a moment.');
+      return;
+    }
+    if (!form.email) {
+      setError('Please enter an admin email.');
+      return;
+    }
+    if (form.email !== form.confirmEmail) {
+      setError('Email addresses must match.');
+      return;
+    }
+
+    setLoading(true);
     const res = await fetch('/api/auth/register-admin', {
       method: 'POST',
-      body: JSON.stringify(form),
+      body: JSON.stringify({
+        ...form,
+        deviceId,
+        deviceLabel,
+      }),
       headers: { 'Content-Type': 'application/json' },
     });
 
@@ -46,7 +154,31 @@ export default function RegisterAdminPage() {
       return;
     }
 
-    router.push('/admin');
+    if (data.challengeId) {
+      setChallengeId(data.challengeId);
+      setChallengeStatus('PENDING');
+      setInfo('Check your email to verify and finish setup.');
+      return;
+    }
+
+    setError('We could not start email verification. Please try again.');
+  }
+
+  async function handleResend() {
+    if (!challengeId) return;
+    setError(null);
+    setInfo(null);
+    const res = await fetch(`/api/auth/challenges/${challengeId}/resend`, {
+      method: 'POST',
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(
+        data.error || 'Unable to resend the verification email right now.'
+      );
+      return;
+    }
+    setInfo('We’ve resent the verification email.');
   }
 
   return (
@@ -61,103 +193,169 @@ export default function RegisterAdminPage() {
             {error}
           </div>
         )}
-
-        <form onSubmit={handleSubmit} className="space-y-4 text-sm">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block font-medium mb-1">Portal Username</label>
-              <input
-                className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
-                value={form.username}
-                onChange={(e) => updateField('username', e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block font-medium mb-1">Portal Password</label>
-              <input
-                type="password"
-                className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
-                value={form.password}
-                onChange={(e) => updateField('password', e.target.value)}
-              />
-            </div>
+        {info && (
+          <div className="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            {info}
           </div>
+        )}
 
-          <div className="border-t pt-4">
-            <p className="text-xs text-slate-500 mb-2">
-              Dinodia Hub connection (Home Assistant / Nabu Casa URL or local URL).
-            </p>
-            <div className="space-y-3">
+        {!awaitingVerification && (
+          <form onSubmit={handleSubmit} className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block font-medium mb-1">Dinodia Hub local address</label>
+                <label className="block font-medium mb-1">Portal Username</label>
                 <input
-                  placeholder="http://homeassistant.local:8123/"
                   className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={form.haBaseUrl}
-                  onChange={(e) => updateField('haBaseUrl', e.target.value)}
+                  value={form.username}
+                  onChange={(e) => updateField('username', e.target.value)}
+                  required
                 />
               </div>
               <div>
-                <label className="block font-medium mb-1">
-                  Dinodia Hub remote (Nabu Casa) address (optional)
-                </label>
-                <input
-                  placeholder="https://example.ui.nabu.casa/"
-                  className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={form.haCloudUrl}
-                  onChange={(e) => updateField('haCloudUrl', e.target.value)}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-medium mb-1">Dinodia Hub username</label>
-                  <input
-                    className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={form.haUsername}
-                    onChange={(e) => updateField('haUsername', e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium mb-1">Dinodia Hub password</label>
-                  <input
-                    type="password"
-                    className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={form.haPassword}
-                    onChange={(e) => updateField('haPassword', e.target.value)}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block font-medium mb-1">
-                  Dinodia Hub long-lived access token
-                </label>
+                <label className="block font-medium mb-1">Portal Password</label>
                 <input
                   type="password"
                   className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={form.haLongLivedToken}
-                  onChange={(e) =>
-                    updateField('haLongLivedToken', e.target.value)
-                  }
+                  value={form.password}
+                  onChange={(e) => updateField('password', e.target.value)}
+                  required
                 />
               </div>
             </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full mt-2 bg-indigo-600 text-white rounded-lg py-2 font-medium hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {loading ? 'Connecting Dinodia Hub…' : 'Connect your Dinodia Hub'}
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push('/login')}
-            className="w-full rounded-lg border border-slate-200 bg-white py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Back to Login
-          </button>
-        </form>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block font-medium mb-1">Admin email</label>
+                <input
+                  type="email"
+                  className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={form.email}
+                  onChange={(e) => updateField('email', e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block font-medium mb-1">Confirm email</label>
+                <input
+                  type="email"
+                  className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={form.confirmEmail}
+                  onChange={(e) => updateField('confirmEmail', e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="border-t pt-4">
+              <p className="text-xs text-slate-500 mb-2">
+                Dinodia Hub connection (Home Assistant / Nabu Casa URL or local URL).
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="block font-medium mb-1">Dinodia Hub local address</label>
+                  <input
+                    placeholder="http://homeassistant.local:8123/"
+                    className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={form.haBaseUrl}
+                    onChange={(e) => updateField('haBaseUrl', e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium mb-1">
+                    Dinodia Hub remote (Nabu Casa) address (optional)
+                  </label>
+                  <input
+                    placeholder="https://example.ui.nabu.casa/"
+                    className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={form.haCloudUrl}
+                    onChange={(e) => updateField('haCloudUrl', e.target.value)}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-medium mb-1">Dinodia Hub username</label>
+                    <input
+                      className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={form.haUsername}
+                      onChange={(e) => updateField('haUsername', e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium mb-1">Dinodia Hub password</label>
+                    <input
+                      type="password"
+                      className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={form.haPassword}
+                      onChange={(e) => updateField('haPassword', e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block font-medium mb-1">
+                    Dinodia Hub long-lived access token
+                  </label>
+                  <input
+                    type="password"
+                    className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={form.haLongLivedToken}
+                    onChange={(e) =>
+                      updateField('haLongLivedToken', e.target.value)
+                    }
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full mt-2 bg-indigo-600 text-white rounded-lg py-2 font-medium hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {loading ? 'Connecting Dinodia Hub…' : 'Connect your Dinodia Hub'}
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/login')}
+              className="w-full rounded-lg border border-slate-200 bg-white py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Back to Login
+            </button>
+          </form>
+        )}
+
+        {awaitingVerification && (
+          <div className="space-y-3 text-sm">
+            <p className="text-slate-700">
+              Check your email and click the verification link. We’ll finish creating your admin
+              session on this device after approval.
+            </p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <div className="font-medium text-slate-700">Status</div>
+              <div>{challengeStatus ?? 'Waiting for approval…'}</div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleResend}
+                className="flex-1 rounded-lg border border-slate-200 bg-white py-2 font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Resend email
+              </button>
+              <button
+                onClick={resetVerification}
+                className="flex-1 rounded-lg border border-slate-200 bg-white py-2 font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Start over
+              </button>
+            </div>
+            {completing && (
+              <p className="text-xs text-slate-500">Finishing setup…</p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
