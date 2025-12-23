@@ -74,7 +74,7 @@ const defaultFormState: CreateFormState = {
   triggerDirection: '',
   triggerAttribute: '',
   scheduleAt: '',
-  scheduleWeekdays: [],
+  scheduleWeekdays: weekdayOptions.map((d) => d.value),
   actionEntityId: '',
   actionCommand: '',
   actionValue: '',
