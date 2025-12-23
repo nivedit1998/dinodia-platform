@@ -14,6 +14,7 @@ import { DeviceTile } from '@/components/device/DeviceTile';
 import { DeviceDetailSheet } from '@/components/device/DeviceDetailSheet';
 import { subscribeToRefresh } from '@/lib/refreshBus';
 import { logout as performLogout } from '@/lib/logout';
+import Image from 'next/image';
 import { getTileEligibleDevicesForTenantDashboard } from '@/lib/deviceCapabilities';
 
 type Props = {
@@ -367,52 +368,63 @@ export default function TenantDashboard(props: Props) {
     <div className="min-h-screen bg-[#f5f5f7] text-slate-900">
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-3 pb-16 pt-8 sm:px-4 lg:pt-12">
         <header className="sticky top-4 z-30 flex flex-col gap-3 rounded-2xl border border-white/60 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between sm:rounded-full sm:px-6 sm:py-2.5">
-          <div className="min-w-0">
-            <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400">
-              Dinodia Home
-            </p>
-            <div className="relative inline-block" ref={areaMenuRef}>
-              <button
-                type="button"
-                onClick={() => setAreaMenuOpen((open) => !open)}
-                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-sm font-semibold text-slate-900 shadow-sm hover:bg-white"
-              >
-                <span>
-                  {resolvedSelectedArea === ALL_AREAS
-                    ? 'My home'
-                    : resolvedSelectedArea}
-                </span>
-                <span className="text-xs text-slate-500">▾</span>
-              </button>
-              {areaMenuOpen && (
-                <div className="absolute left-0 z-10 mt-2 w-56 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
-                  <button
-                    type="button"
-                    className="flex w-full items-center rounded-lg px-3 py-2 text-left hover:bg-slate-50"
-                    onClick={() => {
-                      setSelectedArea(ALL_AREAS);
-                      setAreaMenuOpen(false);
-                    }}
-                  >
-                    All my rooms
-                  </button>
-                  {areaOptions.map((area) => (
+          <div className="flex items-start gap-3 sm:items-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/60 bg-white shadow-sm">
+              <Image
+                src="/brand/logo-mark.png"
+                alt="Dinodia"
+                width={40}
+                height={40}
+                priority
+              />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400">
+                Dinodia Home
+              </p>
+              <div className="relative inline-block" ref={areaMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setAreaMenuOpen((open) => !open)}
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-sm font-semibold text-slate-900 shadow-sm hover:bg-white"
+                >
+                  <span>
+                    {resolvedSelectedArea === ALL_AREAS
+                      ? 'My home'
+                      : resolvedSelectedArea}
+                  </span>
+                  <span className="text-xs text-slate-500">▾</span>
+                </button>
+                {areaMenuOpen && (
+                  <div className="absolute left-0 z-10 mt-2 w-56 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
                     <button
-                      key={area}
                       type="button"
                       className="flex w-full items-center rounded-lg px-3 py-2 text-left hover:bg-slate-50"
                       onClick={() => {
-                        setSelectedArea(area);
+                        setSelectedArea(ALL_AREAS);
                         setAreaMenuOpen(false);
                       }}
                     >
-                      {area}
+                      All my rooms
                     </button>
-                  ))}
-                </div>
-              )}
+                    {areaOptions.map((area) => (
+                      <button
+                        key={area}
+                        type="button"
+                        className="flex w-full items-center rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                        onClick={() => {
+                          setSelectedArea(area);
+                          setAreaMenuOpen(false);
+                        }}
+                      >
+                        {area}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">Connected Devices</p>
             </div>
-            <p className="mt-1 text-xs text-slate-500">Connected Devices</p>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-right min-w-[140px]">

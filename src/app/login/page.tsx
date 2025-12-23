@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -39,6 +40,16 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-md bg-white shadow-lg rounded-2xl p-8">
+        <div className="mb-6 flex items-center justify-center">
+          <Image
+            src="/brand/logo-lockup.png"
+            alt="Dinodia Smart Living"
+            width={220}
+            height={64}
+            className="h-auto w-48 sm:w-56"
+            priority
+          />
+        </div>
         <h1 className="text-2xl font-semibold mb-4 text-center">
           Dinodia Portal
         </h1>

@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { logout as performLogout } from '@/lib/logout';
 
@@ -400,11 +401,22 @@ export default function AdminSettings({ username }: Props) {
   return (
     <div className="w-full max-w-4xl bg-white rounded-2xl shadow-lg p-4 sm:p-6 flex flex-col gap-5 sm:gap-6">
       <header className="flex flex-col gap-3 border-b pb-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold leading-snug">Homeowner Settings</h1>
-          <p className="text-xs text-slate-500">
-            Logged in as <span className="font-medium">{username}</span>
-          </p>
+        <div className="flex items-start gap-3 sm:items-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 shadow-sm">
+            <Image
+              src="/brand/logo-mark.png"
+              alt="Dinodia"
+              width={40}
+              height={40}
+              priority
+            />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold leading-snug">Homeowner Settings</h1>
+            <p className="text-xs text-slate-500">
+              Logged in as <span className="font-medium">{username}</span>
+            </p>
+          </div>
         </div>
         <div className="relative" ref={menuRef}>
           <button
