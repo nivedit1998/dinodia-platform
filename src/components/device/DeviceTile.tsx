@@ -46,7 +46,7 @@ export function DeviceTile({
   const batteryDisplay = batteryPercent != null ? formatBatteryForTile(batteryPercent) : null;
 
   const baseClasses =
-    'relative rounded-[26px] p-5 sm:p-6 shadow-[0_20px_40px_rgba(15,23,42,0.08)] transition duration-300 cursor-pointer select-none';
+    'relative w-full max-w-[360px] sm:max-w-none rounded-[26px] p-4 sm:p-6 shadow-[0_20px_40px_rgba(15,23,42,0.08)] transition duration-300 cursor-pointer select-none';
   const bgClass = isActive ? visual.activeBg : visual.inactiveBg;
 
   return (
@@ -101,7 +101,7 @@ export function DeviceTile({
           </div>
           <button
             type="button"
-            className={`relative flex h-16 w-16 items-center justify-center rounded-2xl text-2xl shadow-lg transition disabled:cursor-not-allowed disabled:opacity-50 ${
+            className={`relative flex h-14 w-14 items-center justify-center rounded-2xl text-2xl shadow-lg transition disabled:cursor-not-allowed disabled:opacity-50 sm:h-16 sm:w-16 ${
               isActive ? visual.iconActiveBg : visual.iconInactiveBg
             } ${primaryAction ? 'cursor-pointer' : 'cursor-default'}`}
             onClick={(event) => {

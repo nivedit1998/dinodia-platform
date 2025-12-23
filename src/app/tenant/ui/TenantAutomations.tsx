@@ -582,7 +582,7 @@ export default function TenantAutomations() {
             <select
               value={selectedEntityId}
               onChange={(e) => setSelectedEntityId(e.target.value)}
-              className="w-72 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 sm:w-72"
               disabled={loadingDevices || devices.length === 0}
             >
               <option value="">None</option>
@@ -616,14 +616,14 @@ export default function TenantAutomations() {
             return (
               <div
                 key={auto.id}
-                className="rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-sm"
+                className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-sm"
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-base font-semibold text-slate-900">{auto.alias}</p>
-                    <p className="text-xs text-slate-500">ID: {auto.id}</p>
+                    <p className="text-base font-semibold text-slate-900 break-words">{auto.alias}</p>
+                    <p className="text-xs text-slate-500 break-all">ID: {auto.id}</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <span
                       className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
                         auto.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
@@ -641,36 +641,38 @@ export default function TenantAutomations() {
                     </button>
                   </div>
                 </div>
-                <p className="mt-1 text-xs text-slate-600">{auto.description}</p>
+                <p className="mt-1 text-xs text-slate-600 break-words">{auto.description}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5">Mode: {auto.mode}</span>
+                  <span className="max-w-full rounded-full bg-slate-100 px-2 py-0.5 break-words">
+                    Mode: {auto.mode}
+                  </span>
                   {summary.primaryName && (
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5">
+                    <span className="max-w-full rounded-full bg-slate-100 px-2 py-0.5 break-words">
                       Target: {summary.primaryName}
                     </span>
                   )}
                   {auto.entities.length > 0 && (
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5">
+                    <span className="max-w-full rounded-full bg-slate-100 px-2 py-0.5 break-words">
                       Entities: {auto.entities.join(', ')}
                     </span>
                   )}
                   {auto.hasTemplates && (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">
+                    <span className="max-w-full rounded-full bg-amber-100 px-2 py-0.5 text-amber-800 break-words">
                       Template detected (view only)
                     </span>
                   )}
                   {!auto.canEdit && (
-                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">
+                    <span className="max-w-full rounded-full bg-amber-50 px-2 py-0.5 text-amber-700 break-words">
                       Read-only (outside your areas or templated)
                     </span>
                   )}
                 </div>
                 <div className="mt-2 space-y-1 text-xs text-slate-700">
-                  <p>
+                  <p className="break-words">
                     <span className="font-semibold text-slate-800">Trigger:</span>{' '}
                     {summary.triggerSummary}
                   </p>
-                  <p>
+                  <p className="break-words">
                     <span className="font-semibold text-slate-800">Action:</span>{' '}
                     {summary.actionSummary}
                   </p>

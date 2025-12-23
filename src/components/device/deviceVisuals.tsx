@@ -128,11 +128,11 @@ export function getVisualPreset(label: string): DeviceVisual {
 export function tileSizeClasses(size: DeviceVisual['size']) {
   switch (size) {
     case 'large':
-      return 'min-h-[220px] lg:col-span-2';
+      return 'min-h-[190px] sm:min-h-[220px] lg:col-span-2';
     case 'medium':
-      return 'min-h-[180px]';
+      return 'min-h-[160px] sm:min-h-[180px]';
     default:
-      return 'min-h-[150px]';
+      return 'min-h-[140px] sm:min-h-[150px]';
   }
 }
 

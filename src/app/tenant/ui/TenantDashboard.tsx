@@ -375,7 +375,7 @@ export default function TenantDashboard(props: Props) {
 
   return (
     <div className="min-h-screen bg-[#f5f5f7] text-slate-900">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-3 pb-16 pt-8 sm:px-4 lg:pt-12">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-3 pb-16 pt-8 sm:px-4 lg:pt-12">
         <header className="sticky top-4 z-30 flex flex-col gap-3 rounded-2xl border border-white/60 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between sm:rounded-full sm:px-6 sm:py-2.5">
           <div className="flex items-start gap-3 sm:items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/60 bg-white shadow-sm">
@@ -435,8 +435,8 @@ export default function TenantDashboard(props: Props) {
               <p className="mt-1 text-xs text-slate-500">Connected Devices</p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-right min-w-[140px]">
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center sm:gap-4">
+            <div className="w-full text-left sm:min-w-[140px] sm:text-right">
               <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
                 Today
               </p>
@@ -455,8 +455,8 @@ export default function TenantDashboard(props: Props) {
                 </a>
               )}
             </div>
-            <div className="flex items-center gap-3">
-              <div className="relative" ref={deviceMenuRef}>
+            <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-3">
+              <div className="relative hidden sm:block" ref={deviceMenuRef}>
                 <button
                   type="button"
                   onClick={() => setDeviceMenuOpen((v) => !v)}
@@ -578,7 +578,7 @@ export default function TenantDashboard(props: Props) {
                   </h2>
                 </div>
                 <div>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-3 justify-items-center sm:justify-items-stretch sm:gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
                     {group.map((device) => (
                       <DeviceTile
                         key={device.entityId}
