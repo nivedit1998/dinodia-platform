@@ -395,8 +395,6 @@ export default function TenantAutomations() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
 
   const actionDevice = devices.find((d) => d.entityId === form.actionEntityId);
   const triggerDevice = devices.find((d) => d.entityId === form.triggerEntityId);
@@ -567,12 +565,8 @@ export default function TenantAutomations() {
     setError(null);
     try {
       const payload = buildPayload();
-      const url = editingId
-        ? `/api/automations/${encodeURIComponent(editingId)}`
-        : '/api/automations';
-      const method = editingId ? 'PATCH' : 'POST';
-      const res = await fetch(url, {
-        method,
+      const res = await fetch('/api/automations', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         credentials: 'include',
@@ -580,7 +574,6 @@ export default function TenantAutomations() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save automation');
       setForm({ ...defaultFormState });
-      setEditingId(null);
       await fetchAndSetAutomations(selectedEntityId);
     } catch (err) {
       setError((err as Error).message);
@@ -607,96 +600,13 @@ export default function TenantAutomations() {
     }
   }
 
-  async function handleToggle(id: string, enabled: boolean) {
-    setTogglingId(id);
-    setError(null);
-    try {
-      const res = await fetch(`/api/automations/${encodeURIComponent(id)}/enabled`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled }),
-        credentials: 'include',
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Failed to update automation');
-      await fetchAndSetAutomations(selectedEntityId);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setTogglingId(null);
-    }
-  }
-
   useEffect(() => {
-    if (editingId && form.triggerEntityId && form.triggerMode) return;
     resetTriggerFields(triggerSpecs);
-  }, [form.triggerEntityId, triggerSpecs, editingId, form.triggerMode]);
+  }, [form.triggerEntityId, triggerSpecs]);
 
   useEffect(() => {
-    if (editingId && form.actionEntityId && form.actionCommand) return;
     resetActionFields(actionSpecs);
-  }, [form.actionEntityId, actionSpecs, editingId, form.actionCommand]);
-
-  function startEdit(auto: AutomationListItem) {
-    if (!auto.canEdit || auto.hasTemplates || !auto.raw) {
-      setError('This automation cannot be edited in the app.');
-      return;
-    }
-    const raw = auto.raw;
-    const triggers = toArray(raw.triggers ?? raw.trigger);
-    const actions = toArray(raw.actions ?? raw.action);
-    const next: CreateFormState = {
-      ...defaultFormState,
-      alias: auto.alias,
-      description: auto.description ?? '',
-      enabled: auto.enabled ?? true,
-    };
-
-    const trigger = triggers[0] as Record<string, any> | undefined;
-    if (trigger) {
-      const platform = (trigger.platform ?? trigger.trigger) as string | undefined;
-      if (platform === 'time') {
-        next.triggerType = 'schedule';
-        next.scheduleAt = trigger.at ?? '';
-        const weekdays = toArray<string>(trigger.weekday ?? []);
-        next.scheduleWeekdays =
-          weekdays.length > 0 ? weekdays : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-      } else if (platform === 'state') {
-        const entity = toArray<string>(trigger.entity_id ?? trigger.entityId)[0] ?? '';
-        next.triggerType = 'state';
-        next.triggerEntityId = entity;
-        next.triggerMode = 'state_equals';
-        next.triggerTo = trigger.to ?? '';
-      } else {
-        setError('This automation trigger type is not supported for editing yet.');
-        return;
-      }
-    } else {
-      setError('Cannot edit: missing trigger.');
-      return;
-    }
-
-    const action = actions[0] as Record<string, any> | undefined;
-    const actionEntity = getActionEntity(action);
-    if (!action || !actionEntity) {
-      setError('Cannot edit: missing action device.');
-      return;
-    }
-    next.actionEntityId = actionEntity;
-    const device = devices.find((d) => d.entityId === actionEntity);
-    const specs = device ? getActionsForDevice(device, 'automation') : [];
-    const mapped = mapHaActionToForm(action, device, specs);
-    if (!mapped) {
-      setError('This automation action type is not supported for editing yet.');
-      return;
-    }
-    next.actionCommand = mapped.command;
-    next.actionValue = mapped.value ?? '';
-
-    setForm(next);
-    setEditingId(auto.id);
-    window?.scrollTo({ top: 0, behavior: 'smooth' });
-  }
+  }, [form.actionEntityId, actionSpecs]);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
@@ -777,25 +687,13 @@ export default function TenantAutomations() {
                     <p className="text-xs text-slate-500">ID: {auto.id}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-2 text-xs text-slate-600">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                        checked={auto.enabled ?? true}
-                        onChange={(e) => void handleToggle(auto.id, e.target.checked)}
-                        disabled={togglingId === auto.id}
-                      />
+                    <span
+                      className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
+                        auto.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
                       {auto.enabled ? 'Enabled' : 'Disabled'}
-                    </label>
-                    {auto.canEdit && !auto.hasTemplates && (
-                      <button
-                        type="button"
-                        className="rounded-lg border border-indigo-200 px-3 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
-                        onClick={() => startEdit(auto)}
-                      >
-                        Edit
-                      </button>
-                    )}
+                    </span>
                     <button
                       type="button"
                       className="rounded-lg border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
@@ -848,12 +746,7 @@ export default function TenantAutomations() {
 
       <section className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">
-            {editingId ? 'Edit automation' : 'Create automation'}
-          </h2>
-          {editingId && (
-            <span className="text-xs text-slate-500">Editing: {editingId}</span>
-          )}
+          <h2 className="text-lg font-semibold text-slate-900">Create automation</h2>
         </div>
         <form className="space-y-4" onSubmit={handleCreate}>
           <div className="grid gap-4 md:grid-cols-2">
@@ -1079,7 +972,6 @@ export default function TenantAutomations() {
               className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               onClick={() => {
                 setForm({ ...defaultFormState });
-                setEditingId(null);
               }}
             >
               Reset
@@ -1089,7 +981,7 @@ export default function TenantAutomations() {
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
               disabled={saving}
             >
-              {saving ? 'Saving…' : editingId ? 'Save automation' : 'Create automation'}
+              {saving ? 'Saving…' : 'Create automation'}
             </button>
           </div>
         </form>
