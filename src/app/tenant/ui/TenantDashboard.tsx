@@ -413,6 +413,12 @@ export default function TenantDashboard(props: Props) {
               )}
             </div>
             <div className="flex items-center gap-3">
+              <Link
+                href="/tenant/devices/add"
+                className="rounded-full bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+              >
+                + Add device
+              </Link>
               <div className="flex h-9 w-9 items-center justify-center text-slate-400">
                 {isLoading && (
                   <span
@@ -438,6 +444,13 @@ export default function TenantDashboard(props: Props) {
                 </button>
                 {menuOpen && (
                   <div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
+                    <Link
+                      href="/tenant/devices/add"
+                      className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Add Matter Device
+                    </Link>
                     <Link
                       href="/tenant/settings"
                       className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"

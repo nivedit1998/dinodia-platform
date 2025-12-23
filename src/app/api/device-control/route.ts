@@ -6,23 +6,25 @@ import {
   DEVICE_CONTROL_NUMERIC_COMMANDS,
   executeDeviceCommand,
 } from '@/lib/deviceControl';
+import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
+import { Role } from '@prisma/client';
 
 export async function POST(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) {
+  const me = await getCurrentUser();
+  if (!me) {
     return NextResponse.json(
       { ok: false, error: 'Your session has ended. Please sign in again.' },
       { status: 401 }
     );
   }
 
-  const allowed = checkRateLimit(`device-control:${user.id}`, {
+  const allowed = checkRateLimit(`device-control:${me.id}`, {
     maxRequests: 30,
     windowMs: 10_000,
   });
   if (!allowed) {
     return NextResponse.json(
-      { ok: false, error: 'You’ve sent a lot of commands at once. Please wait a moment and try again.' },
+      { ok: false, error: "You've sent a lot of commands at once. Please wait a moment and try again." },
       { status: 429 }
     );
   }
@@ -53,8 +55,25 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { haConnection } = await getUserWithHaConnection(user.id);
+    const { user, haConnection } = await getUserWithHaConnection(me.id);
     const effectiveHa = resolveHaCloudFirst(haConnection);
+
+    if (user.role === Role.TENANT) {
+      const allowedAreas = new Set(user.accessRules.map((r) => r.area));
+      const devices = await getDevicesForHaConnection(haConnection.id, { bypassCache: true });
+      const allowedEntityIds = new Set(
+        devices
+          .filter((d) => d.areaName && allowedAreas.has(d.areaName))
+          .map((d) => d.entityId)
+      );
+      if (!allowedEntityIds.has(entityId)) {
+        return NextResponse.json(
+          { ok: false, error: 'You are not allowed to control that device.' },
+          { status: 403 }
+        );
+      }
+    }
+
     await executeDeviceCommand(effectiveHa, entityId, command, value, {
       source: 'app',
       userId: user.id,
@@ -66,8 +85,8 @@ export async function POST(req: NextRequest) {
     const raw = err instanceof Error ? err.message : 'Control failed';
     const message =
       raw && raw.toLowerCase().includes('ha')
-        ? 'We couldn’t reach your Dinodia Hub for that action. Please try again in a moment.'
-        : raw || 'We couldn’t complete that action. Please try again.';
+        ? "We couldn't reach your Dinodia Hub for that action. Please try again in a moment."
+        : raw || "We couldn't complete that action. Please try again.";
     return NextResponse.json(
       { ok: false, error: message },
       { status: 500 }

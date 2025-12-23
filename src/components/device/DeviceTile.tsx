@@ -40,10 +40,7 @@ export function DeviceTile({
   const secondary = getDeviceSecondaryText(label, device);
   const area = getDeviceArea(device);
   const { pendingCommand, sendCommand } = useDeviceCommand(onActionComplete);
-  const primaryAction = useMemo(
-    () => getPrimaryAction(label, device, actions),
-    [actions, device, label]
-  );
+  const primaryAction = getPrimaryAction(label, device, actions);
 
   const baseClasses =
     'relative rounded-[26px] p-5 sm:p-6 shadow-[0_20px_40px_rgba(15,23,42,0.08)] transition duration-300 cursor-pointer select-none';

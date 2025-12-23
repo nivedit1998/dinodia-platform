@@ -12,7 +12,6 @@ import {
   getEligibleDevicesForAutomations,
   getTriggersForDevice,
 } from '@/lib/deviceCapabilities';
-import type { DeviceCommandId } from '@/lib/deviceCapabilities';
 
 type AutomationListItem = {
   id: string;
@@ -34,8 +33,6 @@ type AutomationListItem = {
     [key: string]: unknown;
   };
 };
-
-type TriggerType = 'state' | 'schedule';
 
 type CreateFormState = {
   alias: string;
@@ -107,39 +104,43 @@ function toArray<T>(val: T | T[] | undefined | null): T[] {
   return [val];
 }
 
-function getTriggerSummary(trigger: any, devices: UIDevice[]): string {
+type HaLikeObject = Record<string, unknown>;
+
+function getTriggerSummary(trigger: unknown, devices: UIDevice[]): string {
   if (!trigger || typeof trigger !== 'object') return 'Custom trigger';
-  const t = trigger as Record<string, any>;
+  const t = trigger as HaLikeObject;
   const entity = toArray<string>(t.entity_id ?? t.entityId)[0];
   const friendly =
     devices.find((d) => d.entityId === entity)?.name || entity || 'Unknown entity';
-  const platform = (t.platform ?? t.trigger) as string | undefined;
+  const platform = typeof t.platform === 'string' ? t.platform : (t.trigger as string | undefined);
   if (platform === 'time') {
-    const at = t.at ?? '';
+    const at = typeof t.at === 'string' ? t.at : '';
     const weekdays = toArray<string>(t.weekday ?? []).join(', ');
     return `Time: ${at}${weekdays ? ` on ${weekdays}` : ''}`;
   }
   if (platform === 'state') {
-    const to = t.to ?? t.state;
+    const to = (t.to as string | undefined) ?? (t.state as string | undefined);
     return `State: ${friendly}${to ? ` → ${to}` : ''}`;
   }
   return 'Custom trigger';
 }
 
-function getActionEntity(action: any): string | null {
+function getActionEntity(action: unknown): string | null {
   if (!action || typeof action !== 'object') return null;
-  const target = (action as Record<string, any>).target;
-  const candidate =
-    (target && target.entity_id) || (action as Record<string, any>).entity_id || null;
+  const target = (action as HaLikeObject).target as HaLikeObject | undefined;
+  const candidate = target?.entity_id ?? (action as HaLikeObject).entity_id ?? null;
   if (Array.isArray(candidate)) return candidate[0] ?? null;
   return typeof candidate === 'string' ? candidate : null;
 }
 
-function getActionSummary(action: any, devices: UIDevice[]): { summary: string; primaryName?: string } {
+function getActionSummary(
+  action: unknown,
+  devices: UIDevice[]
+): { summary: string; primaryName?: string } {
   if (!action || typeof action !== 'object') return { summary: 'Custom action' };
-  const a = action as Record<string, any>;
-  const service = a.service as string | undefined;
-  const data = (a.data ?? {}) as Record<string, any>;
+  const a = action as HaLikeObject;
+  const service = typeof a.service === 'string' ? a.service : undefined;
+  const data = (a.data && typeof a.data === 'object' ? a.data : {}) as HaLikeObject;
   const entityId = getActionEntity(a);
   const friendly =
     devices.find((d) => d.entityId === entityId)?.name || entityId || 'Unknown device';
@@ -189,80 +190,6 @@ function summarizeAutomation(auto: AutomationListItem, devices: UIDevice[]) {
     actionSummary: actionSummary.summary,
     primaryName: actionSummary.primaryName,
   };
-}
-
-function pickCommand(
-  actions: DeviceActionSpec[],
-  predicate: (spec: DeviceActionSpec) => boolean
-): DeviceActionSpec | undefined {
-  return actions.find(predicate);
-}
-
-function mapHaActionToForm(
-  action: any,
-  device: UIDevice | undefined,
-  actions: DeviceActionSpec[]
-): { command: DeviceCommandId; value?: number | string } | null {
-  if (!action || typeof action !== 'object') return null;
-  const a = action as Record<string, any>;
-  const service = a.service as string | undefined;
-  const data = (a.data ?? {}) as Record<string, any>;
-  if (!service) return null;
-
-  if (service === 'cover.set_cover_position') {
-    return { command: 'blind/set_position', value: data.position ?? data.percentage ?? 0 };
-  }
-  if (service === 'climate.set_temperature') {
-    return { command: 'boiler/set_temperature', value: data.temperature ?? 0 };
-  }
-  if (service === 'light.turn_on') {
-    if (data.brightness_pct !== undefined) {
-      return { command: 'light/set_brightness', value: data.brightness_pct };
-    }
-    const cmd =
-      pickCommand(actions, (s) => s.id.endsWith('turn_on') || s.id === 'light/turn_on') ??
-      actions.find((s) => s.kind === 'command');
-    return cmd ? { command: cmd.id as DeviceCommandId } : null;
-  }
-  if (service === 'homeassistant.turn_on') {
-    const cmd =
-      pickCommand(actions, (s) => s.id.endsWith('turn_on')) ?? actions.find((s) => s.kind === 'command');
-    return cmd ? { command: cmd.id as DeviceCommandId } : null;
-  }
-  if (service === 'homeassistant.turn_off' || service === 'light.turn_off') {
-    const cmd =
-      pickCommand(actions, (s) => s.id.endsWith('turn_off')) ??
-      actions.find((s) => s.kind === 'command');
-    return cmd ? { command: cmd.id as DeviceCommandId } : null;
-  }
-  if (service === 'homeassistant.toggle') {
-    const cmd =
-      pickCommand(actions, (s) => s.id.includes('toggle')) ?? actions.find((s) => s.kind === 'command');
-    return cmd ? { command: cmd.id as DeviceCommandId } : null;
-  }
-  if (service === 'media_player.volume_set') {
-    const vol = data.volume_level ? Math.round(Number(data.volume_level) * 100) : 0;
-    return { command: 'media/volume_set', value: vol };
-  }
-  if (service === 'media_player.media_play_pause') {
-    const cmd = pickCommand(actions, (s) => s.id === 'media/play_pause');
-    return cmd ? { command: cmd.id as DeviceCommandId } : null;
-  }
-  if (service === 'cover.open_cover') {
-    return { command: 'blind/open' };
-  }
-  if (service === 'cover.close_cover') {
-    return { command: 'blind/close' };
-  }
-  if (service === 'media_player.media_next_track') {
-    const cmd = pickCommand(actions, (s) => s.id === 'media/next');
-    return cmd ? { command: cmd.id as DeviceCommandId } : null;
-  }
-  if (service === 'media_player.media_previous_track') {
-    const cmd = pickCommand(actions, (s) => s.id === 'media/previous');
-    return cmd ? { command: cmd.id as DeviceCommandId } : null;
-  }
-  return null;
 }
 
 function renderActionInput(

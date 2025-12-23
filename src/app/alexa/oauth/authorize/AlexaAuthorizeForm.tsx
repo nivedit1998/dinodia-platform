@@ -18,6 +18,13 @@ export function AlexaAuthorizeForm() {
   const [oauth, setOauth] = useState<OAuthParams | null>(null);
 
   useEffect(() => {
+    let canceled = false;
+    const apply = (fn: () => void) => {
+      queueMicrotask(() => {
+        if (!canceled) fn();
+      });
+    };
+
     try {
       const params = new URLSearchParams(window.location.search);
       const clientId = params.get('client_id');
@@ -27,17 +34,22 @@ export function AlexaAuthorizeForm() {
       const scope = params.get('scope');
 
       if (!clientId || !redirectUri) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setError('The Alexa link is missing some information. Please start linking again from the Alexa app.');
+        apply(() =>
+          setError('The Alexa link is missing some information. Please start linking again from the Alexa app.')
+        );
       }
 
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setOauth({ clientId, redirectUri, responseType, state, scope });
+      apply(() => setOauth({ clientId, redirectUri, responseType, state, scope }));
     } catch (err) {
       console.error('Failed to parse OAuth parameters', err);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setError('We couldn’t read that Alexa link. Please start linking again from the Alexa app.');
+      apply(() =>
+        setError('We couldn’t read that Alexa link. Please start linking again from the Alexa app.')
+      );
     }
+
+    return () => {
+      canceled = true;
+    };
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {

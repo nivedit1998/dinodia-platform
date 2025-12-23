@@ -112,6 +112,12 @@ For production/CI use `npx prisma migrate deploy` so only committed migrations r
 - Implementation: `src/lib/rateLimit.ts` (Map-backed token bucket). Ready to swap for Redis later if needed.
 - Behavior: When exceeded, the API returns HTTP 429 with `Too many actions, please slow down.` and no command is sent to Home Assistant.
 
+## Tenant Matter commissioning
+
+- Tenants can add Matter-over-Wi-Fi devices at `/tenant/devices/add` (also linked from the dashboard header/menu). The wizard collects the target area, pairing code (QR scan/upload/manual), optional Dinodia type/name/HA label, and Wi-Fi credentials. Wi-Fi passwords are never persisted; they are only forwarded to Home Assistant for the active config flow.
+- Backend endpoints: `/api/tenant/homeassistant/labels` for HA label registry, `/api/tenant/matter/sessions` for session lifecycle (create, poll, step, cancel). Successful commissioning snapshots the HA registries, writes `Device` overrides for new entity IDs (area/name/label), and applies the selected HA label when supported.
+- Vercel/serverless: set `HaConnection.cloudUrl` to your Nabu Casa URL so config-flow and registry websocket calls succeed from Vercel. The app automatically prefers `cloudUrl` when present; `baseUrl` is still used on LAN.
+
 ## Contribution notes
 
 - Keep Home Assistant credentials server-side. Never introduce `NEXT_PUBLIC_` variables for HA data.

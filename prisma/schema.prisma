@@ -13,6 +13,15 @@ enum Role {
   TENANT
 }
 
+enum MatterCommissioningStatus {
+  CREATED
+  IN_PROGRESS
+  NEEDS_INPUT
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
 model User {
   id                Int           @id @default(autoincrement())
   username          String        @unique
@@ -25,6 +34,7 @@ model User {
   alexaAuthCodes    AlexaAuthCode[]
   alexaRefreshTokens AlexaRefreshToken[]
   alexaEventToken   AlexaEventToken?
+  matterCommissioningSessions MatterCommissioningSession[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 }
@@ -43,6 +53,7 @@ model HaConnection {
   users     User[]   @relation("AssignedHaConnection")
   devices   Device[]
   monitoringReadings MonitoringReading[]
+  matterCommissioningSessions MatterCommissioningSession[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -118,4 +129,32 @@ model AlexaEventToken {
   expiresAt    DateTime
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model MatterCommissioningSession {
+  id                  String                     @id @default(uuid())
+  user                User                       @relation(fields: [userId], references: [id])
+  userId              Int
+  haConnection        HaConnection               @relation(fields: [haConnectionId], references: [id])
+  haConnectionId      Int
+  requestedArea       String
+  requestedName       String?
+  requestedDinodiaType String?
+  requestedHaLabelId  String?
+  setupPayloadHash    String?
+  manualPairingCodeHash String?
+  haFlowId            String?
+  status              MatterCommissioningStatus  @default(CREATED)
+  error               String?
+  lastHaStep          Json?
+  beforeDeviceIds     Json?
+  beforeEntityIds     Json?
+  afterDeviceIds      Json?
+  afterEntityIds      Json?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  @@index([userId])
+  @@index([haConnectionId])
+  @@index([haFlowId])
 }

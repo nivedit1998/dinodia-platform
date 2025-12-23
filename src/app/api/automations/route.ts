@@ -242,7 +242,7 @@ export async function GET(req: NextRequest) {
     })
     .filter(
       (c): c is NonNullable<typeof c> =>
-        !!c && (entityFilter ? (c as any).matchesFilter : true)
+        !!c && (!entityFilter || c.matchesFilter)
     );
 
   return NextResponse.json({ ok: true, automations: shaped });
