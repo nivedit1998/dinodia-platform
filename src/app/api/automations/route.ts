@@ -210,6 +210,7 @@ export async function GET(req: NextRequest) {
       const { triggerEntities, conditionEntities, actionEntities, hasTemplates } =
         extractEntityIdsFromAutomationConfig(config);
       const actionList = Array.from(actionEntities);
+      if (actionList.length === 0) return null; // Skip automations that do not target a specific device in actions
       const allEntities = new Set<string>([
         ...triggerEntities,
         ...conditionEntities,
@@ -234,7 +235,10 @@ export async function GET(req: NextRequest) {
         enabled: config.enabled ?? true,
       };
     })
-    .filter((c) => (entityFilter ? c.matchesFilter : true));
+    .filter(
+      (c): c is NonNullable<typeof c> =>
+        !!c && (entityFilter ? (c as any).matchesFilter : true)
+    );
 
   return NextResponse.json({ ok: true, automations: shaped });
 }

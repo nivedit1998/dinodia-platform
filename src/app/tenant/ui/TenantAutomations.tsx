@@ -12,6 +12,7 @@ import {
   getEligibleDevicesForAutomations,
   getTriggersForDevice,
 } from '@/lib/deviceCapabilities';
+import type { DeviceCommandId } from '@/lib/deviceCapabilities';
 
 type AutomationListItem = {
   id: string;
@@ -23,6 +24,15 @@ type AutomationListItem = {
   hasTemplates: boolean;
   canEdit: boolean;
   enabled?: boolean;
+  raw?: {
+    triggers?: unknown[];
+    trigger?: unknown[];
+    conditions?: unknown[];
+    condition?: unknown[];
+    actions?: unknown[];
+    action?: unknown[];
+    [key: string]: unknown;
+  };
 };
 
 type TriggerType = 'state' | 'schedule';
@@ -64,7 +74,7 @@ const defaultFormState: CreateFormState = {
   triggerDirection: '',
   triggerAttribute: '',
   scheduleAt: '',
-  scheduleWeekdays: [],
+  scheduleWeekdays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
   actionEntityId: '',
   actionCommand: '',
   actionValue: '',
@@ -89,6 +99,170 @@ function buildDeviceOptions(devices: UIDevice[]): DeviceOptions {
   const triggerDevices = baseEligible.map((d) => ({ value: d.entityId, label: buildLabel(d) }));
 
   return { tile, triggerDevices };
+}
+
+function toArray<T>(val: T | T[] | undefined | null): T[] {
+  if (Array.isArray(val)) return val;
+  if (val === undefined || val === null) return [];
+  return [val];
+}
+
+function getTriggerSummary(trigger: any, devices: UIDevice[]): string {
+  if (!trigger || typeof trigger !== 'object') return 'Custom trigger';
+  const t = trigger as Record<string, any>;
+  const entity = toArray<string>(t.entity_id ?? t.entityId)[0];
+  const friendly =
+    devices.find((d) => d.entityId === entity)?.name || entity || 'Unknown entity';
+  const platform = (t.platform ?? t.trigger) as string | undefined;
+  if (platform === 'time') {
+    const at = t.at ?? '';
+    const weekdays = toArray<string>(t.weekday ?? []).join(', ');
+    return `Time: ${at}${weekdays ? ` on ${weekdays}` : ''}`;
+  }
+  if (platform === 'state') {
+    const to = t.to ?? t.state;
+    return `State: ${friendly}${to ? ` → ${to}` : ''}`;
+  }
+  return 'Custom trigger';
+}
+
+function getActionEntity(action: any): string | null {
+  if (!action || typeof action !== 'object') return null;
+  const target = (action as Record<string, any>).target;
+  const candidate =
+    (target && target.entity_id) || (action as Record<string, any>).entity_id || null;
+  if (Array.isArray(candidate)) return candidate[0] ?? null;
+  return typeof candidate === 'string' ? candidate : null;
+}
+
+function getActionSummary(action: any, devices: UIDevice[]): { summary: string; primaryName?: string } {
+  if (!action || typeof action !== 'object') return { summary: 'Custom action' };
+  const a = action as Record<string, any>;
+  const service = a.service as string | undefined;
+  const data = (a.data ?? {}) as Record<string, any>;
+  const entityId = getActionEntity(a);
+  const friendly =
+    devices.find((d) => d.entityId === entityId)?.name || entityId || 'Unknown device';
+
+  if (!service) return { summary: `Custom action on ${friendly}`, primaryName: friendly };
+
+  if (service === 'cover.set_cover_position') {
+    const pos = data.position ?? data.percentage;
+    return { summary: `Set ${friendly} to ${pos}%`, primaryName: friendly };
+  }
+  if (service === 'climate.set_temperature') {
+    return { summary: `Set ${friendly} temperature to ${data.temperature ?? ''}`, primaryName: friendly };
+  }
+  if (service === 'light.turn_on') {
+    if (data.brightness_pct !== undefined) {
+      return { summary: `Set ${friendly} brightness to ${data.brightness_pct}%`, primaryName: friendly };
+    }
+    return { summary: `Turn on ${friendly}`, primaryName: friendly };
+  }
+  if (service === 'homeassistant.turn_on') {
+    return { summary: `Turn on ${friendly}`, primaryName: friendly };
+  }
+  if (service === 'homeassistant.turn_off' || service === 'light.turn_off') {
+    return { summary: `Turn off ${friendly}`, primaryName: friendly };
+  }
+  if (service === 'homeassistant.toggle') {
+    return { summary: `Toggle ${friendly}`, primaryName: friendly };
+  }
+  if (service === 'media_player.volume_set') {
+    const vol = data.volume_level ? Math.round(Number(data.volume_level) * 100) : undefined;
+    return { summary: `Set ${friendly} volume to ${vol ?? ''}%`, primaryName: friendly };
+  }
+  if (service === 'media_player.media_play_pause') {
+    return { summary: `Play/Pause ${friendly}`, primaryName: friendly };
+  }
+  return { summary: `${service} on ${friendly}`, primaryName: friendly };
+}
+
+function summarizeAutomation(auto: AutomationListItem, devices: UIDevice[]) {
+  const raw = auto.raw ?? {};
+  const triggers = toArray(raw.triggers ?? raw.trigger);
+  const actions = toArray(raw.actions ?? raw.action);
+  const triggerSummary = triggers.length > 0 ? getTriggerSummary(triggers[0], devices) : '—';
+  const actionSummary = actions.length > 0 ? getActionSummary(actions[0], devices) : { summary: '—' };
+  return {
+    triggerSummary,
+    actionSummary: actionSummary.summary,
+    primaryName: actionSummary.primaryName,
+  };
+}
+
+function pickCommand(
+  actions: DeviceActionSpec[],
+  predicate: (spec: DeviceActionSpec) => boolean
+): DeviceActionSpec | undefined {
+  return actions.find(predicate);
+}
+
+function mapHaActionToForm(
+  action: any,
+  device: UIDevice | undefined,
+  actions: DeviceActionSpec[]
+): { command: DeviceCommandId; value?: number | string } | null {
+  if (!action || typeof action !== 'object') return null;
+  const a = action as Record<string, any>;
+  const service = a.service as string | undefined;
+  const data = (a.data ?? {}) as Record<string, any>;
+  if (!service) return null;
+
+  if (service === 'cover.set_cover_position') {
+    return { command: 'blind/set_position', value: data.position ?? data.percentage ?? 0 };
+  }
+  if (service === 'climate.set_temperature') {
+    return { command: 'boiler/set_temperature', value: data.temperature ?? 0 };
+  }
+  if (service === 'light.turn_on') {
+    if (data.brightness_pct !== undefined) {
+      return { command: 'light/set_brightness', value: data.brightness_pct };
+    }
+    const cmd =
+      pickCommand(actions, (s) => s.id.endsWith('turn_on') || s.id === 'light/turn_on') ??
+      actions.find((s) => s.kind === 'command');
+    return cmd ? { command: cmd.id as DeviceCommandId } : null;
+  }
+  if (service === 'homeassistant.turn_on') {
+    const cmd =
+      pickCommand(actions, (s) => s.id.endsWith('turn_on')) ?? actions.find((s) => s.kind === 'command');
+    return cmd ? { command: cmd.id as DeviceCommandId } : null;
+  }
+  if (service === 'homeassistant.turn_off' || service === 'light.turn_off') {
+    const cmd =
+      pickCommand(actions, (s) => s.id.endsWith('turn_off')) ??
+      actions.find((s) => s.kind === 'command');
+    return cmd ? { command: cmd.id as DeviceCommandId } : null;
+  }
+  if (service === 'homeassistant.toggle') {
+    const cmd =
+      pickCommand(actions, (s) => s.id.includes('toggle')) ?? actions.find((s) => s.kind === 'command');
+    return cmd ? { command: cmd.id as DeviceCommandId } : null;
+  }
+  if (service === 'media_player.volume_set') {
+    const vol = data.volume_level ? Math.round(Number(data.volume_level) * 100) : 0;
+    return { command: 'media/volume_set', value: vol };
+  }
+  if (service === 'media_player.media_play_pause') {
+    const cmd = pickCommand(actions, (s) => s.id === 'media/play_pause');
+    return cmd ? { command: cmd.id as DeviceCommandId } : null;
+  }
+  if (service === 'cover.open_cover') {
+    return { command: 'blind/open' };
+  }
+  if (service === 'cover.close_cover') {
+    return { command: 'blind/close' };
+  }
+  if (service === 'media_player.media_next_track') {
+    const cmd = pickCommand(actions, (s) => s.id === 'media/next');
+    return cmd ? { command: cmd.id as DeviceCommandId } : null;
+  }
+  if (service === 'media_player.media_previous_track') {
+    const cmd = pickCommand(actions, (s) => s.id === 'media/previous');
+    return cmd ? { command: cmd.id as DeviceCommandId } : null;
+  }
+  return null;
 }
 
 function renderActionInput(
@@ -222,6 +396,7 @@ export default function TenantAutomations() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const actionDevice = devices.find((d) => d.entityId === form.actionEntityId);
   const triggerDevice = devices.find((d) => d.entityId === form.triggerEntityId);
@@ -392,15 +567,20 @@ export default function TenantAutomations() {
     setError(null);
     try {
       const payload = buildPayload();
-      const res = await fetch('/api/automations', {
-        method: 'POST',
+      const url = editingId
+        ? `/api/automations/${encodeURIComponent(editingId)}`
+        : '/api/automations';
+      const method = editingId ? 'PATCH' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         credentials: 'include',
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create automation');
+      if (!res.ok) throw new Error(data.error || 'Failed to save automation');
       setForm({ ...defaultFormState });
+      setEditingId(null);
       await fetchAndSetAutomations(selectedEntityId);
     } catch (err) {
       setError((err as Error).message);
@@ -448,12 +628,75 @@ export default function TenantAutomations() {
   }
 
   useEffect(() => {
+    if (editingId && form.triggerEntityId && form.triggerMode) return;
     resetTriggerFields(triggerSpecs);
-  }, [form.triggerEntityId, triggerSpecs]);
+  }, [form.triggerEntityId, triggerSpecs, editingId, form.triggerMode]);
 
   useEffect(() => {
+    if (editingId && form.actionEntityId && form.actionCommand) return;
     resetActionFields(actionSpecs);
-  }, [form.actionEntityId, actionSpecs]);
+  }, [form.actionEntityId, actionSpecs, editingId, form.actionCommand]);
+
+  function startEdit(auto: AutomationListItem) {
+    if (!auto.canEdit || auto.hasTemplates || !auto.raw) {
+      setError('This automation cannot be edited in the app.');
+      return;
+    }
+    const raw = auto.raw;
+    const triggers = toArray(raw.triggers ?? raw.trigger);
+    const actions = toArray(raw.actions ?? raw.action);
+    const next: CreateFormState = {
+      ...defaultFormState,
+      alias: auto.alias,
+      description: auto.description ?? '',
+      enabled: auto.enabled ?? true,
+    };
+
+    const trigger = triggers[0] as Record<string, any> | undefined;
+    if (trigger) {
+      const platform = (trigger.platform ?? trigger.trigger) as string | undefined;
+      if (platform === 'time') {
+        next.triggerType = 'schedule';
+        next.scheduleAt = trigger.at ?? '';
+        const weekdays = toArray<string>(trigger.weekday ?? []);
+        next.scheduleWeekdays =
+          weekdays.length > 0 ? weekdays : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+      } else if (platform === 'state') {
+        const entity = toArray<string>(trigger.entity_id ?? trigger.entityId)[0] ?? '';
+        next.triggerType = 'state';
+        next.triggerEntityId = entity;
+        next.triggerMode = 'state_equals';
+        next.triggerTo = trigger.to ?? '';
+      } else {
+        setError('This automation trigger type is not supported for editing yet.');
+        return;
+      }
+    } else {
+      setError('Cannot edit: missing trigger.');
+      return;
+    }
+
+    const action = actions[0] as Record<string, any> | undefined;
+    const actionEntity = getActionEntity(action);
+    if (!action || !actionEntity) {
+      setError('Cannot edit: missing action device.');
+      return;
+    }
+    next.actionEntityId = actionEntity;
+    const device = devices.find((d) => d.entityId === actionEntity);
+    const specs = device ? getActionsForDevice(device, 'automation') : [];
+    const mapped = mapHaActionToForm(action, device, specs);
+    if (!mapped) {
+      setError('This automation action type is not supported for editing yet.');
+      return;
+    }
+    next.actionCommand = mapped.command;
+    next.actionValue = mapped.value ?? '';
+
+    setForm(next);
+    setEditingId(auto.id);
+    window?.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
@@ -521,63 +764,97 @@ export default function TenantAutomations() {
           <p className="text-sm text-slate-500">No automations found for this device.</p>
         )}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {automations.map((auto) => (
-            <div
-              key={auto.id}
-              className="rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-base font-semibold text-slate-900">{auto.alias}</p>
-                  <p className="text-xs text-slate-500">ID: {auto.id}</p>
+          {automations.map((auto) => {
+            const summary = summarizeAutomation(auto, devices);
+            return (
+              <div
+                key={auto.id}
+                className="rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-base font-semibold text-slate-900">{auto.alias}</p>
+                    <p className="text-xs text-slate-500">ID: {auto.id}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        checked={auto.enabled ?? true}
+                        onChange={(e) => void handleToggle(auto.id, e.target.checked)}
+                        disabled={togglingId === auto.id}
+                      />
+                      {auto.enabled ? 'Enabled' : 'Disabled'}
+                    </label>
+                    {auto.canEdit && !auto.hasTemplates && (
+                      <button
+                        type="button"
+                        className="rounded-lg border border-indigo-200 px-3 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                        onClick={() => startEdit(auto)}
+                      >
+                        Edit
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="rounded-lg border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+                      onClick={() => void handleDelete(auto.id)}
+                      disabled={deletingId === auto.id}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-2 text-xs text-slate-600">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                      checked={auto.enabled ?? true}
-                      onChange={(e) => void handleToggle(auto.id, e.target.checked)}
-                      disabled={togglingId === auto.id}
-                    />
-                    {auto.enabled ? 'Enabled' : 'Disabled'}
-                  </label>
-                  <button
-                    type="button"
-                    className="rounded-lg border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
-                    onClick={() => void handleDelete(auto.id)}
-                    disabled={deletingId === auto.id}
-                  >
-                    Delete
-                  </button>
+                <p className="mt-1 text-xs text-slate-600">{auto.description}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5">Mode: {auto.mode}</span>
+                  {summary.primaryName && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5">
+                      Target: {summary.primaryName}
+                    </span>
+                  )}
+                  {auto.entities.length > 0 && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5">
+                      Entities: {auto.entities.join(', ')}
+                    </span>
+                  )}
+                  {auto.hasTemplates && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">
+                      Template detected (view only)
+                    </span>
+                  )}
+                  {!auto.canEdit && (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">
+                      Read-only (outside your areas or templated)
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2 space-y-1 text-xs text-slate-700">
+                  <p>
+                    <span className="font-semibold text-slate-800">Trigger:</span>{' '}
+                    {summary.triggerSummary}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-800">Action:</span>{' '}
+                    {summary.actionSummary}
+                  </p>
                 </div>
               </div>
-              <p className="mt-1 text-xs text-slate-600">{auto.description}</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                <span className="rounded-full bg-slate-100 px-2 py-0.5">Mode: {auto.mode}</span>
-                {auto.entities.length > 0 && (
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5">
-                    Entities: {auto.entities.join(', ')}
-                  </span>
-                )}
-                {auto.hasTemplates && (
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">
-                    Template detected (view only)
-                  </span>
-                )}
-                {!auto.canEdit && (
-                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">
-                    Read-only (outside your areas or templated)
-                  </span>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
-        <h2 className="mb-3 text-lg font-semibold text-slate-900">Create automation</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-slate-900">
+            {editingId ? 'Edit automation' : 'Create automation'}
+          </h2>
+          {editingId && (
+            <span className="text-xs text-slate-500">Editing: {editingId}</span>
+          )}
+        </div>
         <form className="space-y-4" onSubmit={handleCreate}>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
@@ -695,7 +972,7 @@ export default function TenantAutomations() {
                               setForm((prev) => ({
                                 ...prev,
                                 scheduleWeekdays: checked
-                                  ? [...prev.scheduleWeekdays, day.value]
+                                  ? Array.from(new Set([...prev.scheduleWeekdays, day.value]))
                                   : prev.scheduleWeekdays.filter((d) => d !== day.value),
                               }));
                             }}
@@ -800,7 +1077,10 @@ export default function TenantAutomations() {
             <button
               type="button"
               className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              onClick={() => setForm({ ...defaultFormState })}
+              onClick={() => {
+                setForm({ ...defaultFormState });
+                setEditingId(null);
+              }}
             >
               Reset
             </button>
@@ -809,7 +1089,7 @@ export default function TenantAutomations() {
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
               disabled={saving}
             >
-              {saving ? 'Saving…' : 'Create automation'}
+              {saving ? 'Saving…' : editingId ? 'Save automation' : 'Create automation'}
             </button>
           </div>
         </form>
