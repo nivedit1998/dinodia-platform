@@ -6,7 +6,7 @@ import {
   getDevicesWithMetadata,
   getEntityRegistryMap,
 } from '@/lib/homeAssistant';
-import { resolveHaCloudFirst } from '@/lib/haConnection';
+import type { HaConnectionLike } from '@/lib/homeAssistant';
 import { classifyDeviceByLabel } from '@/lib/labelCatalog';
 import { buildFallbackDeviceId } from '@/lib/deviceIdentity';
 import type { UIDevice } from '@/types/device';
@@ -36,20 +36,20 @@ function getDeviceCache() {
 }
 
 async function fetchEnrichedDevicesWithFallback(
-  haConnection: { id: number; baseUrl: string; cloudUrl: string | null; longLivedToken: string }
+  ha: HaConnectionLike,
+  haConnectionId: number
 ): Promise<EnrichedDevice[]> {
-  const effectiveHa = resolveHaCloudFirst(haConnection);
   const fetchStartedAt = Date.now();
 
   let enriched: EnrichedDevice[] = [];
   try {
-    enriched = await getDevicesWithMetadata(effectiveHa);
+    enriched = await getDevicesWithMetadata(ha);
   } catch (err) {
     console.warn('[devicesSnapshot] metadata failed, falling back to states-only', err);
     try {
       const [states, registryMap] = await Promise.all([
-        callHomeAssistantAPI<HAState[]>(effectiveHa, '/api/states'),
-        getEntityRegistryMap(effectiveHa),
+        callHomeAssistantAPI<HAState[]>(ha, '/api/states'),
+        getEntityRegistryMap(ha),
       ]);
       enriched = states.map((s) => {
         const domain = s.entity_id.split('.')[0] || '';
@@ -76,7 +76,7 @@ async function fetchEnrichedDevicesWithFallback(
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('[devicesSnapshot] fetched from HA', {
-      haConnectionId: haConnection.id,
+      haConnectionId,
       count: enriched.length,
       ms: Date.now() - fetchStartedAt,
     });
@@ -148,6 +148,31 @@ function logSample(devices: UIDevice[]) {
   }
 }
 
+function normalizeUrl(url: string) {
+  return url.trim().replace(/\/+$/, '');
+}
+
+function buildHaCandidates(haConnection: {
+  baseUrl: string;
+  cloudUrl: string | null;
+  longLivedToken: string;
+}): HaConnectionLike[] {
+  const candidates: HaConnectionLike[] = [];
+  const seen = new Set<string>();
+  const cloud = haConnection.cloudUrl ? normalizeUrl(haConnection.cloudUrl) : '';
+  const base = normalizeUrl(haConnection.baseUrl);
+
+  if (cloud && !seen.has(cloud)) {
+    candidates.push({ baseUrl: cloud, longLivedToken: haConnection.longLivedToken });
+    seen.add(cloud);
+  }
+  if (base && !seen.has(base)) {
+    candidates.push({ baseUrl: base, longLivedToken: haConnection.longLivedToken });
+  }
+
+  return candidates;
+}
+
 export async function getDevicesForHaConnection(
   haConnectionId: number,
   opts: DeviceFetchOptions = {}
@@ -175,7 +200,22 @@ export async function getDevicesForHaConnection(
     throw new Error(`HA connection ${haConnectionId} not found`);
   }
 
-  const enriched = await fetchEnrichedDevicesWithFallback(haConnection);
+  const candidates = buildHaCandidates(haConnection);
+  let enriched: EnrichedDevice[] | null = null;
+  let lastError: unknown = null;
+  for (const candidate of candidates) {
+    try {
+      enriched = await fetchEnrichedDevicesWithFallback(candidate, haConnectionId);
+      break;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  if (!enriched) {
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('Dinodia Hub did not respond when loading devices.');
+  }
 
   const dbDevices = await prisma.device.findMany({
     where: { haConnectionId },

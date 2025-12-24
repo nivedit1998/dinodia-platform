@@ -849,19 +849,27 @@ export default function AdminSettings({ username }: Props) {
             <div>
               <label className="block mb-1 text-xs">Associated areas</label>
               <div className="flex items-center gap-2">
-                <input
-                  list="available-areas"
-                  placeholder="Living Room, Kitchen…"
-                  className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={newAreaInput}
-                  onChange={(e) => setNewAreaInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addArea();
-                    }
-                  }}
-                />
+                {availableAreas.length > 0 ? (
+                  <select
+                    className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={newAreaInput}
+                    onChange={(e) => setNewAreaInput(e.target.value)}
+                  >
+                    <option value="">Select an area</option>
+                    {availableAreas.map((area) => (
+                      <option key={area} value={area}>
+                        {area}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    placeholder="Living Room, Kitchen…"
+                    className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={newAreaInput}
+                    onChange={(e) => setNewAreaInput(e.target.value)}
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => addArea()}
@@ -871,13 +879,6 @@ export default function AdminSettings({ username }: Props) {
                   <span className="text-lg leading-none">+</span>
                 </button>
               </div>
-              {availableAreas.length > 0 && (
-                <datalist id="available-areas">
-                  {availableAreas.map((area) => (
-                    <option key={area} value={area} />
-                  ))}
-                </datalist>
-              )}
               {tenantForm.areas.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {tenantForm.areas.map((area) => (

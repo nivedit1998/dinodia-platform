@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   try {
     devices = await getDevicesForHaConnection(haConnection.id, { bypassCache });
   } catch (err) {
-    console.error('Failed to fetch devices from HA (cloud-first):', err);
+    console.error('Failed to fetch devices from HA (cloud/base):', err);
     return NextResponse.json(
       { error: 'Dinodia Hub did not respond when loading devices.' },
       { status: 502 }
