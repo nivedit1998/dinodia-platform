@@ -194,6 +194,16 @@ export default function RegisterAdminPage() {
         <h1 className="text-2xl font-semibold mb-4 text-center">
           Set up the homeowner account
         </h1>
+        <p className="text-xs text-slate-500 mb-4 text-center">
+          This setup is for a brand-new Dinodia home. Taking over from a previous homeowner?{' '}
+          <button
+            type="button"
+            className="text-indigo-600 hover:underline"
+            onClick={() => router.push('/claim')}
+          >
+            Claim a home
+          </button>
+        </p>
 
         {error && (
           <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">

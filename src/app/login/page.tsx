@@ -332,6 +332,15 @@ export default function LoginPage() {
             Set up this home
           </button>
         </p>
+        <p className="mt-2 text-xs text-slate-500 text-center">
+          Claim a home (have a code?){' '}
+          <button
+            className="text-indigo-600 hover:underline"
+            onClick={() => router.push('/claim')}
+          >
+            Go to claim
+          </button>
+        </p>
       </div>
     </div>
   );
