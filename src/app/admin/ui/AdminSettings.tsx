@@ -496,6 +496,7 @@ export default function AdminSettings({ username }: Props) {
     (haCredentials.password && haCredentials.password.trim().length > 0);
   const remoteAccessEnabled = remoteStatus.status === 'enabled';
   const tenantLocked = !remoteAccessEnabled;
+  const deregisterLocked = !remoteAccessEnabled;
 
   return (
     <div className="w-full max-w-4xl bg-white rounded-2xl shadow-lg p-4 sm:p-6 flex flex-col gap-5 sm:gap-6">
@@ -824,27 +825,19 @@ export default function AdminSettings({ username }: Props) {
               {alexaDevicesAvailable && (
                 <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-xs text-indigo-900">
                   <p className="text-sm font-semibold">
-                    Connect all your Dinodia smart home devices to Alexa!
+                    Congratulations your tenants can now connect their Dinodia smart home devices to Alexa!
                   </p>
-                  <p className="mt-1 text-[11px] text-indigo-900/80">
-                    Tap below to open the Dinodia Smart Living skill inside your Alexa app
-                    and finish linking for voice control.
-                  </p>
-                  <a
-                    href={ALEXA_SKILL_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-3 inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-700"
-                  >
-                    Open Dinodia in Alexa
-                  </a>
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        <div className="border border-slate-200 rounded-xl p-4">
+        <div
+          className={`border border-slate-200 rounded-xl p-4 ${
+            tenantLocked ? 'bg-slate-50 opacity-70 pointer-events-none' : ''
+          }`}
+        >
           <h2 className="font-semibold mb-4">Home setup – add tenant</h2>
           {tenantLocked && (
             <p className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
@@ -925,7 +918,7 @@ export default function AdminSettings({ username }: Props) {
                 </div>
               )}
               <p className="mt-1 text-[11px] text-slate-500">
-                Add one or more rooms. Suggestions come from your Dinodia Hub (Home Assistant) areas.
+                Choose one or more rooms to give access to.
               </p>
             </div>
             <button
@@ -941,10 +934,14 @@ export default function AdminSettings({ username }: Props) {
           )}
         </div>
 
-        <div className="border border-slate-200 rounded-xl p-4 lg:col-span-2">
+        <div
+          className={`border border-slate-200 rounded-xl p-4 lg:col-span-2 ${
+            deregisterLocked ? 'bg-slate-50 opacity-70 pointer-events-none' : ''
+          }`}
+        >
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="font-semibold">Selling Property</h2>
+              <h2 className="font-semibold">Deregister Property</h2>
               <p className="text-[11px] text-slate-500 mt-1">
                 Issue a one-time claim code for the next homeowner.
               </p>
@@ -952,12 +949,19 @@ export default function AdminSettings({ username }: Props) {
             <button
               type="button"
               onClick={openSellingModal}
-              disabled={sellingLoading}
+              disabled={sellingLoading || deregisterLocked}
               className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
             >
-              {sellingClaimCode ? 'View claim code' : 'Selling Property'}
+              {sellingClaimCode ? 'View claim code' : 'Deregister Property'}
             </button>
           </div>
+          {deregisterLocked && (
+            <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              Remote access must be enabled for you to deregister your smart home from this
+              website. To deregister your smart home without paying for remote access you
+              will have to use your iOS/Android phone or the Dinodia Kiosk.
+            </p>
+          )}
           <p className="mt-3 text-xs text-slate-600">
             Choose if everyone is leaving or if tenants stay. We’ll guide you through issuing the
             claim code and sign you out once you confirm.
@@ -977,7 +981,7 @@ export default function AdminSettings({ username }: Props) {
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold">Selling Property</h3>
+                <h3 className="text-lg font-semibold">Deregister Property</h3>
                 <p className="text-xs text-slate-500">
                   Generate the claim code for the next homeowner.
                 </p>
@@ -1043,7 +1047,9 @@ export default function AdminSettings({ username }: Props) {
                     }`}
                     disabled={sellingLoading}
                   >
-                    <p className="text-sm font-semibold">Are you and all tenants leaving?</p>
+                    <p className="text-sm font-semibold">
+                      Deregister your whole household (Homeowner + Occupiers)
+                    </p>
                     <p className="mt-1 text-[11px] text-slate-600">
                       Fully reset this home so the next owner starts fresh.
                     </p>
@@ -1058,7 +1064,10 @@ export default function AdminSettings({ username }: Props) {
                     }`}
                     disabled={sellingLoading}
                   >
-                    <p className="text-sm font-semibold">Are you leaving and tenants remaining?</p>
+                    <p className="text-sm font-semibold">
+                      Deregister yourself but keep all occupiers control active (Only a household
+                      owner change)
+                    </p>
                     <p className="mt-1 text-[11px] text-slate-600">
                       Remove your ownership while keeping tenant devices and automations.
                     </p>
