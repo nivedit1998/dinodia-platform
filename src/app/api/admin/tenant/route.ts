@@ -42,15 +42,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let haConnection;
+  let userWithConnection: Awaited<ReturnType<typeof getUserWithHaConnection>>;
   try {
-    ({ haConnection } = await getUserWithHaConnection(me.id));
+    userWithConnection = await getUserWithHaConnection(me.id);
   } catch (err) {
     return NextResponse.json(
       { error: (err as Error).message || 'The Dinodia Hub connection isn’t set up yet for this home.' },
       { status: 400 }
     );
   }
+
+  const { user, haConnection } = userWithConnection;
 
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) {
@@ -64,6 +66,7 @@ export async function POST(req: NextRequest) {
       username,
       passwordHash,
       role: Role.TENANT,
+      homeId: user.homeId,
       haConnectionId: haConnection.id,
     },
   });

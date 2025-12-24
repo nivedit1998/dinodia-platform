@@ -11,6 +11,7 @@ type Props = {
 type StatusMessage = { type: 'success' | 'error'; message: string } | null;
 type TenantForm = { username: string; password: string; areas: string[] };
 type TenantStringField = 'username' | 'password';
+type SellingMode = 'FULL_RESET' | 'OWNER_TRANSFER';
 
 const EMPTY_TENANT_FORM: TenantForm = { username: '', password: '', areas: [] };
 const EMPTY_PASSWORD_FORM = {
@@ -61,6 +62,12 @@ export default function AdminSettings({ username }: Props) {
     password: '',
   });
   const [passwordSectionOpen, setPasswordSectionOpen] = useState(false);
+  const [sellingModalOpen, setSellingModalOpen] = useState(false);
+  const [sellingMode, setSellingMode] = useState<SellingMode | null>(null);
+  const [sellingLoading, setSellingLoading] = useState(false);
+  const [sellingError, setSellingError] = useState<string | null>(null);
+  const [sellingClaimCode, setSellingClaimCode] = useState<string | null>(null);
+  const [claimCopyStatus, setClaimCopyStatus] = useState<string | null>(null);
 
   function updateTenantField(key: TenantStringField, value: string) {
     setTenantForm((prev) => ({ ...prev, [key]: value }));
@@ -358,6 +365,76 @@ export default function AdminSettings({ username }: Props) {
 
   async function handleLogout() {
     await performLogout();
+  }
+
+  function openSellingModal() {
+    setSellingModalOpen(true);
+    setSellingError(null);
+    setClaimCopyStatus(null);
+    if (!sellingClaimCode) {
+      setSellingMode(null);
+    }
+  }
+
+  function closeSellingModal() {
+    setSellingModalOpen(false);
+    setSellingError(null);
+    setClaimCopyStatus(null);
+    if (!sellingClaimCode) {
+      setSellingMode(null);
+    }
+  }
+
+  function selectSellingMode(mode: SellingMode) {
+    setSellingMode(mode);
+    setSellingError(null);
+  }
+
+  async function confirmSellingSelection(mode: SellingMode) {
+    if (sellingClaimCode) return;
+    setSellingLoading(true);
+    setSellingError(null);
+    try {
+      const res = await fetch('/api/admin/selling-property', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          data.error || 'We couldn’t process this request. Please try again.'
+        );
+      }
+      if (!data.claimCode || typeof data.claimCode !== 'string') {
+        throw new Error('We could not retrieve the claim code. Please try again.');
+      }
+      setSellingClaimCode(data.claimCode);
+      setSellingMode(mode);
+    } catch (err) {
+      setSellingError(
+        err instanceof Error
+          ? err.message
+          : 'We couldn’t process this request. Please try again.'
+      );
+    } finally {
+      setSellingLoading(false);
+    }
+  }
+
+  async function copyClaimCode() {
+    if (!sellingClaimCode) return;
+    try {
+      await navigator.clipboard.writeText(sellingClaimCode);
+      setClaimCopyStatus('Copied');
+    } catch (err) {
+      setClaimCopyStatus('Copy failed');
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('Clipboard copy failed', err);
+      }
+    } finally {
+      setTimeout(() => setClaimCopyStatus(null), 2000);
+    }
   }
 
   useEffect(() => {
@@ -838,7 +915,167 @@ export default function AdminSettings({ username }: Props) {
           )}
         </div>
 
+        <div className="border border-slate-200 rounded-xl p-4 lg:col-span-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-semibold">Selling Property</h2>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Issue a one-time claim code for the next homeowner.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={openSellingModal}
+              disabled={sellingLoading}
+              className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {sellingClaimCode ? 'View claim code' : 'Selling Property'}
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-slate-600">
+            Choose if everyone is leaving or if tenants stay. We’ll guide you through issuing the
+            claim code and sign you out once you confirm.
+          </p>
+          {sellingClaimCode && (
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+              A claim code has already been generated for this home. Share it with the incoming
+              homeowner before you finish.
+            </p>
+          )}
+        </div>
+
       </section>
+
+      {sellingModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold">Selling Property</h3>
+                <p className="text-xs text-slate-500">
+                  Generate the claim code for the next homeowner.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeSellingModal}
+                disabled={sellingLoading}
+                className="text-slate-500 hover:text-slate-700"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            {sellingClaimCode ? (
+              <div className="mt-5 space-y-4">
+                <p className="text-sm text-slate-700">
+                  Share this code with the new homeowner. It only shows once and you&apos;ll be
+                  signed out after you confirm.
+                </p>
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
+                  <span className="font-mono text-lg font-semibold tracking-widest text-indigo-900">
+                    {sellingClaimCode}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void copyClaimCode()}
+                    className="rounded-full border border-indigo-200 bg-white px-3 py-1 text-xs font-medium text-indigo-700 shadow-sm hover:bg-indigo-50"
+                  >
+                    Copy
+                  </button>
+                </div>
+                {claimCopyStatus && (
+                  <p className="text-xs text-indigo-700">{claimCopyStatus}</p>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                    onClick={() => void handleLogout()}
+                  >
+                    I saved the code
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    onClick={closeSellingModal}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-5 space-y-4">
+                <div className="grid gap-3">
+                  <button
+                    type="button"
+                    onClick={() => selectSellingMode('FULL_RESET')}
+                    className={`w-full rounded-xl border px-4 py-3 text-left transition ${
+                      sellingMode === 'FULL_RESET'
+                        ? 'border-indigo-500 bg-indigo-50 shadow-sm'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                    disabled={sellingLoading}
+                  >
+                    <p className="text-sm font-semibold">Are you and all tenants leaving?</p>
+                    <p className="mt-1 text-[11px] text-slate-600">
+                      Fully reset this home so the next owner starts fresh.
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectSellingMode('OWNER_TRANSFER')}
+                    className={`w-full rounded-xl border px-4 py-3 text-left transition ${
+                      sellingMode === 'OWNER_TRANSFER'
+                        ? 'border-indigo-500 bg-indigo-50 shadow-sm'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                    disabled={sellingLoading}
+                  >
+                    <p className="text-sm font-semibold">Are you leaving and tenants remaining?</p>
+                    <p className="mt-1 text-[11px] text-slate-600">
+                      Remove your ownership while keeping tenant devices and automations.
+                    </p>
+                  </button>
+                </div>
+
+                {sellingMode && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+                    <p className="text-sm font-semibold">Please confirm</p>
+                    <p className="mt-2 text-sm">
+                      {sellingMode === 'FULL_RESET'
+                        ? 'This will remove all tenant devices, automations, alexa links and accounts and fully reset your Dinodia home for the new homeowner and tenants'
+                        : 'This will remove your property but keep all tenants added devices, automations, alexa links and accounts'}
+                    </p>
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-wide">Is this ok?</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                        disabled={sellingLoading}
+                        onClick={() => void confirmSellingSelection(sellingMode)}
+                      >
+                        {sellingLoading ? 'Working…' : 'Yes'}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        disabled={sellingLoading}
+                        onClick={() => setSellingMode(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {sellingError && (
+                      <p className="mt-2 text-xs text-red-700">{sellingError}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

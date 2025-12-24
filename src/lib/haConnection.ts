@@ -1,70 +1,27 @@
-import { Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import type { HaConnectionLike } from '@/lib/homeAssistant';
 
 export type ViewMode = 'home' | 'holiday';
 
 const userInclude = {
-  haConnection: true,
-  ownedHaConnection: true,
+  home: {
+    include: {
+      haConnection: true,
+    },
+  },
   accessRules: true,
 } as const;
 
 export async function getUserWithHaConnection(userId: number) {
-  let user = await prisma.user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { id: userId },
     include: userInclude,
   });
 
   if (!user) throw new Error('User not found');
 
-  let haConnection = user.haConnection ?? user.ownedHaConnection;
-
-  if (!haConnection && user.haConnectionId) {
-    haConnection = await prisma.haConnection.findUnique({
-      where: { id: user.haConnectionId },
-    });
-  }
-
-  if (!haConnection && user.role === Role.TENANT) {
-    const adminWithConnection = await prisma.user.findFirst({
-      where: { role: Role.ADMIN },
-      select: {
-        id: true,
-        haConnectionId: true,
-        ownedHaConnection: { select: { id: true } },
-      },
-    });
-
-    const adminHaConnectionId =
-      adminWithConnection?.haConnectionId ??
-      adminWithConnection?.ownedHaConnection?.id ??
-      null;
-
-    if (adminWithConnection && !adminWithConnection.haConnectionId && adminHaConnectionId) {
-      await prisma.user.update({
-        where: { id: adminWithConnection.id },
-        data: { haConnectionId: adminHaConnectionId },
-      });
-    }
-
-    if (adminHaConnectionId) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { haConnectionId: adminHaConnectionId },
-      });
-      haConnection = await prisma.haConnection.findUnique({
-        where: { id: adminHaConnectionId },
-      });
-      user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: userInclude,
-      });
-      if (!user) throw new Error('User not found');
-    }
-  }
-
-  if (!user || !haConnection) {
+  const haConnection = user.home?.haConnection ?? null;
+  if (!user.home || !haConnection) {
     throw new Error('Dinodia Hub connection isn’t set up yet for this home.');
   }
 
@@ -81,8 +38,6 @@ export function resolveHaForMode(
 
   return {
     baseUrl: useCloud ? cloud : haConnection.baseUrl,
-
-
     longLivedToken: haConnection.longLivedToken,
   };
 }

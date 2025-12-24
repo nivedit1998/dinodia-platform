@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { Role } from '@prisma/client';
+import { getUserWithHaConnection } from '@/lib/haConnection';
 
 export async function POST(req: NextRequest) {
   const me = await getCurrentUser();
@@ -19,19 +20,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const admin = await prisma.user.findUnique({
-    where: { id: me.id },
-    include: { haConnection: true },
-  });
-
-  if (!admin || !admin.haConnection) {
+  let haConnectionId: number;
+  try {
+    const { haConnection } = await getUserWithHaConnection(me.id);
+    haConnectionId = haConnection.id;
+  } catch (err) {
     return NextResponse.json(
-      { error: 'The homeowner’s Dinodia Hub connection is missing for this home.' },
+      { error: (err as Error).message || 'The homeowner’s Dinodia Hub connection is missing for this home.' },
       { status: 400 }
     );
   }
-
-  const haConnectionId = admin.haConnection.id;
 
   let blindTravelSecondsValue: number | null = null;
   if (blindTravelSeconds !== undefined && blindTravelSeconds !== null && blindTravelSeconds !== '') {

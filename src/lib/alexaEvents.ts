@@ -213,10 +213,7 @@ export async function sendAlexaChangeReportForHaConnection(
   try {
     const users = await prisma.user.findMany({
       where: {
-        OR: [
-          { haConnectionId },
-          { ownedHaConnection: { id: haConnectionId } },
-        ],
+        home: { haConnectionId },
         alexaEventToken: { isNot: null },
       },
       select: { id: true },

@@ -13,6 +13,12 @@ enum Role {
   TENANT
 }
 
+enum HomeStatus {
+  ACTIVE
+  TRANSFER_PENDING
+  UNCLAIMED
+}
+
 enum MatterCommissioningStatus {
   CREATED
   IN_PROGRESS
@@ -27,10 +33,53 @@ enum CommissioningKind {
   DISCOVERY
 }
 
+enum AuditEventType {
+  SELL_INITIATED
+  CLAIM_CODE_GENERATED
+  HOME_CLAIM_ATTEMPTED
+  HOME_RESET
+  OWNER_TRANSFERRED
+  HOME_CLAIMED
+}
+
 enum AuthChallengePurpose {
   ADMIN_EMAIL_VERIFY
   TENANT_ENABLE_2FA
   LOGIN_NEW_DEVICE
+}
+
+model Home {
+  id                 Int           @id @default(autoincrement())
+  status             HomeStatus    @default(ACTIVE)
+  addressLine1       String
+  addressLine2       String?
+  city               String
+  state              String?
+  postcode           String
+  country            String
+  haConnection       HaConnection  @relation(fields: [haConnectionId], references: [id])
+  haConnectionId     Int           @unique
+  claimCodeHash      String?       @unique
+  claimCodeIssuedAt  DateTime?
+  claimCodeConsumedAt DateTime?
+  auditEvents        AuditEvent[]
+  users              User[]
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+}
+
+model AuditEvent {
+  id           String         @id @default(uuid())
+  type         AuditEventType
+  metadata     Json?
+  home         Home           @relation(fields: [homeId], references: [id])
+  homeId       Int
+  actorUser    User?          @relation("AuditEventActor", fields: [actorUserId], references: [id])
+  actorUserId  Int?
+  createdAt    DateTime       @default(now())
+
+  @@index([homeId])
+  @@index([actorUserId])
 }
 
 model User {
@@ -42,6 +91,8 @@ model User {
   emailVerifiedAt   DateTime?
   email2faEnabled   Boolean       @default(false)
   role              Role          @default(TENANT)
+  home              Home          @relation(fields: [homeId], references: [id])
+  homeId            Int
   haConnection      HaConnection? @relation("AssignedHaConnection", fields: [haConnectionId], references: [id])
   haConnectionId    Int?
   ownedHaConnection HaConnection? @relation("OwnedHaConnection")
@@ -52,8 +103,11 @@ model User {
   newDeviceCommissioningSessions NewDeviceCommissioningSession[]
   trustedDevices    TrustedDevice[]
   authChallenges    AuthChallenge[]
+  actedAuditEvents  AuditEvent[] @relation("AuditEventActor")
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
+
+  @@index([homeId])
 }
 
 model TrustedDevice {
@@ -97,9 +151,10 @@ model HaConnection {
   haPassword     String
   longLivedToken String
 
-  owner   User @relation("OwnedHaConnection", fields: [ownerId], references: [id])
-  ownerId Int  @unique
+  owner   User? @relation("OwnedHaConnection", fields: [ownerId], references: [id])
+  ownerId Int?  @unique
 
+  home      Home?
   users     User[]   @relation("AssignedHaConnection")
   devices   Device[]
   monitoringReadings MonitoringReading[]

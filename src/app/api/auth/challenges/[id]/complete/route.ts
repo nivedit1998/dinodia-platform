@@ -1,9 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AuthChallengePurpose, Role } from '@prisma/client';
+import { AuditEventType, AuthChallengePurpose, HomeStatus, Role } from '@prisma/client';
 import { consumeChallenge } from '@/lib/authChallenges';
 import { prisma } from '@/lib/prisma';
 import { trustDevice } from '@/lib/deviceTrust';
 import { createSessionForUser } from '@/lib/auth';
+
+async function finalizeHomeClaimForAdmin(userId: number, username: string) {
+  const now = new Date();
+  return prisma.$transaction(async (tx) => {
+    const userRecord = await tx.user.findUnique({
+      where: { id: userId },
+      select: {
+        username: true,
+        haConnectionId: true,
+        home: {
+          select: {
+            id: true,
+            status: true,
+            claimCodeHash: true,
+            claimCodeConsumedAt: true,
+            haConnectionId: true,
+            haConnection: { select: { ownerId: true } },
+          },
+        },
+      },
+    });
+
+    const home = userRecord?.home;
+    if (
+      !home ||
+      !home.claimCodeHash ||
+      home.claimCodeConsumedAt ||
+      (home.status !== HomeStatus.UNCLAIMED && home.status !== HomeStatus.TRANSFER_PENDING)
+    ) {
+      return false;
+    }
+
+    if (home.haConnection?.ownerId && home.haConnection.ownerId !== userId) {
+      return false;
+    }
+
+    await tx.haConnection.update({
+      where: { id: home.haConnectionId },
+      data: { ownerId: userId },
+    });
+
+    if (userRecord?.haConnectionId !== home.haConnectionId) {
+      await tx.user.update({
+        where: { id: userId },
+        data: { haConnectionId: home.haConnectionId },
+      });
+    }
+
+    await tx.home.update({
+      where: { id: home.id },
+      data: { status: HomeStatus.ACTIVE, claimCodeConsumedAt: now },
+    });
+
+    await tx.auditEvent.create({
+      data: {
+        type: AuditEventType.HOME_CLAIMED,
+        homeId: home.id,
+        actorUserId: userId,
+        metadata: { userId, username },
+      },
+    });
+
+    return true;
+  });
+}
 
 export const runtime = 'nodejs';
 
@@ -44,6 +109,16 @@ export async function POST(
       emailPending: true,
       emailVerifiedAt: true,
       email2faEnabled: true,
+      home: {
+        select: {
+          id: true,
+          status: true,
+          claimCodeHash: true,
+          claimCodeConsumedAt: true,
+          haConnectionId: true,
+          haConnection: { select: { ownerId: true } },
+        },
+      },
     },
   });
 
@@ -85,9 +160,10 @@ export async function POST(
         );
       }
 
+      const finalizedClaim = await finalizeHomeClaimForAdmin(user.id, user.username);
       await trustDevice(user.id, deviceId, deviceLabel);
       await createSessionForUser(sessionUser);
-      return NextResponse.json({ ok: true, role: user.role });
+      return NextResponse.json({ ok: true, role: user.role, homeClaimed: finalizedClaim });
     }
     case AuthChallengePurpose.LOGIN_NEW_DEVICE: {
       if (user.role === Role.ADMIN && !user.emailVerifiedAt) {

@@ -44,7 +44,10 @@ export function DeviceDetailSheet({
   );
   const area = useMemo(() => getDeviceArea(device), [device]);
   const [visible, setVisible] = useState(false);
-  const [showAllSensors, setShowAllSensors] = useState(false);
+  const [showAllSensors, setShowAllSensors] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(min-width: 768px)').matches;
+  });
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setVisible(true));
@@ -57,13 +60,6 @@ export function DeviceDetailSheet({
       document.removeEventListener('keydown', onKey);
     };
   }, [onClose]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (window.matchMedia('(min-width: 768px)').matches) {
-      setShowAllSensors(true);
-    }
-  }, []);
 
   const previewCount = 2;
   const hasMoreSensors =

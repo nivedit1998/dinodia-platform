@@ -45,30 +45,47 @@ export async function POST(req: NextRequest) {
 
     const passwordHash = await hashPassword(password);
 
-    const admin = await prisma.user.create({
-      data: {
-        username,
-        passwordHash,
-        role: Role.ADMIN,
-        emailPending: email,
-        emailVerifiedAt: null,
-      },
-    });
+    const { admin } = await prisma.$transaction(async (tx) => {
+      const haConnection = await tx.haConnection.create({
+        data: {
+          baseUrl: haBaseUrl.trim().replace(/\/+$/, ''),
+          cloudUrl: haCloudUrl ? haCloudUrl.trim().replace(/\/+$/, '') : null,
+          haUsername,
+          haPassword,
+          longLivedToken: haLongLivedToken,
+        },
+      });
 
-    const haConnection = await prisma.haConnection.create({
-      data: {
-        baseUrl: haBaseUrl.trim().replace(/\/+$/, ''),
-        cloudUrl: haCloudUrl ? haCloudUrl.trim().replace(/\/+$/, '') : null,
-        haUsername,
-        haPassword,
-        longLivedToken: haLongLivedToken,
-        ownerId: admin.id,
-      },
-    });
+      const home = await tx.home.create({
+        data: {
+          haConnectionId: haConnection.id,
+          addressLine1: '',
+          addressLine2: null,
+          city: '',
+          state: null,
+          postcode: '',
+          country: '',
+        },
+      });
 
-    await prisma.user.update({
-      where: { id: admin.id },
-      data: { haConnectionId: haConnection.id },
+      const createdAdmin = await tx.user.create({
+        data: {
+          username,
+          passwordHash,
+          role: Role.ADMIN,
+          emailPending: email,
+          emailVerifiedAt: null,
+          homeId: home.id,
+          haConnectionId: haConnection.id,
+        },
+      });
+
+      await tx.haConnection.update({
+        where: { id: haConnection.id },
+        data: { ownerId: createdAdmin.id },
+      });
+
+      return { admin: createdAdmin };
     });
 
     const challenge = await createAuthChallenge({

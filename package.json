@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "prisma:deploy": "prisma migrate deploy",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "verify:backfill": "node scripts/verifyBackfill.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-ses": "^3.958.0",
