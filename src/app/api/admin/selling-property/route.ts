@@ -11,6 +11,9 @@ import {
   type HaCleanupSummary,
 } from '@/lib/haCleanup';
 import { prisma } from '@/lib/prisma';
+import { buildClaimCodeEmail } from '@/lib/emailTemplates';
+import { sendEmail } from '@/lib/email';
+import { getAppUrl } from '@/lib/authChallenges';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,6 +29,8 @@ type SellingPropertyResponse = {
   ok: true;
   claimCode: string;
 };
+
+const REPLY_TO = 'niveditgupta@dinodiasmartliving.com';
 
 function errorResponse(message: string, status = 400, extras: Record<string, unknown> = {}) {
   return NextResponse.json({ error: message, ...extras }, { status });
@@ -93,6 +98,32 @@ export async function POST(req: NextRequest) {
         metadata: { mode },
       },
     });
+
+    const targetEmail = admin.email || admin.emailPending;
+    if (targetEmail) {
+      try {
+        const appUrl = getAppUrl();
+        const emailContent = buildClaimCodeEmail({
+          claimCode,
+          appUrl,
+          username: admin.username,
+        });
+        await sendEmail({
+          to: targetEmail,
+          subject: emailContent.subject,
+          html: emailContent.html,
+          text: emailContent.text,
+          replyTo: REPLY_TO,
+        });
+      } catch (err) {
+        console.error('[selling-property] Failed to send claim code email', err);
+      }
+    } else {
+      console.warn('[selling-property] Admin email missing; claim code email not sent', {
+        adminId: admin.id,
+        homeId: home.id,
+      });
+    }
 
     if (mode === 'OWNER_TRANSFER') {
       const deletionResult = await prisma.$transaction(async (tx) => {

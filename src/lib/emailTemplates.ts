@@ -68,3 +68,49 @@ export function buildVerifyLinkEmail(params: BuildVerifyLinkEmailParams) {
 
   return { subject, html, text };
 }
+
+export type BuildClaimCodeEmailParams = {
+  claimCode: string;
+  appUrl: string;
+  username?: string;
+};
+
+export function buildClaimCodeEmail(params: BuildClaimCodeEmailParams) {
+  const { claimCode, appUrl, username } = params;
+  const greeting = username ? `Hi ${username},` : 'Hi,';
+  const claimUrl = `${appUrl.replace(/\/$/, '')}/claim`;
+
+  const subject = 'Your Dinodia home claim code';
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 520px; color: #0f172a;">
+      <h2 style="color: #0f172a; margin-bottom: 12px;">Dinodia Smart Living</h2>
+      <p style="margin: 0 0 12px 0;">${greeting}</p>
+      <p style="margin: 0 0 12px 0;">
+        Here is the claim code for your home. Forward this email to the next homeowner.
+      </p>
+      <p style="margin: 0 0 16px 0; font-size: 18px;">
+        Claim code: <strong style="letter-spacing: 0.08em;">${claimCode}</strong>
+      </p>
+      <p style="margin: 0 0 12px 0;">
+        The next homeowner can start at <a href="${claimUrl}">${claimUrl}</a>.
+      </p>
+      <p style="margin: 0 0 12px 0; color: #475569;">
+        This code can only be used once.
+      </p>
+    </div>
+  `;
+
+  const text = [
+    'Dinodia Smart Living',
+    greeting,
+    '',
+    'Here is the claim code for your home. Forward this email to the next homeowner.',
+    `Claim code: ${claimCode}`,
+    '',
+    `The next homeowner can start at ${claimUrl}.`,
+    'This code can only be used once.',
+  ].join('\n');
+
+  return { subject, html, text };
+}

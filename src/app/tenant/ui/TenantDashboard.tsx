@@ -27,6 +27,8 @@ type Props = {
 
 const ALL_AREAS = 'All areas';
 const REFRESH_THROTTLE_MS = 3000;
+const CLOUD_LOCK_MESSAGE =
+  'Cloud mode locked, dashboard unlocks when remote access is enabled by homeowner';
 const ALEXA_SKILL_URL =
   'https://skills-store.amazon.com/deeplink/tvt/ce5823e0e48bf0fbebdd69c05e82ea253ca9f8137a8c89008963c4ba3b04e3e84f2b8674b8de634ed4ba2a52a88b9612d12b45bf82d964129002a97b49108fe88950025bd45afc1478f80162754eccb83ade4624e2ba4b88a005b1ff54f8ccbb94adfa66f95188b78f1a66c2beb6adb5';
 
@@ -65,6 +67,7 @@ export default function TenantDashboard(props: Props) {
   const [devices, setDevices] = useState<UIDevice[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [cloudLocked, setCloudLocked] = useState(false);
   const requestCounterRef = useRef(0);
   const latestRequestRef = useRef(0);
   const lastLoadedRef = useRef<number | null>(null);
@@ -85,7 +88,7 @@ export default function TenantDashboard(props: Props) {
   const areaMenuRef = useRef<HTMLDivElement | null>(null);
   const [showAlexaLink, setShowAlexaLink] = useState(false);
 
-  const resolveDeviceErrorMessage = useCallback(async (dataError?: string) => {
+  const resolveDeviceError = useCallback(async (dataError?: string) => {
     const fallback =
       dataError ||
       'We couldn’t load your devices. Please check your connection and try again.';
@@ -96,12 +99,12 @@ export default function TenantDashboard(props: Props) {
       });
       const remoteData = await remoteRes.json().catch(() => ({}));
       if (remoteRes.ok && Array.isArray(remoteData.devices) && remoteData.devices.length === 0) {
-        return 'We couldn’t reach your home yet. The homeowner needs to finish setting up remote access in Dinodia Cloud.';
+        return { message: CLOUD_LOCK_MESSAGE, cloudLocked: true };
       }
     } catch {
       // Ignore and fall back to the original message.
     }
-    return fallback;
+    return { message: fallback, cloudLocked: false };
   }, []);
 
   const loadDevices = useCallback(
@@ -141,13 +144,19 @@ export default function TenantDashboard(props: Props) {
         abortControllerRef.current = null;
 
         if (!res.ok) {
-          const friendly = await resolveDeviceErrorMessage(data.error);
+          const resolved = await resolveDeviceError(data.error);
           if (latestRequestRef.current !== requestId) return;
-          setError(friendly);
+          setCloudLocked(resolved.cloudLocked);
+          if (resolved.cloudLocked) {
+            setError(null);
+          } else {
+            setError(resolved.message);
+          }
           return;
         }
 
         const list: UIDevice[] = data.devices || [];
+        setCloudLocked(false);
         setDevices((prev) => {
           if (!devicesAreDifferent(prev, list)) return prev;
           return list;
@@ -164,12 +173,17 @@ export default function TenantDashboard(props: Props) {
         console.error(err);
         setLoading(false);
         abortControllerRef.current = null;
-        const friendly = await resolveDeviceErrorMessage();
+        const resolved = await resolveDeviceError();
         if (latestRequestRef.current !== requestId) return;
-        setError(friendly);
+        setCloudLocked(resolved.cloudLocked);
+        if (resolved.cloudLocked) {
+          setError(null);
+        } else {
+          setError(resolved.message);
+        }
       }
     },
-    [resolveDeviceErrorMessage]
+    [resolveDeviceError]
   );
 
   useEffect(() => {
@@ -553,19 +567,25 @@ export default function TenantDashboard(props: Props) {
           </div>
         </header>
 
-        {currentError && !hasDevices && (
+        {currentError && !cloudLocked && !hasDevices && (
           <div className="rounded-3xl border border-red-100 bg-red-50/80 px-6 py-4 text-sm text-red-600 shadow-sm">
             {currentError}
           </div>
         )}
-        {currentError && hasDevices && (
+        {currentError && !cloudLocked && hasDevices && (
           <div className="flex items-center gap-2 rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3 text-xs text-amber-700 shadow-sm">
             <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
             <span>{currentError}</span>
           </div>
         )}
 
-        <div className="space-y-10">
+        {cloudLocked && (
+          <div className="rounded-3xl border border-slate-200/70 bg-slate-100/80 px-6 py-4 text-center text-sm text-slate-600 shadow-sm">
+            {CLOUD_LOCK_MESSAGE}
+          </div>
+        )}
+
+        <div className={`space-y-10${cloudLocked ? ' pointer-events-none opacity-50 grayscale' : ''}`}>
           {sortedLabels.map((label) => {
             if (label === OTHER_LABEL) return null;
             const group = labelGroups.get(label);
