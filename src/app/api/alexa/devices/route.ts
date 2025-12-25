@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         error:
-          'Dinodia Hub isn’t reachable right now. Check its internet connection and remote access, then try again.',
+          'Remote access not enabled, check internet connection or enable via your iOS/Android phone or the Dinodia Kiosk',
       },
       { status: 500 }
     );

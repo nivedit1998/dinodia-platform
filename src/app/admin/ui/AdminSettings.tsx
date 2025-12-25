@@ -19,16 +19,13 @@ const EMPTY_PASSWORD_FORM = {
   newPassword: '',
   confirmNewPassword: '',
 };
-const EMPTY_HA_FORM = {
-  haUsername: '',
-  haBaseUrl: '',
-  haCloudUrl: '',
-  haPassword: '',
-  haLongLivedToken: '',
-};
-
 const ALEXA_SKILL_URL =
   'https://skills-store.amazon.com/deeplink/tvt/ce5823e0e48bf0fbebdd69c05e82ea253ca9f8137a8c89008963c4ba3b04e3e84f2b8674b8de634ed4ba2a52a88b9612d12b45bf82d964129002a97b49108fe88950025bd45afc1478f80162754eccb83ade4624e2ba4b88a005b1ff54f8ccbb94adfa66f95188b78f1a66c2beb6adb5';
+const IOS_APP_URL = 'https://apps.apple.com';
+const ANDROID_APP_URL = 'https://play.google.com/store';
+const KIOSK_URL = 'https://dinodiasmartliving.com/kiosk';
+const REMOTE_ACCESS_DISABLED_COPY =
+  'Remote access not enabled, check internet connection or enable via your iOS/Android phone or the Dinodia Kiosk';
 
 export default function AdminSettings({ username }: Props) {
   const [tenantForm, setTenantForm] = useState<TenantForm>(EMPTY_TENANT_FORM);
@@ -41,21 +38,12 @@ export default function AdminSettings({ username }: Props) {
   const [passwordAlert, setPasswordAlert] = useState<StatusMessage>(null);
   const [passwordLoading, setPasswordLoading] = useState(false);
 
-  const [haForm, setHaForm] = useState(EMPTY_HA_FORM);
-  const [haAlert, setHaAlert] = useState<StatusMessage>(null);
-  const [haLoading, setHaLoading] = useState(false);
-  const [haBootstrapError, setHaBootstrapError] = useState<string | null>(null);
-  const [haInitialLoading, setHaInitialLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [remoteStatus, setRemoteStatus] = useState<{
     status: 'checking' | 'enabled' | 'disabled' | 'error';
     message: string | null;
   }>({ status: 'checking', message: null });
-  const [showRemoteGuide, setShowRemoteGuide] = useState(false);
-  const [atHomeConfirmed, setAtHomeConfirmed] = useState(false);
-  const [nabuCasaConfirmed, setNabuCasaConfirmed] = useState(false);
-  const [haCloudConfirmed, setHaCloudConfirmed] = useState(false);
   const [alexaDevicesAvailable, setAlexaDevicesAvailable] = useState(false);
   const [passwordSectionOpen, setPasswordSectionOpen] = useState(false);
   const [sellingModalOpen, setSellingModalOpen] = useState(false);
@@ -72,51 +60,6 @@ export default function AdminSettings({ username }: Props) {
   function updatePasswordField(key: keyof typeof passwordForm, value: string) {
     setPasswordForm((prev) => ({ ...prev, [key]: value }));
   }
-
-  function updateHaField(key: keyof typeof haForm, value: string) {
-    setHaForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  useEffect(() => {
-    let mounted = true;
-    async function getHaSettings() {
-      try {
-        const res = await fetch('/api/admin/profile/ha-settings');
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(
-            data.error ||
-              'We couldn’t load your Dinodia Hub settings. Please check the connection details or try again.'
-          );
-        }
-        if (!mounted) return;
-        setHaForm((prev) => ({
-          ...prev,
-          haUsername: data.haUsername ?? '',
-          haBaseUrl: data.haBaseUrl ?? '',
-          haCloudUrl: data.haCloudUrl ?? '',
-          haPassword: '',
-          haLongLivedToken: '',
-        }));
-        setHaBootstrapError(null);
-      } catch (err) {
-        if (!mounted) return;
-        setHaBootstrapError(
-          err instanceof Error
-            ? err.message
-            : 'We couldn’t load your Dinodia Hub settings. Please try again.'
-        );
-      } finally {
-        if (mounted) {
-          setHaInitialLoading(false);
-        }
-      }
-    }
-    getHaSettings();
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const loadAvailableAreas = useCallback(async (fresh = false) => {
     try {
@@ -200,22 +143,16 @@ export default function AdminSettings({ username }: Props) {
         status: hasDevices ? 'enabled' : 'disabled',
         message: hasDevices
           ? null
-          : 'Remote access isn’t turned on yet. Complete the steps below so Dinodia can reach your home when you’re away.',
+          : REMOTE_ACCESS_DISABLED_COPY,
       });
       setAlexaDevicesAvailable(hasDevices);
-      if (hasDevices) {
-        setShowRemoteGuide(false);
-        setAtHomeConfirmed(false);
-        setNabuCasaConfirmed(false);
-        setHaCloudConfirmed(false);
-      }
     } catch (err) {
       setRemoteStatus({
         status: 'error',
         message:
           err instanceof Error
             ? err.message
-            : 'We couldn’t check remote access. Make sure your Dinodia Hub is online and signed into Nabu Casa, then try again.',
+            : REMOTE_ACCESS_DISABLED_COPY,
       });
       setAlexaDevicesAvailable(false);
     }
@@ -306,65 +243,6 @@ export default function AdminSettings({ username }: Props) {
       });
     } finally {
       setPasswordLoading(false);
-    }
-  }
-
-  async function handleHaSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setHaAlert(null);
-
-    const payload: Record<string, string> = {
-      haUsername: haForm.haUsername.trim(),
-      haBaseUrl: haForm.haBaseUrl.trim(),
-    };
-    const cloudUrl = haForm.haCloudUrl.trim();
-    if (cloudUrl) {
-      payload.haCloudUrl = cloudUrl;
-    }
-    if (haForm.haPassword) {
-      payload.haPassword = haForm.haPassword;
-    }
-    if (haForm.haLongLivedToken) {
-      payload.haLongLivedToken = haForm.haLongLivedToken;
-    }
-
-    setHaLoading(true);
-    try {
-      const res = await fetch('/api/admin/profile/ha-settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          data.error ||
-            'We couldn’t save these Dinodia Hub settings. Please check the details and try again.'
-        );
-      }
-      setHaAlert({
-        type: 'success',
-        message: 'Remote access link saved. We are checking the connection now.',
-      });
-      setHaForm((prev) => ({
-        ...prev,
-        haUsername: data.haUsername ?? prev.haUsername,
-        haBaseUrl: data.haBaseUrl ?? prev.haBaseUrl,
-        haCloudUrl: data.haCloudUrl ?? '',
-        haPassword: '',
-        haLongLivedToken: '',
-      }));
-      void refreshRemoteStatus();
-    } catch (err) {
-      setHaAlert({
-        type: 'error',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'We couldn’t save your remote access link. Please try again.',
-      });
-    } finally {
-      setHaLoading(false);
     }
   }
 
@@ -471,14 +349,16 @@ export default function AdminSettings({ username }: Props) {
 
   const remoteStatusCopy =
     remoteStatus.status === 'enabled'
-      ? 'Remote access is enabled via Nabu Casa — Dinodia can reach your home when you’re away.'
+      ? 'Remote access is enabled — Dinodia can reach your home when you’re away.'
       : remoteStatus.status === 'checking'
       ? 'Checking remote access status…'
-      : remoteStatus.message ||
-        'Remote access isn’t turned on yet. Complete the steps below so Dinodia can reach your home when you’re away.';
+      : remoteStatus.message || REMOTE_ACCESS_DISABLED_COPY;
   const remoteAccessEnabled = remoteStatus.status === 'enabled';
   const tenantLocked = !remoteAccessEnabled;
   const deregisterLocked = !remoteAccessEnabled;
+  const showRemoteActions =
+    remoteStatus.status === 'disabled' ||
+    remoteStatus.message === REMOTE_ACCESS_DISABLED_COPY;
 
   return (
     <div className="w-full max-w-4xl bg-white rounded-2xl shadow-lg p-4 sm:p-6 flex flex-col gap-5 sm:gap-6">
@@ -620,157 +500,50 @@ export default function AdminSettings({ username }: Props) {
                 cloud mode so you can control your devices from anywhere in the world.
               </p>
               <p className="text-[11px] text-slate-500 mt-1">
-                Follow the steps below to add Remote access via Nabu Casa which costs $7
-                per month.
+                Remote access can be enabled from your iOS/Android phone or the Dinodia Kiosk.
               </p>
-              {haBootstrapError && (
-                <p className="mt-2 text-xs text-red-600">{haBootstrapError}</p>
-              )}
               <div
                 className={`mt-3 rounded-lg border px-4 py-3 text-xs ${remoteStatusToneClass}`}
               >
                 <p className="font-medium">{remoteStatusCopy}</p>
+                {showRemoteActions && (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    <a
+                      href={IOS_APP_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      Download on iOS
+                    </a>
+                    <a
+                      href={ANDROID_APP_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      Get it on Android
+                    </a>
+                    <a
+                      href={KIOSK_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-center rounded-2xl border border-slate-200 bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-800"
+                    >
+                      Purchase Dinodia Kiosk
+                    </a>
+                  </div>
+                )}
                 {remoteStatus.status !== 'checking' && (
                   <button
                     type="button"
-                    className="mt-2 inline-flex items-center gap-1 rounded-full border border-current px-3 py-1 text-[11px] font-medium hover:bg-white/20"
+                    className="mt-3 inline-flex items-center gap-1 rounded-full border border-current px-3 py-1 text-[11px] font-medium hover:bg-white/20"
                     onClick={() => void refreshRemoteStatus()}
                   >
                     Re-check status
                   </button>
                 )}
               </div>
-              {remoteStatus.status !== 'enabled' && (
-                <button
-                  type="button"
-                  className="mt-3 inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                  onClick={() => setShowRemoteGuide((prev) => !prev)}
-                >
-                  {showRemoteGuide
-                    ? 'Hide setup instructions'
-                    : 'Get remote access for this home'}
-                </button>
-              )}
-              {showRemoteGuide && (
-                <div className="mt-4 space-y-4">
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <p className="text-sm font-semibold">
-                      Step 1 – Confirm you&apos;re at the property
-                    </p>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      You must be on the home Wi-Fi so the Dinodia tablet can reach your
-                      Dinodia Hub (Home Assistant) locally while you finish the setup.
-                    </p>
-                    <button
-                      type="button"
-                      className="mt-3 inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                      onClick={() => setAtHomeConfirmed(true)}
-                      disabled={atHomeConfirmed}
-                    >
-                      {atHomeConfirmed ? 'Confirmed' : 'I’m at home and on Wi-Fi'}
-                    </button>
-                    {atHomeConfirmed && (
-                      <p className="mt-2 text-[11px] text-emerald-600">
-                        Great! Keep going with the steps below.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <p className="text-sm font-semibold">
-                      Step 2 – Create / log into Nabu Casa
-                    </p>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      You need a Nabu Casa account and subscription to unlock secure remote
-                      access for Dinodia Cloud.
-                    </p>
-                    <a
-                      href="https://account.nabucasa.com/"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-3 inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-700"
-                    >
-                      Open Nabu Casa
-                    </a>
-                    <label className="mt-3 flex items-center gap-2 text-xs text-slate-600">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                        checked={nabuCasaConfirmed}
-                        onChange={(e) => setNabuCasaConfirmed(e.target.checked)}
-                      />
-                      I&apos;ve created an account and subscribed.
-                    </label>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <p className="text-sm font-semibold">
-                      Step 3 – Enable remote access from the Dinodia Kiosk
-                    </p>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Use the Dinodia Kiosk at the property while on the home Wi-Fi to open your
-                      Dinodia Hub (Home Assistant) and sign into Nabu Casa. The kiosk guides you
-                      through turning on Remote access—no Home Assistant login from this portal
-                      is needed.
-                    </p>
-                    <label className="mt-3 flex items-center gap-2 text-xs text-slate-600">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                        checked={haCloudConfirmed}
-                        onChange={(e) => setHaCloudConfirmed(e.target.checked)}
-                      />
-                      I&apos;ve used the Dinodia Kiosk on home Wi-Fi to connect the Dinodia Hub
-                      to Nabu Casa and enable Remote access.
-                    </label>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <p className="text-sm font-semibold">
-                      Step 4 – Save your remote access link
-                    </p>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      After enabling remote access on the Dinodia Kiosk, your Dinodia Hub (Home
-                      Assistant) shows a <strong>Remote access</strong> link in the Cloud page. Copy
-                      it exactly and paste it below.
-                    </p>
-                    <form onSubmit={handleHaSubmit} className="mt-3 space-y-3">
-                      <div>
-                        <label className="block mb-1 text-xs">Remote access link</label>
-                        <input
-                          type="url"
-                          placeholder="https://example.ui.nabu.casa"
-                          className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                          value={haForm.haCloudUrl}
-                          onChange={(e) => updateHaField('haCloudUrl', e.target.value)}
-                          required
-                          disabled={haInitialLoading}
-                        />
-                        <p className="text-[11px] text-slate-500 mt-1">
-                          This should match the URL under Remote access on the Dinodia Hub
-                          (Home Assistant) Cloud page.
-                        </p>
-                      </div>
-                      <button
-                        type="submit"
-                        disabled={haLoading || haInitialLoading}
-                        className="bg-indigo-600 text-white rounded-lg py-2 px-4 text-xs font-medium hover:bg-indigo-700 disabled:opacity-50"
-                      >
-                        {haLoading ? 'Saving…' : 'Submit remote access link'}
-                      </button>
-                    </form>
-                    {haAlert && (
-                      <p
-                        className={`mt-2 text-xs ${
-                          haAlert.type === 'success' ? 'text-emerald-600' : 'text-red-600'
-                        }`}
-                      >
-                        {haAlert.message}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
               {alexaDevicesAvailable && (
                 <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-xs text-indigo-900">
                   <p className="text-sm font-semibold">
