@@ -57,10 +57,6 @@ export default function AdminSettings({ username }: Props) {
   const [nabuCasaConfirmed, setNabuCasaConfirmed] = useState(false);
   const [haCloudConfirmed, setHaCloudConfirmed] = useState(false);
   const [alexaDevicesAvailable, setAlexaDevicesAvailable] = useState(false);
-  const [haCredentials, setHaCredentials] = useState({
-    username: '',
-    password: '',
-  });
   const [passwordSectionOpen, setPasswordSectionOpen] = useState(false);
   const [sellingModalOpen, setSellingModalOpen] = useState(false);
   const [sellingMode, setSellingMode] = useState<SellingMode | null>(null);
@@ -102,10 +98,6 @@ export default function AdminSettings({ username }: Props) {
           haPassword: '',
           haLongLivedToken: '',
         }));
-        setHaCredentials({
-          username: data.haUsername ?? '',
-          password: data.haAdminPassword ?? '',
-        });
         setHaBootstrapError(null);
       } catch (err) {
         if (!mounted) return;
@@ -362,13 +354,6 @@ export default function AdminSettings({ username }: Props) {
         haPassword: '',
         haLongLivedToken: '',
       }));
-      setHaCredentials((prev) => ({
-        username: data.haUsername ?? prev.username,
-        password:
-          typeof data.haAdminPassword === 'string' && data.haAdminPassword.length > 0
-            ? data.haAdminPassword
-            : prev.password,
-      }));
       void refreshRemoteStatus();
     } catch (err) {
       setHaAlert({
@@ -491,9 +476,6 @@ export default function AdminSettings({ username }: Props) {
       ? 'Checking remote access status…'
       : remoteStatus.message ||
         'Remote access isn’t turned on yet. Complete the steps below so Dinodia can reach your home when you’re away.';
-  const showHaAdminCredentials =
-    (haCredentials.username && haCredentials.username.trim().length > 0) ||
-    (haCredentials.password && haCredentials.password.trim().length > 0);
   const remoteAccessEnabled = remoteStatus.status === 'enabled';
   const tenantLocked = !remoteAccessEnabled;
   const deregisterLocked = !remoteAccessEnabled;
@@ -723,49 +705,14 @@ export default function AdminSettings({ username }: Props) {
 
                   <div className="rounded-xl border border-slate-200 p-4">
                     <p className="text-sm font-semibold">
-                      Step 3 – Connect your Dinodia Hub (Home Assistant) to Nabu Casa
+                      Step 3 – Enable remote access from the Dinodia Kiosk
                     </p>
                     <p className="mt-1 text-[11px] text-slate-500">
-                      Open your Dinodia Hub (Home Assistant) with the homeowner login. Open
-                      the Cloud page and sign in with the same Nabu Casa email &amp; password.
+                      Use the Dinodia Kiosk at the property while on the home Wi-Fi to open your
+                      Dinodia Hub (Home Assistant) and sign into Nabu Casa. The kiosk guides you
+                      through turning on Remote access—no Home Assistant login from this portal
+                      is needed.
                     </p>
-                    {showHaAdminCredentials && (
-                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-                        <p className="text-sm font-semibold">
-                          Dinodia Hub (Home Assistant) homeowner login — keep this secret
-                        </p>
-                        <dl className="mt-3 space-y-2 text-xs text-amber-900/90">
-                          <div>
-                            <dt className="font-semibold uppercase text-[10px] tracking-wide">
-                              Username
-                            </dt>
-                            <dd className="font-mono text-sm">
-                              {haCredentials.username || 'Not set'}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="font-semibold uppercase text-[10px] tracking-wide">
-                              Password
-                            </dt>
-                            <dd className="font-mono text-sm">
-                              {haCredentials.password || 'Not set'}
-                            </dd>
-                          </div>
-                        </dl>
-                        <p className="mt-3 text-[11px]">
-                          Use these only at <strong>http://homeassistant.local:8123</strong>{' '}
-                          during this setup. Do not share them with anyone.
-                        </p>
-                      </div>
-                    )}
-                    <a
-                      href="http://homeassistant.local:8123/config/cloud/account"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-3 inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      Open Dinodia Hub (Home Assistant) Cloud settings
-                    </a>
                     <label className="mt-3 flex items-center gap-2 text-xs text-slate-600">
                       <input
                         type="checkbox"
@@ -773,7 +720,8 @@ export default function AdminSettings({ username }: Props) {
                         checked={haCloudConfirmed}
                         onChange={(e) => setHaCloudConfirmed(e.target.checked)}
                       />
-                      I&apos;ve logged into my Dinodia Hub (Home Assistant) and Nabu Casa Cloud.
+                      I&apos;ve used the Dinodia Kiosk on home Wi-Fi to connect the Dinodia Hub
+                      to Nabu Casa and enable Remote access.
                     </label>
                   </div>
 
@@ -782,8 +730,9 @@ export default function AdminSettings({ username }: Props) {
                       Step 4 – Save your remote access link
                     </p>
                     <p className="mt-1 text-[11px] text-slate-500">
-                      Your Dinodia Hub (Home Assistant) now shows a <strong>Remote access</strong> link at the
-                      top of that Cloud page. Copy it exactly and paste it below.
+                      After enabling remote access on the Dinodia Kiosk, your Dinodia Hub (Home
+                      Assistant) shows a <strong>Remote access</strong> link in the Cloud page. Copy
+                      it exactly and paste it below.
                     </p>
                     <form onSubmit={handleHaSubmit} className="mt-3 space-y-3">
                       <div>

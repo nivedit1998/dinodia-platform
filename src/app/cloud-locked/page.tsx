@@ -36,7 +36,8 @@ export default async function CloudLockedPage() {
               Cloud mode locked
             </h1>
             <p className="mt-3 max-w-2xl text-sm text-white/80 sm:text-base">
-              Cloud mode locked, dashboard unlocks when remote access is enabled by homeowner.
+              Cloud mode locks until the homeowner enables remote access from the in-home Dinodia
+              Kiosk on home Wi‑Fi.
             </p>
           </div>
 
@@ -81,7 +82,7 @@ export default async function CloudLockedPage() {
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-              <span>Need help? Ask the homeowner to enable remote access in Dinodia Cloud.</span>
+              <span>Need help? Ask the homeowner to enable remote access using the Dinodia Kiosk.</span>
               <Link
                 href="/login"
                 className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"

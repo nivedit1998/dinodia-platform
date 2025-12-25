@@ -114,7 +114,7 @@ export default function AdminDashboard(props: Props) {
       });
       const remoteData = await remoteRes.json().catch(() => ({}));
       if (remoteRes.ok && Array.isArray(remoteData.devices) && remoteData.devices.length === 0) {
-        return 'We couldn’t reach your home yet. Finish setting up remote access in Dinodia Cloud so Dinodia can connect.';
+        return 'We couldn’t reach your home yet. Finish setting up remote access using the Dinodia Kiosk on home Wi‑Fi so Dinodia can connect.';
       }
     } catch {
       // Ignore and fall back to the original message.

@@ -38,7 +38,6 @@ export async function GET() {
       haUsername: haConnection.haUsername ?? '',
       haBaseUrl: haConnection.baseUrl ?? '',
       haCloudUrl: haConnection.cloudUrl ?? '',
-      haAdminPassword: haConnection.haPassword ?? '',
       hasHaPassword: Boolean(haConnection.haPassword),
       hasLongLivedToken: Boolean(haConnection.longLivedToken),
     });
@@ -146,7 +145,6 @@ export async function PUT(req: NextRequest) {
     haUsername: updated.haUsername ?? '',
     haBaseUrl: updated.baseUrl ?? '',
     haCloudUrl: updated.cloudUrl ?? '',
-    haAdminPassword: updated.haPassword ?? '',
     hasHaPassword: Boolean(updated.haPassword),
     hasLongLivedToken: Boolean(updated.longLivedToken),
   });
