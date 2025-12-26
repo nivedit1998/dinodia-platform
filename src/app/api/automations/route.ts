@@ -294,10 +294,15 @@ export async function POST(req: NextRequest) {
 
   if (recordOnly) {
     const body = await req.json().catch(() => null);
+    const automationIdRaw =
+      body &&
+      typeof body === 'object' &&
+      (body as Record<string, unknown>) !== null &&
+      typeof (body as Record<string, unknown>).automationId === 'string'
+        ? (body as Record<string, unknown>).automationId
+        : null;
     const automationId =
-      body && typeof (body as Record<string, unknown>).automationId === 'string'
-        ? (body as Record<string, unknown>).automationId.trim()
-        : '';
+      typeof automationIdRaw === 'string' ? automationIdRaw.trim() : '';
     if (!automationId) {
       return badRequest('automationId is required for record-only mode');
     }
