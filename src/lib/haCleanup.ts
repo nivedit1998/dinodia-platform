@@ -297,10 +297,7 @@ export async function logoutHaCloud(
     candidates.push({ baseUrl, longLivedToken: token });
   }
 
-  const services = [
-    { domain: 'cloud', service: 'logout' },
-    { domain: 'cloud', service: 'remote_disconnect' },
-  ];
+  const services = [{ domain: 'cloud', service: 'logout' }];
 
   const attempted: string[] = [];
   const succeeded: string[] = [];
