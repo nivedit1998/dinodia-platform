@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
 import { getCurrentUserFromRequest } from '@/lib/auth';
-import { getUserWithHaConnection, resolveHaCloudFirst } from '@/lib/haConnection';
+import { getUserWithHaConnection, resolveHaForRequestedMode } from '@/lib/haConnection';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import {
   AutomationDraft,
@@ -15,6 +15,7 @@ import type { DeviceCommandId } from '@/lib/deviceCapabilities';
 import { isDeviceCommandId } from '@/lib/deviceCapabilities';
 import { requireTrustedAdminDevice, toTrustedDeviceResponse } from '@/lib/deviceAuth';
 import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/prisma';
 
 function badRequest(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 400 });
@@ -22,6 +23,11 @@ function badRequest(message: string) {
 
 function forbidden(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 403 });
+}
+
+function parseMode(value: string | null): 'home' | 'cloud' | undefined {
+  if (value === 'home' || value === 'cloud') return value;
+  return undefined;
 }
 
 function parseDraft(body: unknown): AutomationDraft | null {
@@ -203,16 +209,23 @@ export async function GET(req: NextRequest) {
   if (deviceError) return deviceError;
 
   const entityFilter = req.nextUrl.searchParams.get('entityId');
+  const mode = parseMode(req.nextUrl.searchParams.get('mode'));
 
   let haConnectionId: number;
   let ha;
   try {
     const result = await getUserWithHaConnection(user.id);
     haConnectionId = result.haConnection.id;
-    ha = resolveHaCloudFirst(result.haConnection);
-  } catch {
+    ha = resolveHaForRequestedMode(result.haConnection, mode);
+  } catch (err) {
     return NextResponse.json(
-      { ok: false, error: 'Dinodia Hub connection isn’t set up yet for this home.' },
+      {
+        ok: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Dinodia Hub connection isn’t set up yet for this home.',
+      },
       { status: 400 }
     );
   }
@@ -274,8 +287,42 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const recordOnly = req.nextUrl.searchParams.get('recordOnly') === '1';
+  const mode = parseMode(req.nextUrl.searchParams.get('mode'));
+
   const deviceError = await guardAdminDevice(req, user as { id: number; role: Role });
   if (deviceError) return deviceError;
+
+  if (recordOnly) {
+    const body = await req.json().catch(() => null);
+    const automationId =
+      body && typeof (body as Record<string, unknown>).automationId === 'string'
+        ? (body as Record<string, unknown>).automationId.trim()
+        : '';
+    if (!automationId) {
+      return badRequest('automationId is required for record-only mode');
+    }
+    try {
+      const { user: me } = await getUserWithHaConnection(user.id);
+      await prisma.automationOwnership.upsert({
+        where: { automationId_homeId: { automationId, homeId: me.homeId } },
+        update: { userId: me.id },
+        create: { automationId, homeId: me.homeId, userId: me.id },
+      });
+      return NextResponse.json({ ok: true });
+    } catch (err) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            err instanceof Error
+              ? err.message
+              : 'We could not record this automation. Please try again.',
+        },
+        { status: 400 }
+      );
+    }
+  }
 
   const draft = parseDraft(await req.json().catch(() => null));
   if (!draft) {
@@ -289,10 +336,16 @@ export async function POST(req: NextRequest) {
     const result = await getUserWithHaConnection(user.id);
     haConnectionId = result.haConnection.id;
     homeId = result.user.homeId;
-    ha = resolveHaCloudFirst(result.haConnection);
-  } catch {
+    ha = resolveHaForRequestedMode(result.haConnection, mode);
+  } catch (err) {
     return NextResponse.json(
-      { ok: false, error: 'Dinodia Hub connection isn’t set up yet for this home.' },
+      {
+        ok: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Dinodia Hub connection isn’t set up yet for this home.',
+      },
       { status: 400 }
     );
   }

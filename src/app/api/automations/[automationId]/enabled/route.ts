@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
 import { getCurrentUserFromRequest } from '@/lib/auth';
-import { getUserWithHaConnection, resolveHaCloudFirst } from '@/lib/haConnection';
+import { getUserWithHaConnection, resolveHaForRequestedMode } from '@/lib/haConnection';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { setAutomationEnabled } from '@/lib/homeAssistantAutomations';
 import { requireTrustedAdminDevice, toTrustedDeviceResponse } from '@/lib/deviceAuth';
@@ -12,6 +12,11 @@ function badRequest(message: string) {
 
 function forbidden(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 403 });
+}
+
+function parseMode(value: string | null): 'home' | 'cloud' | undefined {
+  if (value === 'home' || value === 'cloud') return value;
+  return undefined;
 }
 
 async function getAllowedEntitiesForUser(userId: number, role: Role, haConnectionId: number) {
@@ -58,6 +63,7 @@ export async function POST(
   const { automationId } = await context.params;
   if (!automationId) return badRequest('Missing automation id');
 
+  const mode = parseMode(req.nextUrl.searchParams.get('mode'));
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== 'object' || typeof (body as Record<string, unknown>).enabled !== 'boolean') {
     return badRequest('enabled must be provided as boolean');
@@ -69,10 +75,16 @@ export async function POST(
   try {
     const result = await getUserWithHaConnection(user.id);
     haConnectionId = result.haConnection.id;
-    ha = resolveHaCloudFirst(result.haConnection);
-  } catch {
+    ha = resolveHaForRequestedMode(result.haConnection, mode);
+  } catch (err) {
     return NextResponse.json(
-      { ok: false, error: 'Dinodia Hub connection isn’t set up yet for this home.' },
+      {
+        ok: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Dinodia Hub connection isn’t set up yet for this home.',
+      },
       { status: 400 }
     );
   }

@@ -60,3 +60,21 @@ export function resolveHaCloudFirst(
     longLivedToken: haConnection.longLivedToken,
   };
 }
+
+export function resolveHaForRequestedMode(
+  haConnection: { baseUrl: string; cloudUrl: string | null; longLivedToken: string },
+  mode?: 'home' | 'cloud'
+): HaConnectionLike {
+  const requested = mode === 'home' || mode === 'cloud' ? mode : null;
+  if (requested === 'cloud') {
+    const cloud = haConnection.cloudUrl?.trim();
+    if (!cloud) {
+      throw new Error('Remote access is required to use cloud mode.');
+    }
+    return { baseUrl: cloud, longLivedToken: haConnection.longLivedToken };
+  }
+  if (requested === 'home') {
+    return { baseUrl: haConnection.baseUrl, longLivedToken: haConnection.longLivedToken };
+  }
+  return resolveHaCloudFirst(haConnection);
+}

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
 import { getCurrentUserFromRequest } from '@/lib/auth';
-import { getUserWithHaConnection, resolveHaCloudFirst } from '@/lib/haConnection';
+import { getUserWithHaConnection, resolveHaForRequestedMode } from '@/lib/haConnection';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import {
   AutomationDraft,
@@ -21,6 +21,11 @@ function badRequest(message: string) {
 
 function forbidden(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 403 });
+}
+
+function parseMode(value: string | null): 'home' | 'cloud' | undefined {
+  if (value === 'home' || value === 'cloud') return value;
+  return undefined;
 }
 
 async function getAllowedEntitiesForUser(userId: number, role: Role, haConnectionId: number) {
@@ -206,6 +211,7 @@ export async function PATCH(
   const { automationId } = await context.params;
   if (!automationId) return badRequest('Missing automation id');
 
+  const mode = parseMode(req.nextUrl.searchParams.get('mode'));
   const draft = parseDraft(await req.json().catch(() => null));
   if (!draft) {
     return badRequest('Invalid automation payload');
@@ -216,10 +222,16 @@ export async function PATCH(
   try {
     const result = await getUserWithHaConnection(user.id);
     haConnectionId = result.haConnection.id;
-    ha = resolveHaCloudFirst(result.haConnection);
-  } catch {
+    ha = resolveHaForRequestedMode(result.haConnection, mode);
+  } catch (err) {
     return NextResponse.json(
-      { ok: false, error: 'Dinodia Hub connection isn’t set up yet for this home.' },
+      {
+        ok: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Dinodia Hub connection isn’t set up yet for this home.',
+      },
       { status: 400 }
     );
   }
@@ -271,6 +283,33 @@ export async function DELETE(
   const { automationId } = await context.params;
   if (!automationId) return badRequest('Missing automation id');
 
+  const mode = parseMode(req.nextUrl.searchParams.get('mode'));
+  const recordOnly = req.nextUrl.searchParams.get('recordOnly') === '1';
+
+  if (recordOnly) {
+    try {
+      const { user: me } = await getUserWithHaConnection(user.id);
+      await prisma.automationOwnership.deleteMany({
+        where: {
+          automationId,
+          homeId: me.homeId,
+        },
+      });
+      return NextResponse.json({ ok: true });
+    } catch (err) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Failed to delete automation tracking. Please try again.',
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   let haConnectionId: number;
   let homeId: number;
   let ha;
@@ -278,10 +317,16 @@ export async function DELETE(
     const result = await getUserWithHaConnection(user.id);
     haConnectionId = result.haConnection.id;
     homeId = result.user.homeId;
-    ha = resolveHaCloudFirst(result.haConnection);
-  } catch {
+    ha = resolveHaForRequestedMode(result.haConnection, mode);
+  } catch (err) {
     return NextResponse.json(
-      { ok: false, error: 'Dinodia Hub connection isn’t set up yet for this home.' },
+      {
+        ok: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Dinodia Hub connection isn’t set up yet for this home.',
+      },
       { status: 400 }
     );
   }
