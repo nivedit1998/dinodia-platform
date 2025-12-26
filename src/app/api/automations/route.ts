@@ -15,7 +15,6 @@ import type { DeviceCommandId } from '@/lib/deviceCapabilities';
 import { isDeviceCommandId } from '@/lib/deviceCapabilities';
 import { requireTrustedAdminDevice, toTrustedDeviceResponse } from '@/lib/deviceAuth';
 import { prisma } from '@/lib/prisma';
-import { prisma } from '@/lib/prisma';
 
 function badRequest(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 400 });
