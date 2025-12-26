@@ -14,6 +14,7 @@ import {
 import type { DeviceCommandId } from '@/lib/deviceCapabilities';
 import { isDeviceCommandId } from '@/lib/deviceCapabilities';
 import { requireTrustedAdminDevice, toTrustedDeviceResponse } from '@/lib/deviceAuth';
+import { prisma } from '@/lib/prisma';
 
 function badRequest(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 400 });
@@ -282,10 +283,12 @@ export async function POST(req: NextRequest) {
   }
 
   let haConnectionId: number;
+  let homeId: number;
   let ha;
   try {
     const result = await getUserWithHaConnection(user.id);
     haConnectionId = result.haConnection.id;
+    homeId = result.user.homeId;
     ha = resolveHaCloudFirst(result.haConnection);
   } catch {
     return NextResponse.json(
@@ -310,10 +313,16 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await createAutomation(ha, config);
+    const automationId = (result as { id?: string })?.id ?? config.id;
+    await prisma.automationOwnership.upsert({
+      where: { automationId_homeId: { automationId, homeId } },
+      update: { userId: user.id },
+      create: { automationId, homeId, userId: user.id },
+    });
     if (draft.enabled !== undefined) {
-      await setAutomationEnabled(ha, `automation.${config.id}`, draft.enabled);
+      await setAutomationEnabled(ha, `automation.${automationId}`, draft.enabled);
     }
-    return NextResponse.json({ ok: true, id: (result as { id?: string })?.id ?? config.id });
+    return NextResponse.json({ ok: true, id: automationId });
   } catch (err) {
     console.error('[api/automations] Failed to create automation', err);
     return NextResponse.json(

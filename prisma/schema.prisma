@@ -64,6 +64,7 @@ model Home {
   claimCodeConsumedAt DateTime?
   auditEvents        AuditEvent[]
   users              User[]
+  automationOwnerships AutomationOwnership[]
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 }
@@ -101,6 +102,7 @@ model User {
   alexaRefreshTokens AlexaRefreshToken[]
   alexaEventToken   AlexaEventToken?
   newDeviceCommissioningSessions NewDeviceCommissioningSession[]
+  automationOwnerships AutomationOwnership[]
   trustedDevices    TrustedDevice[]
   authChallenges    AuthChallenge[]
   actedAuditEvents  AuditEvent[] @relation("AuditEventActor")
@@ -264,4 +266,19 @@ model NewDeviceCommissioningSession {
   @@index([haConnectionId])
   @@index([haFlowId])
   @@index([kind])
+}
+
+model AutomationOwnership {
+  id           Int      @id @default(autoincrement())
+  home         Home     @relation(fields: [homeId], references: [id])
+  homeId       Int
+  user         User     @relation(fields: [userId], references: [id])
+  userId       Int
+  automationId String
+  createdAt    DateTime @default(now())
+
+  @@index([homeId])
+  @@index([userId])
+  @@index([automationId])
+  @@unique([automationId, homeId])
 }

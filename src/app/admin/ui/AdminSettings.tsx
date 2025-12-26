@@ -12,6 +12,8 @@ type StatusMessage = { type: 'success' | 'error'; message: string } | null;
 type TenantForm = { username: string; password: string; areas: string[] };
 type TenantStringField = 'username' | 'password';
 type SellingMode = 'FULL_RESET' | 'OWNER_TRANSFER';
+type TenantInfo = { id: number; username: string; areas: string[] };
+type TenantActionState = { saving: boolean; error: string | null };
 
 const EMPTY_TENANT_FORM: TenantForm = { username: '', password: '', areas: [] };
 const EMPTY_PASSWORD_FORM = {
@@ -19,13 +21,13 @@ const EMPTY_PASSWORD_FORM = {
   newPassword: '',
   confirmNewPassword: '',
 };
-const ALEXA_SKILL_URL =
-  'https://skills-store.amazon.com/deeplink/tvt/ce5823e0e48bf0fbebdd69c05e82ea253ca9f8137a8c89008963c4ba3b04e3e84f2b8674b8de634ed4ba2a52a88b9612d12b45bf82d964129002a97b49108fe88950025bd45afc1478f80162754eccb83ade4624e2ba4b88a005b1ff54f8ccbb94adfa66f95188b78f1a66c2beb6adb5';
 const IOS_APP_URL = 'https://apps.apple.com';
 const ANDROID_APP_URL = 'https://play.google.com/store';
 const KIOSK_URL = 'https://dinodiasmartliving.com/kiosk';
 const REMOTE_ACCESS_DISABLED_COPY =
   'Remote access not enabled, check internet connection or enable via your iOS/Android phone or the Dinodia Kiosk';
+const TENANT_LOCKED_MESSAGE =
+  'Remote access must be enabled before adding tenants from this portal. To add tenants without paying for remote access you will have to use your iOS/Android phone or the Dinodia Kiosk.';
 
 export default function AdminSettings({ username }: Props) {
   const [tenantForm, setTenantForm] = useState<TenantForm>(EMPTY_TENANT_FORM);
@@ -33,6 +35,16 @@ export default function AdminSettings({ username }: Props) {
   const [tenantLoading, setTenantLoading] = useState(false);
   const [availableAreas, setAvailableAreas] = useState<string[]>([]);
   const [newAreaInput, setNewAreaInput] = useState('');
+  const [viewTenantsOpen, setViewTenantsOpen] = useState(false);
+  const [addTenantOpen, setAddTenantOpen] = useState(false);
+  const [tenants, setTenants] = useState<TenantInfo[]>([]);
+  const [tenantsLoading, setTenantsLoading] = useState(false);
+  const [tenantsError, setTenantsError] = useState<string | null>(null);
+  const [tenantActions, setTenantActions] = useState<Record<number, TenantActionState>>({});
+  const [tenantAreaInputs, setTenantAreaInputs] = useState<Record<number, string>>({});
+  const [tenantToDelete, setTenantToDelete] = useState<TenantInfo | null>(null);
+  const [tenantDeleteLoading, setTenantDeleteLoading] = useState(false);
+  const [tenantDeleteError, setTenantDeleteError] = useState<string | null>(null);
 
   const [passwordForm, setPasswordForm] = useState(EMPTY_PASSWORD_FORM);
   const [passwordAlert, setPasswordAlert] = useState<StatusMessage>(null);
@@ -86,26 +98,12 @@ export default function AdminSettings({ username }: Props) {
   }, []);
 
   useEffect(() => {
-    let active = true;
-    const load = async () => {
-      await loadAvailableAreas(false);
-    };
-    void load();
-    return () => {
-      active = false;
-    };
+    void loadAvailableAreas(false);
   }, [loadAvailableAreas]);
 
   useEffect(() => {
     if (remoteStatus.status !== 'enabled') return;
-    let active = true;
-    const refreshAreas = async () => {
-      await loadAvailableAreas(true);
-    };
-    void refreshAreas();
-    return () => {
-      active = false;
-    };
+    void loadAvailableAreas(true);
   }, [remoteStatus.status, loadAvailableAreas]);
 
   function addArea(areaValue?: string) {
@@ -201,6 +199,9 @@ export default function AdminSettings({ username }: Props) {
       setTenantMsg('Tenant created successfully ✅');
       setTenantForm(EMPTY_TENANT_FORM);
       setNewAreaInput('');
+      if (viewTenantsOpen && !tenantLocked) {
+        void fetchTenants();
+      }
     } catch (err) {
       console.error('Failed to create tenant', err);
       setTenantMsg('We couldn’t create this tenant right now. Please try again.');
@@ -359,6 +360,146 @@ export default function AdminSettings({ username }: Props) {
   const showRemoteActions =
     remoteStatus.status === 'disabled' ||
     remoteStatus.message === REMOTE_ACCESS_DISABLED_COPY;
+
+  function updateTenantActionState(tenantId: number, updates: Partial<TenantActionState>) {
+    setTenantActions((prev) => ({
+      ...prev,
+      [tenantId]: { ...(prev[tenantId] ?? { saving: false, error: null }), ...updates },
+    }));
+  }
+
+  const fetchTenants = useCallback(async () => {
+    if (tenantLocked) return;
+    setTenantsLoading(true);
+    setTenantsError(null);
+    try {
+      const res = await fetch('/api/admin/tenant', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to load tenants.');
+      }
+      const list: TenantInfo[] = Array.isArray(data.tenants)
+        ? data.tenants
+            .map((tenant: { id: number | string; username?: unknown; areas?: unknown }) => ({
+              id: typeof tenant.id === 'number' ? tenant.id : Number(tenant.id),
+              username: typeof tenant.username === 'string' ? tenant.username : '',
+              areas: Array.isArray(tenant.areas)
+                ? tenant.areas
+                    .filter((a: unknown): a is string => typeof a === 'string')
+                    .map((a) => a.trim())
+                    .filter(Boolean)
+                : [],
+            }))
+            .filter(
+              (tenant: TenantInfo) =>
+                Number.isFinite(tenant.id) && tenant.username.length > 0
+            )
+        : [];
+      setTenants(list);
+      setTenantAreaInputs((prev) => {
+        const next: Record<number, string> = {};
+        list.forEach((tenant) => {
+          next[tenant.id] = prev[tenant.id] ?? '';
+        });
+        return next;
+      });
+    } catch (err) {
+      setTenantsError(
+        err instanceof Error ? err.message : 'Failed to load tenants. Please try again.'
+      );
+    } finally {
+      setTenantsLoading(false);
+    }
+  }, [tenantLocked]);
+
+  useEffect(() => {
+    if (!viewTenantsOpen || tenantLocked) return;
+    void fetchTenants();
+  }, [viewTenantsOpen, tenantLocked, fetchTenants]);
+
+  async function saveTenantAreas(tenantId: number, nextAreas: string[]) {
+    updateTenantActionState(tenantId, { saving: true, error: null });
+    try {
+      const res = await fetch(`/api/admin/tenant/${tenantId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ areas: nextAreas }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update tenant areas.');
+      }
+      const updatedAreas =
+        Array.isArray(data.tenant?.areas) && data.tenant.areas.every((a: unknown) => typeof a === 'string')
+          ? (data.tenant.areas as string[])
+          : nextAreas;
+      setTenants((prev) =>
+        prev.map((tenant) =>
+          tenant.id === tenantId ? { ...tenant, areas: updatedAreas } : tenant
+        )
+      );
+      setTenantAreaInputs((prev) => ({ ...prev, [tenantId]: '' }));
+      updateTenantActionState(tenantId, { saving: false, error: null });
+    } catch (err) {
+      updateTenantActionState(tenantId, {
+        saving: false,
+        error: err instanceof Error ? err.message : 'Failed to update tenant areas.',
+      });
+    }
+  }
+
+  function handleRemoveTenantArea(tenantId: number, areaValue: string) {
+    const target = tenants.find((tenant) => tenant.id === tenantId);
+    if (!target) return;
+    const nextAreas = target.areas.filter((area) => area !== areaValue);
+    void saveTenantAreas(tenantId, nextAreas);
+  }
+
+  function handleAddTenantArea(tenantId: number) {
+    const target = tenants.find((tenant) => tenant.id === tenantId);
+    if (!target) return;
+    const candidate = (tenantAreaInputs[tenantId] ?? '').trim();
+    if (!candidate || target.areas.includes(candidate)) return;
+    const nextAreas = [...target.areas, candidate];
+    void saveTenantAreas(tenantId, nextAreas);
+  }
+
+  function openTenantDelete(tenant: TenantInfo) {
+    setTenantToDelete(tenant);
+    setTenantDeleteError(null);
+  }
+
+  async function confirmDeleteTenant() {
+    if (!tenantToDelete) return;
+    const targetId = tenantToDelete.id;
+    setTenantDeleteLoading(true);
+    setTenantDeleteError(null);
+    try {
+      const res = await fetch(`/api/admin/tenant/${targetId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete tenant.');
+      }
+      setTenants((prev) => prev.filter((tenant) => tenant.id !== targetId));
+      setTenantActions((prev) => {
+        const next = { ...prev };
+        delete next[targetId];
+        return next;
+      });
+      setTenantAreaInputs((prev) => {
+        const next = { ...prev };
+        delete next[targetId];
+        return next;
+      });
+      setTenantToDelete(null);
+    } catch (err) {
+      setTenantDeleteError(
+        err instanceof Error ? err.message : 'Failed to delete tenant. Please try again.'
+      );
+    } finally {
+      setTenantDeleteLoading(false);
+    }
+  }
 
   return (
     <div className="w-full max-w-4xl bg-white rounded-2xl shadow-lg p-4 sm:p-6 flex flex-col gap-5 sm:gap-6">
@@ -555,104 +696,262 @@ export default function AdminSettings({ username }: Props) {
           </div>
         </div>
 
-        <div
-          className={`border border-slate-200 rounded-xl p-4 ${
-            tenantLocked ? 'bg-slate-50 opacity-70 pointer-events-none' : ''
-          }`}
-        >
-          <h2 className="font-semibold mb-4">Home setup – add tenant</h2>
+        <div className="border border-slate-200 rounded-xl lg:col-span-2">
+          <button
+            type="button"
+            className="w-full flex items-center justify-between px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500"
+            onClick={() => setViewTenantsOpen((prev) => !prev)}
+          >
+            <span>Home setup – view tenants</span>
+            <span className="text-[11px] font-normal text-slate-400">
+              {viewTenantsOpen ? 'Hide' : 'Show'}
+            </span>
+          </button>
           {tenantLocked && (
-            <p className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-              Remote access must be enabled before adding tenants from this portal.
-              To add tenants without paying for remote access you will have to use your
-              iOS/Android phone or the Dinodia Kiosk.
+            <p className="mx-4 mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              {TENANT_LOCKED_MESSAGE}
             </p>
           )}
-          <form onSubmit={handleTenantSubmit} className="space-y-3">
-            <div>
-              <label className="block mb-1 text-xs">Tenant username</label>
-              <input
-                className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                value={tenantForm.username}
-                onChange={(e) => updateTenantField('username', e.target.value)}
-                required
-                disabled={tenantLocked}
-              />
-            </div>
-            <div>
-              <label className="block mb-1 text-xs">Tenant password</label>
-              <input
-                type="password"
-                className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                value={tenantForm.password}
-                onChange={(e) => updateTenantField('password', e.target.value)}
-                required
-                minLength={8}
-                disabled={tenantLocked}
-              />
-            </div>
-            <div>
-              <label className="block mb-1 text-xs">Associated areas</label>
-              <div className="flex items-center gap-2">
-                <select
-                  className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={newAreaInput}
-                  onChange={(e) => setNewAreaInput(e.target.value)}
-                  disabled={tenantLocked || availableAreas.length === 0}
-                >
-                  <option value="">
-                    {availableAreas.length > 0 ? 'Select an area' : 'No areas available'}
-                  </option>
-                  {availableAreas.map((area) => (
-                    <option key={area} value={area}>
-                      {area}
-                    </option>
-                  ))}
-                </select>
+          {viewTenantsOpen && (
+            <div
+              className={`px-4 pb-4 pt-1 border-t border-slate-100 ${
+                tenantLocked ? 'pointer-events-none opacity-60' : ''
+              }`}
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-slate-600">
+                  View tenants in this home and manage their areas or delete accounts.
+                </p>
                 <button
                   type="button"
-                  onClick={() => addArea()}
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
-                  aria-label="Add area"
-                  disabled={tenantLocked || !newAreaInput}
+                  onClick={() => void fetchTenants()}
+                  disabled={tenantsLoading || tenantLocked}
+                  className="inline-flex items-center justify-center rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
-                  <span className="text-lg leading-none">+</span>
+                  {tenantsLoading ? 'Refreshing…' : 'Refresh'}
                 </button>
               </div>
-              {tenantForm.areas.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {tenantForm.areas.map((area) => (
-                    <span
-                      key={area}
-                      className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-700"
-                    >
-                      <span>{area}</span>
-                      <button
-                        type="button"
-                        className="text-slate-500 hover:text-slate-700"
-                        onClick={() => removeArea(area)}
-                        aria-label={`Remove ${area}`}
+              {tenantsError && (
+                <p className="mt-2 text-xs text-red-600">{tenantsError}</p>
+              )}
+              {tenantsLoading ? (
+                <p className="mt-3 text-xs text-slate-600">Loading tenants…</p>
+              ) : tenants.length === 0 ? (
+                <p className="mt-3 text-xs text-slate-600">No tenants yet.</p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {tenants.map((tenant) => {
+                    const tenantState = tenantActions[tenant.id] ?? {
+                      saving: false,
+                      error: null,
+                    };
+                    const selectedArea = tenantAreaInputs[tenant.id] ?? '';
+                    return (
+                      <div
+                        key={tenant.id}
+                        className="rounded-lg border border-slate-200 p-3"
                       >
-                        ×
-                      </button>
-                    </span>
-                  ))}
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              {tenant.username}
+                            </p>
+                            <div className="mt-1 flex flex-wrap gap-2">
+                              {tenant.areas.length > 0 ? (
+                                tenant.areas.map((area) => (
+                                  <span
+                                    key={area}
+                                    className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-700"
+                                  >
+                                    <span>{area}</span>
+                                    <button
+                                      type="button"
+                                      className="text-slate-500 hover:text-slate-700"
+                                      onClick={() => handleRemoveTenantArea(tenant.id, area)}
+                                      aria-label={`Remove ${area}`}
+                                      disabled={tenantLocked || tenantState.saving}
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[11px] text-slate-500">
+                                  No areas assigned.
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <select
+                              className="w-full min-w-[200px] border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                              value={selectedArea}
+                              onChange={(e) =>
+                                setTenantAreaInputs((prev) => ({
+                                  ...prev,
+                                  [tenant.id]: e.target.value,
+                                }))
+                              }
+                              disabled={
+                                tenantLocked || tenantState.saving || availableAreas.length === 0
+                              }
+                            >
+                              <option value="">
+                                {availableAreas.length > 0
+                                  ? 'Select an area'
+                                  : 'No areas available'}
+                              </option>
+                              {availableAreas.map((area) => (
+                                <option key={area} value={area}>
+                                  {area}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => handleAddTenantArea(tenant.id)}
+                              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                              aria-label="Add area"
+                              disabled={
+                                tenantLocked || tenantState.saving || !selectedArea.trim()
+                              }
+                            >
+                              <span className="text-lg leading-none">+</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openTenantDelete(tenant)}
+                              className="inline-flex items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"
+                              disabled={tenantLocked || tenantState.saving}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                        {tenantState.error && (
+                          <p className="mt-2 text-xs text-red-600">{tenantState.error}</p>
+                        )}
+                        {tenantState.saving && !tenantLocked && (
+                          <p className="mt-2 text-[11px] text-slate-500">Saving changes…</p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
-              <p className="mt-1 text-[11px] text-slate-500">
-                Choose one or more rooms to give access to.
-              </p>
             </div>
-            <button
-              type="submit"
-              disabled={tenantLoading || tenantLocked}
-              className="mt-1 bg-indigo-600 text-white rounded-lg py-2 px-4 text-xs font-medium hover:bg-indigo-700 disabled:opacity-50"
+          )}
+        </div>
+
+        <div className="border border-slate-200 rounded-xl lg:col-span-2">
+          <button
+            type="button"
+            className="w-full flex items-center justify-between px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500"
+            onClick={() => setAddTenantOpen((prev) => !prev)}
+          >
+            <span>Home setup – add tenant</span>
+            <span className="text-[11px] font-normal text-slate-400">
+              {addTenantOpen ? 'Hide' : 'Show'}
+            </span>
+          </button>
+          {tenantLocked && (
+            <p className="mx-4 mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              {TENANT_LOCKED_MESSAGE}
+            </p>
+          )}
+          {addTenantOpen && (
+            <div
+              className={`px-4 pb-4 pt-1 border-t border-slate-100 ${
+                tenantLocked ? 'pointer-events-none opacity-60' : ''
+              }`}
             >
-              {tenantLoading ? 'Adding…' : 'Add tenant'}
-            </button>
-          </form>
-          {tenantMsg && (
-            <p className="mt-2 text-xs text-slate-600">{tenantMsg}</p>
+              <form onSubmit={handleTenantSubmit} className="mt-3 space-y-3">
+                <div>
+                  <label className="block mb-1 text-xs">Tenant username</label>
+                  <input
+                    className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={tenantForm.username}
+                    onChange={(e) => updateTenantField('username', e.target.value)}
+                    required
+                    disabled={tenantLocked}
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-xs">Tenant password</label>
+                  <input
+                    type="password"
+                    className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={tenantForm.password}
+                    onChange={(e) => updateTenantField('password', e.target.value)}
+                    required
+                    minLength={8}
+                    disabled={tenantLocked}
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-xs">Associated areas</label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={newAreaInput}
+                      onChange={(e) => setNewAreaInput(e.target.value)}
+                      disabled={tenantLocked || availableAreas.length === 0}
+                    >
+                      <option value="">
+                        {availableAreas.length > 0 ? 'Select an area' : 'No areas available'}
+                      </option>
+                      {availableAreas.map((area) => (
+                        <option key={area} value={area}>
+                          {area}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => addArea()}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                      aria-label="Add area"
+                      disabled={tenantLocked || !newAreaInput}
+                    >
+                      <span className="text-lg leading-none">+</span>
+                    </button>
+                  </div>
+                  {tenantForm.areas.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {tenantForm.areas.map((area) => (
+                        <span
+                          key={area}
+                          className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-700"
+                        >
+                          <span>{area}</span>
+                          <button
+                            type="button"
+                            className="text-slate-500 hover:text-slate-700"
+                            onClick={() => removeArea(area)}
+                            aria-label={`Remove ${area}`}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Choose one or more rooms to give access to.
+                  </p>
+                </div>
+                <button
+                  type="submit"
+                  disabled={tenantLoading || tenantLocked}
+                  className="mt-1 bg-indigo-600 text-white rounded-lg py-2 px-4 text-xs font-medium hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {tenantLoading ? 'Adding…' : 'Add tenant'}
+                </button>
+              </form>
+              {tenantMsg && (
+                <p className="mt-2 text-xs text-slate-600">{tenantMsg}</p>
+              )}
+            </div>
           )}
         </div>
 
@@ -697,6 +996,55 @@ export default function AdminSettings({ username }: Props) {
         </div>
 
       </section>
+
+      {tenantToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold">Delete tenant</h3>
+                <p className="text-xs text-slate-500">
+                  Remove tenant access, devices they added via Dinodia, and their automations.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTenantToDelete(null)}
+                disabled={tenantDeleteLoading}
+                className="text-slate-500 hover:text-slate-700"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <p className="mt-4 text-sm text-slate-700">
+              Are you sure you want to delete{' '}
+              <span className="font-semibold">{tenantToDelete.username}</span>?
+            </p>
+            {tenantDeleteError && (
+              <p className="mt-2 text-xs text-red-600">{tenantDeleteError}</p>
+            )}
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-red-700 disabled:opacity-50"
+                onClick={() => void confirmDeleteTenant()}
+                disabled={tenantDeleteLoading}
+              >
+                {tenantDeleteLoading ? 'Deleting…' : 'Delete tenant'}
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                onClick={() => setTenantToDelete(null)}
+                disabled={tenantDeleteLoading}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {sellingModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">

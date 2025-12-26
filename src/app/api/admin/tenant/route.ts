@@ -92,3 +92,45 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, tenantId: tenant.id });
 }
+
+export async function GET(req: NextRequest) {
+  const me = await getCurrentUserFromRequest(req);
+  if (!me || me.role !== Role.ADMIN) {
+    return NextResponse.json({ error: 'Your session has ended. Please sign in again.' }, { status: 401 });
+  }
+
+  try {
+    await requireTrustedAdminDevice(req, me.id);
+  } catch (err) {
+    const deviceError = toTrustedDeviceResponse(err);
+    if (deviceError) return deviceError;
+    throw err;
+  }
+
+  const admin = await prisma.user.findUnique({
+    where: { id: me.id },
+    select: { id: true, homeId: true },
+  });
+
+  if (!admin) {
+    return NextResponse.json({ error: 'Your session has ended. Please sign in again.' }, { status: 401 });
+  }
+
+  const tenants = await prisma.user.findMany({
+    where: { homeId: admin.homeId, role: Role.TENANT },
+    select: {
+      id: true,
+      username: true,
+      accessRules: { select: { area: true } },
+    },
+    orderBy: { username: 'asc' },
+  });
+
+  const shaped = tenants.map((tenant) => ({
+    id: tenant.id,
+    username: tenant.username,
+    areas: tenant.accessRules.map((rule) => rule.area),
+  }));
+
+  return NextResponse.json({ ok: true, tenants: shaped });
+}

@@ -13,6 +13,7 @@ import {
 } from '@/lib/homeAssistantAutomations';
 import { isDeviceCommandId, type DeviceCommandId } from '@/lib/deviceCapabilities';
 import { requireTrustedAdminDevice, toTrustedDeviceResponse } from '@/lib/deviceAuth';
+import { prisma } from '@/lib/prisma';
 
 function badRequest(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 400 });
@@ -271,10 +272,12 @@ export async function DELETE(
   if (!automationId) return badRequest('Missing automation id');
 
   let haConnectionId: number;
+  let homeId: number;
   let ha;
   try {
     const result = await getUserWithHaConnection(user.id);
     haConnectionId = result.haConnection.id;
+    homeId = result.user.homeId;
     ha = resolveHaCloudFirst(result.haConnection);
   } catch {
     return NextResponse.json(
@@ -292,7 +295,21 @@ export async function DELETE(
   }
 
   try {
-    await deleteAutomationConfig(ha, automationId);
+    try {
+      await deleteAutomationConfig(ha, automationId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message.toLowerCase() : '';
+      const notFound = message.includes('not found') || message.includes('404');
+      if (!notFound) {
+        throw err;
+      }
+    }
+    await prisma.automationOwnership.deleteMany({
+      where: {
+        automationId,
+        homeId,
+      },
+    });
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[api/automations/[id]] Failed to delete automation', err);
