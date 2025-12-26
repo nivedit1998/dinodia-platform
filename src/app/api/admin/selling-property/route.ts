@@ -24,6 +24,7 @@ type SellingPropertyMode = 'FULL_RESET' | 'OWNER_TRANSFER';
 
 type SellingPropertyRequest = {
   mode?: SellingPropertyMode;
+  cleanup?: 'platform' | 'device';
 };
 
 type SellingPropertyResponse = {
@@ -35,6 +36,38 @@ const REPLY_TO = 'niveditgupta@dinodiasmartliving.com';
 
 function errorResponse(message: string, status = 400, extras: Record<string, unknown> = {}) {
   return NextResponse.json({ error: message, ...extras }, { status });
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const me = await getCurrentUserFromRequest(req);
+    if (!me || me.role !== Role.ADMIN) {
+      return errorResponse('Your session has ended. Please sign in again.', 401);
+    }
+
+    try {
+      await requireTrustedAdminDevice(req, me.id);
+    } catch (err) {
+      const deviceError = toTrustedDeviceResponse(err);
+      if (deviceError) return deviceError;
+      throw err;
+    }
+
+    const admin = await prisma.user.findUnique({
+      where: { id: me.id },
+      include: { home: { include: { haConnection: true } } },
+    });
+
+    if (!admin || !admin.home || !admin.home.haConnection) {
+      return errorResponse('Dinodia Hub connection isn’t set up yet for this home.', 400);
+    }
+
+    const targets = await collectDinodiaEntityAndDeviceIds(admin.home.haConnection.id);
+    return NextResponse.json({ ok: true, targets });
+  } catch (err) {
+    console.error('[selling-property] GET failed', err);
+    return errorResponse('We could not fetch cleanup targets. Please try again.', 500);
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -60,6 +93,7 @@ export async function POST(req: NextRequest) {
     }
 
     const mode = body?.mode;
+    const cleanupMode = body?.cleanup === 'device' ? 'device' : 'platform';
     if (mode !== 'FULL_RESET' && mode !== 'OWNER_TRANSFER') {
       return errorResponse('Choose a selling option to continue.');
     }
@@ -147,6 +181,7 @@ export async function POST(req: NextRequest) {
         const alexaAuthCodes = await tx.alexaAuthCode.deleteMany({ where: { userId: me.id } });
         const alexaRefreshTokens = await tx.alexaRefreshToken.deleteMany({ where: { userId: me.id } });
         const alexaEventTokens = await tx.alexaEventToken.deleteMany({ where: { userId: me.id } });
+        await tx.automationOwnership.deleteMany({ where: { userId: me.id } });
         const commissioningSessions = await tx.newDeviceCommissioningSession.deleteMany({
           where: { userId: me.id },
         });
@@ -221,10 +256,12 @@ export async function POST(req: NextRequest) {
       },
     });
 
-  let cleanupSummary: HaCleanupSummary;
-  try {
-    cleanupSummary = await performHaCleanup(haConnection, haConnection.id);
-  } catch (err) {
+  let cleanupSummary: HaCleanupSummary | null = null;
+  let cloudLogout: Awaited<ReturnType<typeof logoutHaCloud>> | null = null;
+  if (cleanupMode === 'platform') {
+    try {
+      cleanupSummary = await performHaCleanup(haConnection, haConnection.id);
+    } catch (err) {
       const payload = {
         step: 'ha_cleanup_failed',
         mode,
@@ -243,10 +280,11 @@ export async function POST(req: NextRequest) {
       if (err instanceof HaCleanupConnectionError) {
         return errorResponse(err.message, 400, { reasons: err.reasons });
       }
-    return errorResponse('We could not reset this home. Please try again.', 500);
-  }
+      return errorResponse('We could not reset this home. Please try again.', 500);
+    }
 
-  const cloudLogout = await logoutHaCloud(haConnection, cleanupSummary.endpointUsed);
+    cloudLogout = await logoutHaCloud(haConnection, cleanupSummary.endpointUsed);
+  }
 
   const dbDeletionResult = await prisma.$transaction(async (tx) => {
     await tx.haConnection.update({
@@ -267,6 +305,7 @@ export async function POST(req: NextRequest) {
           OR: [{ userId: { in: userIds } }, { haConnectionId: haConnection.id }],
         },
       });
+      await tx.automationOwnership.deleteMany({ where: { homeId: home.id } });
       const devices = await tx.device.deleteMany({ where: { haConnectionId: haConnection.id } });
       const monitoringReadings = await tx.monitoringReading.deleteMany({
         where: { haConnectionId: haConnection.id },
@@ -292,11 +331,13 @@ export async function POST(req: NextRequest) {
       };
     });
 
-    const haErrors = [
-      ...cleanupSummary.automations.errors,
-      ...cleanupSummary.entities.errors,
-      ...cleanupSummary.devices.errors,
-    ].slice(0, 8);
+    const haErrors =
+      cleanupSummary
+        ? [...cleanupSummary.automations.errors, ...cleanupSummary.entities.errors, ...cleanupSummary.devices.errors].slice(
+            0,
+            8
+          )
+        : [];
 
     await prisma.auditEvent.create({
       data: {
@@ -307,31 +348,33 @@ export async function POST(req: NextRequest) {
           mode,
           actor: actorSnapshot,
           deleted: dbDeletionResult,
-        haCleanup: {
-          endpoint: cleanupSummary.endpointUsed,
-          cloudLogout,
-          targets: {
-            automations: cleanupSummary.targets.automations.length,
-            deviceIds: cleanupSummary.targets.deviceIds.length,
-              entityIds: cleanupSummary.targets.entityIds.length,
-            },
-            results: {
-              automationsDeleted: cleanupSummary.automations.deleted,
-              automationsFailed: cleanupSummary.automations.failed,
-              entitiesRemoved: cleanupSummary.entities.removed,
-              entityFailures: cleanupSummary.entities.failed,
-              devicesRemoved: cleanupSummary.devices.removed,
-              deviceFailures: cleanupSummary.devices.failed,
-            },
-            guardrails: {
-              maxRegistryRemovals: cleanupSummary.guardrails.maxRegistryRemovals,
-              skippedDeviceIds: cleanupSummary.guardrails.skippedDeviceIds,
-              skippedEntityIds: cleanupSummary.guardrails.skippedEntityIds,
-              entitiesSkippedBySanitizer: cleanupSummary.entities.skipped,
-              devicesSkippedBySanitizer: cleanupSummary.devices.skipped,
-            },
-            errors: haErrors,
-          },
+          haCleanup: cleanupSummary
+            ? {
+                endpoint: cleanupSummary.endpointUsed,
+                cloudLogout,
+                targets: {
+                  automations: cleanupSummary.targets.automations.length,
+                  deviceIds: cleanupSummary.targets.deviceIds.length,
+                  entityIds: cleanupSummary.targets.entityIds.length,
+                },
+                results: {
+                  automationsDeleted: cleanupSummary.automations.deleted,
+                  automationsFailed: cleanupSummary.automations.failed,
+                  entitiesRemoved: cleanupSummary.entities.removed,
+                  entityFailures: cleanupSummary.entities.failed,
+                  devicesRemoved: cleanupSummary.devices.removed,
+                  deviceFailures: cleanupSummary.devices.failed,
+                },
+                guardrails: {
+                  maxRegistryRemovals: cleanupSummary.guardrails.maxRegistryRemovals,
+                  skippedDeviceIds: cleanupSummary.guardrails.skippedDeviceIds,
+                  skippedEntityIds: cleanupSummary.guardrails.skippedEntityIds,
+                  entitiesSkippedBySanitizer: cleanupSummary.entities.skipped,
+                  devicesSkippedBySanitizer: cleanupSummary.devices.skipped,
+                },
+                errors: haErrors,
+              }
+            : null,
           homeStatus: HomeStatus.UNCLAIMED,
         },
       },
