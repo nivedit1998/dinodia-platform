@@ -1,7 +1,6 @@
 import registry from '@/config/labelRegistry.json';
 
-const LABEL_CATEGORIES = registry.labelCategories as readonly string[];
-export type LabelCategory = (typeof LABEL_CATEGORIES)[number];
+export type LabelCategory = (typeof registry.labelCategories)[number];
 
 const LABEL_MAP: Record<string, LabelCategory> = Object.fromEntries(
   Object.entries(registry.synonyms).map(([key, value]) => [key.toLowerCase(), value as LabelCategory])

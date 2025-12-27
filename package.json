@@ -9,7 +9,9 @@
     "lint": "eslint",
     "prisma:deploy": "prisma migrate deploy",
     "postinstall": "prisma generate",
-    "verify:backfill": "node scripts/verifyBackfill.mjs"
+    "verify:backfill": "node scripts/verifyBackfill.mjs",
+    "label-registry:sync": "node scripts/labelRegistry.js sync",
+    "label-registry:check": "node scripts/labelRegistry.js check"
   },
   "dependencies": {
     "@aws-sdk/client-ses": "^3.958.0",
