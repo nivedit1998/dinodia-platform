@@ -1,49 +1,11 @@
-export type LabelCategory =
-  | 'Light'
-  | 'Blind'
-  | 'TV'
-  | 'Speaker'
-  | 'Boiler'
-  | 'Security'
-  | 'Spotify'
-  | 'Switch'
-  | 'Thermostat'
-  | 'Media'
-  | 'Motion Sensor'
-  | 'Sensor'
-  | 'Vacuum'
-  | 'Camera'
-  | 'Other';
+import registry from '@/config/labelRegistry.json';
 
-const LABEL_MAP: Record<string, LabelCategory> = {
-  light: 'Light',
-  lights: 'Light',
-  blind: 'Blind',
-  blinds: 'Blind',
-  shade: 'Blind',
-  shades: 'Blind',
-  tv: 'TV',
-  television: 'TV',
-  speaker: 'Speaker',
-  speakers: 'Speaker',
-  audio: 'Speaker',
-  boiler: 'Boiler',
-  heating: 'Boiler',
-  thermostat: 'Thermostat',
-  doorbell: 'Security',
-  security: 'Security',
-  'home security': 'Security',
-  spotify: 'Spotify',
-  switch: 'Switch',
-  switches: 'Switch',
-  media: 'Media',
-  'media player': 'Media',
-  motion: 'Motion Sensor',
-  'motion sensor': 'Motion Sensor',
-  sensor: 'Sensor',
-  vacuum: 'Vacuum',
-  camera: 'Camera',
-};
+const LABEL_CATEGORIES = registry.labelCategories as readonly string[];
+export type LabelCategory = (typeof LABEL_CATEGORIES)[number];
+
+const LABEL_MAP: Record<string, LabelCategory> = Object.fromEntries(
+  Object.entries(registry.synonyms).map(([key, value]) => [key.toLowerCase(), value as LabelCategory])
+);
 
 export function classifyDeviceByLabel(
   labels: string[]

@@ -1,18 +1,8 @@
+import registry from '@/config/labelRegistry.json';
 import { UIDevice } from '@/types/device';
 
-export const LABEL_ORDER = [
-  'Light',
-  'Blind',
-  'Motion Sensor',
-  'Spotify',
-  'Boiler',
-  'Doorbell',
-  'Home Security',
-  'TV',
-  'Speaker',
-] as const;
-
-export const OTHER_LABEL = 'Other';
+export const LABEL_ORDER = registry.groups as readonly string[];
+export const OTHER_LABEL = registry.otherLabel;
 const LABEL_ORDER_LOWER = LABEL_ORDER.map((label) => label.toLowerCase());
 
 export function normalizeLabel(label?: string | null) {
