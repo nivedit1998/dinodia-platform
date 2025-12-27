@@ -43,6 +43,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'That username is already taken. Try another one.' }, { status: 400 });
     }
 
+    const normalizedToken = haLongLivedToken.trim();
+    if (normalizedToken.length === 0) {
+      return NextResponse.json({ error: 'Please fill in all fields to connect your Dinodia Hub.' }, { status: 400 });
+    }
+
+    const existingHub = await prisma.haConnection.findFirst({
+      where: { longLivedToken: normalizedToken },
+      select: { id: true },
+    });
+    if (existingHub) {
+      return NextResponse.json({ error: 'Dinodia Hub already owned' }, { status: 409 });
+    }
+
     const passwordHash = await hashPassword(password);
 
     const { admin } = await prisma.$transaction(async (tx) => {
@@ -52,7 +65,7 @@ export async function POST(req: NextRequest) {
           cloudUrl: haCloudUrl ? haCloudUrl.trim().replace(/\/+$/, '') : null,
           haUsername,
           haPassword,
-          longLivedToken: haLongLivedToken,
+          longLivedToken: normalizedToken,
         },
       });
 

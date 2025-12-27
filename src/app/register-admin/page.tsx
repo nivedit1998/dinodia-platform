@@ -7,8 +7,6 @@ import { getDeviceLabel, getOrCreateDeviceId } from '@/lib/clientDevice';
 
 type ChallengeStatus = 'PENDING' | 'APPROVED' | 'CONSUMED' | 'EXPIRED' | null;
 
-const DEFAULT_HA_BASE_URL = 'http://192.168.0.29:8123';
-
 type HubDetails = {
   haBaseUrl?: string;
   haLongLivedToken?: string;
@@ -81,7 +79,6 @@ export default function RegisterAdminPage() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
-  const [showHubDetails, setShowHubDetails] = useState(false);
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [challengeStatus, setChallengeStatus] = useState<ChallengeStatus>(null);
   const [completing, setCompleting] = useState(false);
@@ -512,67 +509,6 @@ export default function RegisterAdminPage() {
                     Point the camera at the Dinodia Hub QR. We’ll autofill the hub details when it’s
                     detected.
                   </p>
-                </div>
-              ) : null}
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowHubDetails((v) => !v)}
-                  className="text-xs font-medium text-slate-700 hover:text-indigo-700"
-                >
-                  {showHubDetails ? 'Hide hub details' : 'Edit hub details manually'}
-                </button>
-                {form.haBaseUrl ? (
-                  <span className="text-xs text-slate-500">
-                    Base URL: {form.haBaseUrl || DEFAULT_HA_BASE_URL}
-                  </span>
-                ) : null}
-              </div>
-
-              {showHubDetails ? (
-                <div className="grid grid-cols-1 gap-3">
-                  <div>
-                    <label className="block font-medium mb-1 text-sm">Dinodia Hub local address</label>
-                    <input
-                      placeholder={DEFAULT_HA_BASE_URL}
-                      className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={form.haBaseUrl}
-                      onChange={(e) => updateField('haBaseUrl', e.target.value)}
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="block font-medium mb-1 text-sm">HA Admin Username</label>
-                      <input
-                        className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
-                        value={form.haUsername}
-                        onChange={(e) => updateField('haUsername', e.target.value)}
-                        autoComplete="off"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-medium mb-1 text-sm">HA Admin Password</label>
-                      <input
-                        type="password"
-                        className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
-                        value={form.haPassword}
-                        onChange={(e) => updateField('haPassword', e.target.value)}
-                        autoComplete="off"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block font-medium mb-1 text-sm">
-                      Dinodia Hub long-lived access token
-                    </label>
-                    <input
-                      type="password"
-                      className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={form.haLongLivedToken}
-                      onChange={(e) => updateField('haLongLivedToken', e.target.value)}
-                    />
-                  </div>
                 </div>
               ) : null}
             </div>
