@@ -509,13 +509,20 @@ export default function AdminDashboard(props: Props) {
                   </span>
                 </button>
                 {menuOpen && (
-                  <div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
+                  <div className="absolute right-0 mt-2 w-48 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
                     <Link
                       href="/admin/settings"
                       className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
                       onClick={() => setMenuOpen(false)}
                     >
                       Homeowner Settings
+                    </Link>
+                    <Link
+                      href="/devices/manage"
+                      className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Manage Devices
                     </Link>
                     <button
                       type="button"

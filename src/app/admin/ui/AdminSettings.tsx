@@ -542,13 +542,20 @@ export default function AdminSettings({ username }: Props) {
               <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
             </span>
           </button>
-          {menuOpen && (
-            <div className="absolute right-0 mt-2 w-48 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
-                onClick={() => {
-                  setMenuOpen(false);
+              {menuOpen && (
+                <div className="absolute right-0 mt-2 w-48 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
+                  <a
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                    href="/devices/manage"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    Manage Devices
+                  </a>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                    onClick={() => {
+                      setMenuOpen(false);
                   void handleLogout();
                 }}
               >
