@@ -74,6 +74,34 @@ export default function ManageDevices() {
     [loadDevices]
   );
 
+  const restoreDevice = useCallback(
+    async (deviceId: string) => {
+      setActionState((prev) => ({ ...prev, [deviceId]: { saving: true, error: null } }));
+      try {
+        const res = await fetch('/api/devices/manage/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deviceId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error((data && data.error) || 'Unable to restore device.');
+        }
+        await loadDevices();
+        setActionState((prev) => ({ ...prev, [deviceId]: { saving: false, error: null } }));
+      } catch (err) {
+        setActionState((prev) => ({
+          ...prev,
+          [deviceId]: {
+            saving: false,
+            error: err instanceof Error ? err.message : 'Unable to restore device.',
+          },
+        }));
+      }
+    },
+    [loadDevices]
+  );
+
   const rows = useMemo(() => {
     return devices.map((d) => {
       const statusCopy =
@@ -116,18 +144,28 @@ export default function ManageDevices() {
             <div className="text-xs text-red-600">{state.error}</div>
           ) : null}
           <div className="flex gap-2">
-            <button
-              className="rounded-lg bg-red-600 text-white text-sm px-3 py-2 disabled:opacity-60"
-              onClick={() => markStolen(d.deviceId)}
-              disabled={state.saving || d.status === 'STOLEN' || d.status === 'BLOCKED'}
-            >
-              {state.saving ? 'Marking…' : d.status === 'STOLEN' ? 'Marked stolen' : 'Mark stolen'}
-            </button>
+            {d.status === 'ACTIVE' ? (
+              <button
+                className="rounded-lg bg-red-600 text-white text-sm px-3 py-2 disabled:opacity-60"
+                onClick={() => markStolen(d.deviceId)}
+                disabled={state.saving}
+              >
+                {state.saving ? 'Updating…' : 'Mark stolen'}
+              </button>
+            ) : (
+              <button
+                className="rounded-lg bg-emerald-600 text-white text-sm px-3 py-2 disabled:opacity-60"
+                onClick={() => restoreDevice(d.deviceId)}
+                disabled={state.saving}
+              >
+                {state.saving ? 'Updating…' : 'Restore device'}
+              </button>
+            )}
           </div>
         </div>
       );
     });
-  }, [devices, actionState, markStolen]);
+  }, [devices, actionState, markStolen, restoreDevice]);
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-4">
