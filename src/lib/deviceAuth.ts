@@ -81,7 +81,7 @@ export async function requireTrustedAdminDevice(req: NextRequest, userId: number
   if (!usesBearer) return;
 
   const kioskAuth = await getKioskAuthFromRequest(req);
-  if (kioskAuth && kioskAuth.kind === 'KIOSK') {
+  if (kioskAuth) {
     // Enforce kiosk session checks (device active + trusted + sessionVersion match).
     const session = await requireKioskDeviceSession(req);
     if (session.user.id !== userId) {
