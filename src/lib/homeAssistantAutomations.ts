@@ -118,6 +118,7 @@ function buildDeviceTriggerPieces(trigger: Extract<AutomationDraftTrigger, { typ
     });
   } else if (trigger.mode === 'attribute_delta') {
     const attributes = normalizeAttributes(trigger.attribute, 'brightness');
+    const deltaThreshold = attributes.some((attr) => String(attr).toLowerCase().includes('temp')) ? 1 : 0.01;
     attributes.forEach((attribute) => {
       triggers.push({
         platform: 'state',
@@ -126,12 +127,15 @@ function buildDeviceTriggerPieces(trigger: Extract<AutomationDraftTrigger, { typ
       });
     });
     const comparisonOperator =
-      trigger.direction === 'increased' ? '>' : trigger.direction === 'decreased' ? '<' : null;
+      trigger.direction === 'increased' ? '>=' : trigger.direction === 'decreased' ? '<=' : null;
     if (comparisonOperator) {
       const comparisons = attributes.map((attribute) => {
         const toValue = `(trigger.to_state.attributes['${attribute}'] | default(0)) if (trigger.to_state is not none and trigger.to_state.attributes is defined) else 0`;
         const fromValue = `(trigger.from_state.attributes['${attribute}'] | default(0)) if (trigger.from_state is not none and trigger.from_state.attributes is defined) else 0`;
-        return `${toValue} ${comparisonOperator} ${fromValue}`;
+        if (trigger.direction === 'increased') {
+          return `(${toValue} - ${fromValue}) >= ${deltaThreshold}`;
+        }
+        return `(${fromValue} - ${toValue}) >= ${deltaThreshold}`;
       });
       if (comparisons.length > 0) {
         conditions.push({
