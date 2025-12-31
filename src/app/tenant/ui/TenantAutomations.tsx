@@ -20,6 +20,7 @@ type AutomationListItem = {
   description: string;
   mode: string;
   entities: string[];
+  actionDeviceIds?: string[];
   hasTemplates: boolean;
   canEdit: boolean;
   enabled?: boolean;

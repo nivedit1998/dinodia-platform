@@ -402,6 +402,7 @@ export function extractEntityIdsFromAutomationConfig(config: HaAutomationConfig)
   const triggerEntities = new Set<string>();
   const conditionEntities = new Set<string>();
   const actionEntities = new Set<string>();
+  const actionDeviceIds = new Set<string>();
   let hasTemplates = false;
 
   // Normalize singular/plural to arrays for traversal.
@@ -427,7 +428,7 @@ export function extractEntityIdsFromAutomationConfig(config: HaAutomationConfig)
       : [config.action]
     : [];
 
-  function visit(node: unknown, collector: Set<string>) {
+  function visit(node: unknown, entityCollector: Set<string>, deviceCollector?: Set<string>) {
     if (node == null) return;
     if (typeof node === 'string') {
       if (node.includes('{{')) {
@@ -437,7 +438,7 @@ export function extractEntityIdsFromAutomationConfig(config: HaAutomationConfig)
       return;
     }
     if (Array.isArray(node)) {
-      node.forEach((n) => visit(n, collector));
+      node.forEach((n) => visit(n, entityCollector, deviceCollector));
       return;
     }
     if (typeof node === 'object') {
@@ -445,28 +446,49 @@ export function extractEntityIdsFromAutomationConfig(config: HaAutomationConfig)
       for (const [key, value] of Object.entries(obj)) {
         if (key === 'entity_id' || key === 'entityId') {
           if (typeof value === 'string') {
-            if (!value.includes('{{')) collector.add(value);
+            if (!value.includes('{{')) entityCollector.add(value);
             else hasTemplates = true;
           } else if (Array.isArray(value)) {
             for (const v of value) {
-              if (typeof v === 'string' && !v.includes('{{')) collector.add(v);
+              if (typeof v === 'string' && !v.includes('{{')) entityCollector.add(v);
+              else if (typeof v === 'string') hasTemplates = true;
+            }
+          }
+        } else if (deviceCollector && (key === 'device_id' || key === 'deviceId')) {
+          if (typeof value === 'string' && !value.includes('{{')) {
+            deviceCollector.add(value);
+          } else if (Array.isArray(value)) {
+            for (const v of value) {
+              if (typeof v === 'string' && !v.includes('{{')) deviceCollector.add(v);
               else if (typeof v === 'string') hasTemplates = true;
             }
           }
         } else if (key === 'target' && typeof value === 'object' && value) {
           const target = value as Record<string, unknown>;
           if (typeof target.entity_id === 'string' && !target.entity_id.includes('{{')) {
-            collector.add(target.entity_id);
+            entityCollector.add(target.entity_id);
           } else if (
             Array.isArray(target.entity_id) &&
             target.entity_id.every((v) => typeof v === 'string')
           ) {
-            (target.entity_id as string[]).forEach((e) => collector.add(e));
+            (target.entity_id as string[]).forEach((e) => entityCollector.add(e));
+          } else if (typeof target.entity_id === 'string') {
+            hasTemplates = true;
+          }
+
+          if (deviceCollector && typeof target.device_id === 'string' && !target.device_id.includes('{{')) {
+            deviceCollector.add(target.device_id);
+          } else if (
+            deviceCollector &&
+            Array.isArray(target.device_id) &&
+            target.device_id.every((v) => typeof v === 'string')
+          ) {
+            (target.device_id as string[]).forEach((id) => deviceCollector.add(id));
           } else if (typeof target.entity_id === 'string') {
             hasTemplates = true;
           }
         } else {
-          visit(value, collector);
+          visit(value, entityCollector, deviceCollector);
         }
       }
     }
@@ -474,7 +496,7 @@ export function extractEntityIdsFromAutomationConfig(config: HaAutomationConfig)
 
   visit(triggers, triggerEntities);
   visit(conditions, conditionEntities);
-  visit(actions, actionEntities);
+  visit(actions, actionEntities, actionDeviceIds);
 
-  return { triggerEntities, conditionEntities, actionEntities, hasTemplates };
+  return { triggerEntities, conditionEntities, actionEntities, actionDeviceIds, hasTemplates };
 }

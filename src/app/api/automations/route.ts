@@ -230,6 +230,16 @@ export async function GET(req: NextRequest) {
   }
 
   const allowedEntities = await getAllowedEntitiesForUser(user.id, user.role as Role, haConnectionId);
+  const devices = await getDevicesForHaConnection(haConnectionId, { bypassCache: true });
+  const entityToDeviceId = new Map(devices.map((d) => [d.entityId, d.deviceId ?? null]));
+  const deviceIdToEntities = new Map<string, string[]>();
+  devices.forEach((d) => {
+    if (!d.deviceId) return;
+    const existing = deviceIdToEntities.get(d.deviceId) ?? [];
+    existing.push(d.entityId);
+    deviceIdToEntities.set(d.deviceId, existing);
+  });
+  const selectedDeviceId = entityFilter ? entityToDeviceId.get(entityFilter) ?? null : null;
 
   let configs;
   try {
@@ -241,20 +251,38 @@ export async function GET(req: NextRequest) {
 
   const shaped = configs
     .map((config) => {
-      const { triggerEntities, conditionEntities, actionEntities, hasTemplates } =
+      const {
+        triggerEntities,
+        conditionEntities,
+        actionEntities,
+        actionDeviceIds,
+        hasTemplates,
+      } =
         extractEntityIdsFromAutomationConfig(config);
       const actionList = Array.from(actionEntities);
-      if (actionList.length === 0) return null; // Skip automations that do not target a specific device in actions
+      const actionDeviceList = Array.from(actionDeviceIds ?? []);
+      if (actionList.length === 0 && actionDeviceList.length === 0) return null; // Skip automations with no action targets
+
+      const actionEntitiesWithDevices = new Set(actionList);
+      actionDeviceList.forEach((deviceId) => {
+        const mapped = deviceIdToEntities.get(deviceId);
+        mapped?.forEach((e) => actionEntitiesWithDevices.add(e));
+      });
       const allEntities = new Set<string>([
         ...triggerEntities,
         ...conditionEntities,
-        ...actionEntities,
+        ...actionEntitiesWithDevices,
       ]);
       const allowed = Array.from(allEntities).every((e) => allowedEntities.has(e));
       const matchesFilter =
         !entityFilter ||
-        actionList.includes(entityFilter) ||
-        (actionList.length === 0 && hasTemplates);
+        actionEntitiesWithDevices.has(entityFilter) ||
+        (selectedDeviceId &&
+          (actionDeviceList.includes(selectedDeviceId) ||
+            Array.from(actionEntitiesWithDevices).some(
+              (entityId) => entityToDeviceId.get(entityId) === selectedDeviceId
+            ))) ||
+        (actionList.length === 0 && actionDeviceList.length === 0 && hasTemplates);
       return {
         id: config.id,
         entityId: config.entityId ?? `automation.${config.id}`,
@@ -262,6 +290,7 @@ export async function GET(req: NextRequest) {
         description: config.description ?? '',
         mode: config.mode ?? 'single',
         entities: actionList,
+        actionDeviceIds: actionDeviceList,
         hasTemplates,
         canEdit: allowed && !hasTemplates,
         raw: config,
