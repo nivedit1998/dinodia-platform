@@ -6,6 +6,10 @@ import { Role } from '@prisma/client';
 export default async function Home() {
   const user = await getCurrentUser();
   if (user) {
+    if (user.role === Role.INSTALLER) {
+      redirect('/installer/provision');
+    }
+
     const cloudEnabled = await getCloudEnabledForUser(user.id);
     if (!cloudEnabled) redirect('/cloud-locked');
 
