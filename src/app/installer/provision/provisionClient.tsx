@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import QRCode from 'qrcode';
 import { getDeviceLabel, getOrCreateDeviceId } from '@/lib/clientDevice';
 
 type ProvisionResponse = { ok: true; serial: string; bootstrapSecret: string } | { ok?: false; error?: string };
@@ -10,15 +11,71 @@ export default function ProvisionClient({ installerName }: { installerName: stri
   const router = useRouter();
   const [serial, setSerial] = useState('');
   const [bootstrapSecret, setBootstrapSecret] = useState<string | null>(null);
+  const [haBaseUrl, setHaBaseUrl] = useState('');
+  const [haToken, setHaToken] = useState('');
+  const [haUser, setHaUser] = useState('');
+  const [haPass, setHaPass] = useState('');
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrPayload, setQrPayload] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [qrError, setQrError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [deviceId] = useState(() => getOrCreateDeviceId());
   const [deviceLabel] = useState(() => getDeviceLabel());
+
+  function normalizeBaseUrl(value: string) {
+    const trimmed = value.trim();
+    return trimmed.replace(/\/+$/, '');
+  }
+
+  function buildPayload(secret: string) {
+    const query = new URLSearchParams({
+      v: '2',
+      b: normalizeBaseUrl(haBaseUrl),
+      t: haToken.trim(),
+      u: haUser.trim(),
+      p: haPass,
+      s: serial.trim(),
+      bs: secret.trim(),
+    });
+    return `dinodia://hub?${query.toString()}`;
+  }
+
+  async function generateQr(secret: string) {
+    setQrError(null);
+    setQrDataUrl(null);
+    setQrPayload(null);
+
+    if (!haBaseUrl.trim() || !haToken.trim() || !haUser.trim() || !haPass.trim()) {
+      setQrError('Enter HA admin credentials, base URL, and long-lived token to generate the QR.');
+      return;
+    }
+    if (!/^https?:\/\//i.test(haBaseUrl.trim())) {
+      setQrError('Base URL must start with http:// or https://');
+      return;
+    }
+
+    const payload = buildPayload(secret);
+    try {
+      const dataUrl = await QRCode.toDataURL(payload, {
+        errorCorrectionLevel: 'M',
+        margin: 1,
+        scale: 6,
+      });
+      setQrPayload(payload);
+      setQrDataUrl(dataUrl);
+    } catch (err) {
+      setQrError(err instanceof Error ? err.message : 'Unable to generate QR code.');
+    }
+  }
 
   async function handleProvision(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setBootstrapSecret(null);
+    setQrDataUrl(null);
+    setQrPayload(null);
+    setQrError(null);
     if (!serial.trim()) {
       setError('Enter a serial.');
       return;
@@ -47,6 +104,7 @@ export default function ProvisionClient({ installerName }: { installerName: stri
     }
 
     setBootstrapSecret(data.bootstrapSecret);
+    await generateQr(data.bootstrapSecret);
   }
 
   async function handleLogout() {
@@ -73,7 +131,7 @@ export default function ProvisionClient({ installerName }: { installerName: stri
         <div className="rounded-xl bg-white p-6 shadow-lg ring-1 ring-slate-200">
           <h1 className="text-2xl font-semibold text-slate-900">Provision a Dinodia Hub</h1>
           <p className="mt-2 text-sm text-slate-600">
-            Enter the Dinodia Serial Number. You&apos;ll get a bootstrap secret to paste into the hub add-on.
+            Enter the Dinodia Serial Number. You&apos;ll get a bootstrap secret to paste into the hub add-on and a QR to share with the homeowner.
           </p>
 
           <form className="mt-6 space-y-4" onSubmit={handleProvision}>
@@ -89,7 +147,57 @@ export default function ProvisionClient({ installerName }: { installerName: stri
               />
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700">HA Admin Username</label>
+                <input
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                  value={haUser}
+                  onChange={(e) => setHaUser(e.target.value)}
+                  autoComplete="off"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">HA Admin Password</label>
+                <input
+                  type="password"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                  value={haPass}
+                  onChange={(e) => setHaPass(e.target.value)}
+                  autoComplete="off"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Base URL</label>
+                <input
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                  value={haBaseUrl}
+                  onChange={(e) => setHaBaseUrl(e.target.value)}
+                  placeholder="http://homeassistant.local:8123"
+                  autoComplete="off"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Long-lived access token</label>
+                <input
+                  type="password"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                  value={haToken}
+                  onChange={(e) => setHaToken(e.target.value)}
+                  autoComplete="off"
+                  required
+                />
+              </div>
+            </div>
+
             {error && <p className="text-sm text-rose-600">{error}</p>}
+            {qrError && <p className="text-sm text-rose-600">{qrError}</p>}
 
             <button
               type="submit"
@@ -98,6 +206,16 @@ export default function ProvisionClient({ installerName }: { installerName: stri
             >
               {loading ? 'Provisioning…' : 'Provision hub'}
             </button>
+
+            {bootstrapSecret && (
+              <button
+                type="button"
+                onClick={() => generateQr(bootstrapSecret)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Generate / update QR
+              </button>
+            )}
           </form>
 
           {bootstrapSecret && (
@@ -106,6 +224,33 @@ export default function ProvisionClient({ installerName }: { installerName: stri
               <code className="mt-2 block break-all rounded-md bg-white px-3 py-2 text-xs text-slate-900">
                 {bootstrapSecret}
               </code>
+            </div>
+          )}
+
+          {qrPayload && (
+            <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <h2 className="text-sm font-semibold text-slate-800">Share with homeowner</h2>
+              <p className="text-xs text-slate-600 mt-1">QR includes HA admin creds, token, serial, and bootstrap secret.</p>
+              {qrDataUrl && (
+                <div className="mt-3 flex flex-col items-center gap-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={qrDataUrl}
+                    alt="Dinodia hub QR"
+                    className="w-40 h-40 rounded-lg border border-slate-200 bg-white"
+                  />
+                  <a
+                    href={qrDataUrl}
+                    download="dinodia-hub-qr.png"
+                    className="text-indigo-600 hover:underline text-xs font-medium"
+                  >
+                    Download QR
+                  </a>
+                </div>
+              )}
+              <div className="mt-3 rounded-md bg-white border border-slate-200 p-3 text-[11px] text-slate-700 break-all">
+                {qrPayload}
+              </div>
             </div>
           )}
         </div>

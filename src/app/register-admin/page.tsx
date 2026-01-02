@@ -12,6 +12,8 @@ type HubDetails = {
   haLongLivedToken?: string;
   haUsername?: string;
   haPassword?: string;
+  dinodiaSerial?: string;
+  bootstrapSecret?: string;
 };
 
 function normalizeBaseUrl(url: string): string {
@@ -22,7 +24,7 @@ function parseHubQrPayload(raw: string): HubDetails | null {
   const text = (raw || '').trim();
   if (!text) return null;
 
-  // New scheme: dinodia://hub?v=1&b=<baseUrl>&t=<token>&u=<user>&p=<pass>
+  // New scheme: dinodia://hub?v=2&b=<baseUrl>&t=<token>&u=<user>&p=<pass>&s=<serial>&bs=<bootstrapSecret>
   if (/^dinodia:\/\//i.test(text)) {
     try {
       const parsed = new URL(text);
@@ -30,11 +32,15 @@ function parseHubQrPayload(raw: string): HubDetails | null {
       const token = parsed.searchParams.get('t') || parsed.searchParams.get('token');
       const user = parsed.searchParams.get('u') || parsed.searchParams.get('user');
       const pass = parsed.searchParams.get('p') || parsed.searchParams.get('pass');
+      const serial = parsed.searchParams.get('s') || parsed.searchParams.get('serial');
+      const bs = parsed.searchParams.get('bs') || parsed.searchParams.get('bootstrapSecret');
       return {
         haBaseUrl: baseUrl || undefined,
         haLongLivedToken: token || undefined,
         haUsername: user || undefined,
         haPassword: pass || undefined,
+        dinodiaSerial: serial || undefined,
+        bootstrapSecret: bs || undefined,
       };
     } catch {
       // fall through
@@ -51,6 +57,8 @@ function parseHubQrPayload(raw: string): HubDetails | null {
           data.longLivedToken || data.token || data.t || data.llToken || data.haLongLivedToken,
         haUsername: data.haUsername || data.haAdminUser || data.u || undefined,
         haPassword: data.haPassword || data.haAdminPass || data.p || undefined,
+        dinodiaSerial: data.serial || data.s || undefined,
+        bootstrapSecret: data.bootstrapSecret || data.bs || undefined,
       };
     }
   } catch {
@@ -95,8 +103,17 @@ export default function RegisterAdminPage() {
       form.haBaseUrl.trim().length > 0 &&
       form.haLongLivedToken.trim().length > 0 &&
       form.haUsername.trim().length > 0 &&
-      form.haPassword.trim().length > 0,
-    [form.haBaseUrl, form.haLongLivedToken, form.haPassword, form.haUsername]
+      form.haPassword.trim().length > 0 &&
+      form.dinodiaSerial.trim().length > 0 &&
+      form.bootstrapSecret.trim().length > 0,
+    [
+      form.haBaseUrl,
+      form.haLongLivedToken,
+      form.haPassword,
+      form.haUsername,
+      form.dinodiaSerial,
+      form.bootstrapSecret,
+    ]
   );
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -153,6 +170,8 @@ export default function RegisterAdminPage() {
         haLongLivedToken: (parsed.haLongLivedToken || prev.haLongLivedToken).trim(),
         haUsername: (parsed.haUsername || prev.haUsername).trim(),
         haPassword: (parsed.haPassword || prev.haPassword).trim(),
+        dinodiaSerial: (parsed.dinodiaSerial || prev.dinodiaSerial).trim(),
+        bootstrapSecret: (parsed.bootstrapSecret || prev.bootstrapSecret).trim(),
       }));
     },
     []
