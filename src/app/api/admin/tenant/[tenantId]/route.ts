@@ -171,8 +171,13 @@ export async function PATCH(
     );
   }
 
+  if (!admin.homeId) {
+    return NextResponse.json({ error: 'This account is not linked to a home.' }, { status: 400 });
+  }
+  const adminHomeId = admin.homeId;
+
   const tenant = await prisma.user.findFirst({
-    where: { id: tenantId, homeId: admin.homeId, role: Role.TENANT },
+    where: { id: tenantId, homeId: adminHomeId, role: Role.TENANT },
     select: { id: true, username: true },
   });
 
@@ -241,8 +246,13 @@ export async function DELETE(
     );
   }
 
+  if (!admin.homeId) {
+    return NextResponse.json({ error: 'This account is not linked to a home.' }, { status: 400 });
+  }
+  const adminHomeId = admin.homeId;
+
   const tenant = await prisma.user.findFirst({
-    where: { id: tenantId, homeId: admin.homeId, role: Role.TENANT },
+    where: { id: tenantId, homeId: adminHomeId, role: Role.TENANT },
     select: { id: true, username: true, haConnectionId: true },
   });
 
@@ -260,7 +270,7 @@ export async function DELETE(
   const ha = resolveHaCloudFirst(haConnection);
 
   const ownedAutomations = await prisma.automationOwnership.findMany({
-    where: { userId: tenant.id, homeId: admin.homeId },
+    where: { userId: tenant.id, homeId: adminHomeId },
     select: { automationId: true },
   });
   const automationIds = ownedAutomations.map((item) => item.automationId);
@@ -306,10 +316,10 @@ export async function DELETE(
       where: { userId: tenant.id },
     });
     const automationOwnerships = await tx.automationOwnership.deleteMany({
-      where: { userId: tenant.id, homeId: admin.homeId },
+      where: { userId: tenant.id, homeId: adminHomeId },
     });
     const usersDeleted = await tx.user.deleteMany({
-      where: { id: tenant.id, homeId: admin.homeId },
+      where: { id: tenant.id, homeId: adminHomeId },
     });
 
     return {

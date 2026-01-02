@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     const cloudEnabled = Boolean(user.home?.haConnection?.cloudUrl?.trim());
     const appUrl = getAppUrl();
 
-    if (user.role === Role.ADMIN) {
+    if (user.role === Role.ADMIN || user.role === Role.INSTALLER) {
       // Admins must have a verified email before any access
       if (!user.emailVerifiedAt) {
         let targetEmail = user.emailPending || user.email;

@@ -344,6 +344,11 @@ export async function POST(req: NextRequest) {
     });
     const usersDeleted = await tx.user.deleteMany({ where: { id: { in: userIds }, homeId: home.id } });
 
+    await tx.hubInstall.updateMany({
+      where: { homeId: home.id },
+      data: { homeId: null },
+    });
+
     await tx.home.delete({ where: { id: home.id } });
     await tx.haConnection.delete({ where: { id: haConnection.id } });
 

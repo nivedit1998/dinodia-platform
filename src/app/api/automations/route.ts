@@ -337,6 +337,12 @@ export async function POST(req: NextRequest) {
     }
     try {
       const { user: me } = await getUserWithHaConnection(user.id);
+      if (!me.homeId) {
+        return NextResponse.json(
+          { ok: false, error: 'Dinodia Hub connection isn’t linked to a home.' },
+          { status: 400 }
+        );
+      }
       await prisma.automationOwnership.upsert({
         where: { automationId_homeId: { automationId, homeId: me.homeId } },
         update: { userId: me.id },
@@ -368,6 +374,7 @@ export async function POST(req: NextRequest) {
   try {
     const result = await getUserWithHaConnection(user.id);
     haConnectionId = result.haConnection.id;
+    if (!result.user.homeId) throw new Error('Dinodia Hub connection isn’t linked to a home.');
     homeId = result.user.homeId;
     ha = resolveHaForRequestedMode(result.haConnection, mode);
   } catch (err) {

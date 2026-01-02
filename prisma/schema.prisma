@@ -10,6 +10,7 @@ datasource db {
 
 enum Role {
   ADMIN
+  INSTALLER
   TENANT
 }
 
@@ -76,6 +77,7 @@ model Home {
   auditEvents        AuditEvent[]
   users              User[]
   automationOwnerships AutomationOwnership[]
+  hubInstall         HubInstall?   @relation("HomeHubInstall")
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 }
@@ -113,8 +115,8 @@ model User {
   emailVerifiedAt   DateTime?
   email2faEnabled   Boolean       @default(false)
   role              Role          @default(TENANT)
-  home              Home          @relation(fields: [homeId], references: [id])
-  homeId            Int
+  home              Home?         @relation(fields: [homeId], references: [id])
+  homeId            Int?
   haConnection      HaConnection? @relation("AssignedHaConnection", fields: [haConnectionId], references: [id])
   haConnectionId    Int?
   ownedHaConnection HaConnection? @relation("OwnedHaConnection")
@@ -226,6 +228,51 @@ model HaConnection {
   newDeviceCommissioningSessions NewDeviceCommissioningSession[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model HubInstall {
+  id                          String     @id @default(uuid())
+  serial                      String     @unique
+  bootstrapSecretCiphertext   String
+  syncSecretCiphertext        String?
+  platformSyncEnabled         Boolean    @default(true)
+  platformSyncIntervalMinutes Int        @default(5)
+  rotateEveryDays             Int        @default(14)     // days
+  graceMinutes                Int        @default(10080)  // minutes (7 days)
+  publishedHubTokenVersion    Int        @default(0)
+  lastAckedHubTokenVersion    Int        @default(0)
+  lastSeenAt                  DateTime?
+  home                        Home?      @relation("HomeHubInstall", fields: [homeId], references: [id], onDelete: SetNull)
+  homeId                      Int?       @unique
+  hubTokens                   HubToken[]
+  createdAt                   DateTime   @default(now())
+  updatedAt                   DateTime   @updatedAt
+}
+
+enum HubTokenStatus {
+  PENDING
+  ACTIVE
+  GRACE
+  REVOKED
+}
+
+model HubToken {
+  id               String          @id @default(uuid())
+  hubInstall       HubInstall      @relation(fields: [hubInstallId], references: [id], onDelete: Cascade)
+  hubInstallId     String
+  version          Int
+  status           HubTokenStatus
+  tokenHash        String
+  tokenCiphertext  String
+  publishedAt      DateTime?
+  graceUntil       DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([hubInstallId, version])
+  @@unique([hubInstallId, tokenHash])
+  @@index([hubInstallId, status])
+  @@index([tokenHash])
 }
 
 model AccessRule {

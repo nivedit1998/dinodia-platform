@@ -100,3 +100,8 @@ export async function requireTrustedAdminDevice(req: NextRequest, userId: number
     throw new TrustedDeviceError(TRUST_ERROR_MESSAGE);
   }
 }
+
+// Alias for installers/other privileged flows.
+export async function requireTrustedPrivilegedDevice(req: NextRequest, userId: number): Promise<void> {
+  return requireTrustedAdminDevice(req, userId);
+}

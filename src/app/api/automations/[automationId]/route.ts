@@ -289,6 +289,12 @@ export async function DELETE(
   if (recordOnly) {
     try {
       const { user: me } = await getUserWithHaConnection(user.id);
+      if (!me.homeId) {
+        return NextResponse.json(
+          { ok: false, error: 'Dinodia Hub connection isn’t linked to a home.' },
+          { status: 400 }
+        );
+      }
       await prisma.automationOwnership.deleteMany({
         where: {
           automationId,
@@ -316,7 +322,8 @@ export async function DELETE(
   try {
     const result = await getUserWithHaConnection(user.id);
     haConnectionId = result.haConnection.id;
-    homeId = result.user.homeId;
+    homeId = result.user.homeId as number;
+    if (!homeId) throw new Error('Dinodia Hub connection isn’t linked to a home.');
     ha = resolveHaForRequestedMode(result.haConnection, mode);
   } catch (err) {
     return NextResponse.json(
