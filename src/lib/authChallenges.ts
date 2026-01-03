@@ -178,11 +178,21 @@ export async function consumeChallenge(args: {
   if (challenge.consumedAt) return { ok: false, reason: 'ALREADY_CONSUMED' };
   if (challenge.expiresAt < new Date()) return { ok: false, reason: 'EXPIRED' };
   if (!challenge.approvedAt) return { ok: false, reason: 'NOT_APPROVED' };
+  const relaxedDevicePurposes = new Set<AuthChallengePurpose>([
+    AuthChallengePurpose.ADMIN_EMAIL_VERIFY,
+    AuthChallengePurpose.LOGIN_NEW_DEVICE,
+    AuthChallengePurpose.TENANT_ENABLE_2FA,
+  ]);
+
   if (challenge.deviceId && args.deviceId && challenge.deviceId !== args.deviceId) {
-    return { ok: false, reason: 'DEVICE_MISMATCH' };
+    if (!relaxedDevicePurposes.has(challenge.purpose)) {
+      return { ok: false, reason: 'DEVICE_MISMATCH' };
+    }
   }
   if (challenge.deviceId && !args.deviceId) {
-    return { ok: false, reason: 'DEVICE_REQUIRED' };
+    if (!relaxedDevicePurposes.has(challenge.purpose)) {
+      return { ok: false, reason: 'DEVICE_REQUIRED' };
+    }
   }
 
   await prisma.authChallenge.update({

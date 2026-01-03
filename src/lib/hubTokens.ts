@@ -101,3 +101,29 @@ export async function publishPendingIfAcked(
 export function decryptTokenPlaintext(ciphertext: string): string {
   return decryptSecret(ciphertext);
 }
+
+export async function getPublishedHubTokenPlaintext(
+  hubInstallId: string,
+  publishedVersion?: number | null
+): Promise<string> {
+  const version =
+    typeof publishedVersion === 'number' && Number.isFinite(publishedVersion) && publishedVersion > 0
+      ? publishedVersion
+      : (
+          await prisma.hubInstall.findUnique({
+            where: { id: hubInstallId },
+            select: { publishedHubTokenVersion: true },
+          })
+        )?.publishedHubTokenVersion ?? 0;
+
+  if (!version || version <= 0) {
+    throw new Error('No published hub token is available.');
+  }
+
+  const token = await prisma.hubToken.findFirst({
+    where: { hubInstallId, version },
+    select: { tokenCiphertext: true },
+  });
+  if (!token) throw new Error('Published hub token not found.');
+  return decryptTokenPlaintext(token.tokenCiphertext);
+}
