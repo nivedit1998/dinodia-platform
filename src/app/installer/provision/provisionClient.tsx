@@ -30,11 +30,7 @@ export default function ProvisionClient({ installerName }: { installerName: stri
 
   function buildPayload(secret: string) {
     const query = new URLSearchParams({
-      v: '2',
-      b: normalizeBaseUrl(haBaseUrl),
-      t: haToken.trim(),
-      u: haUser.trim(),
-      p: haPass,
+      v: '3',
       s: serial.trim(),
       bs: secret.trim(),
     });
@@ -45,15 +41,6 @@ export default function ProvisionClient({ installerName }: { installerName: stri
     setQrError(null);
     setQrDataUrl(null);
     setQrPayload(null);
-
-    if (!haBaseUrl.trim() || !haToken.trim() || !haUser.trim() || !haPass.trim()) {
-      setQrError('Enter HA admin credentials, base URL, and long-lived token to generate the QR.');
-      return;
-    }
-    if (!/^https?:\/\//i.test(haBaseUrl.trim())) {
-      setQrError('Base URL must start with http:// or https://');
-      return;
-    }
 
     const payload = buildPayload(secret);
     try {
@@ -84,6 +71,14 @@ export default function ProvisionClient({ installerName }: { installerName: stri
       setError('Preparing device info. Try again in a moment.');
       return;
     }
+    if (!haBaseUrl.trim() || !haToken.trim() || !haUser.trim() || !haPass.trim()) {
+      setError('Enter HA admin credentials, base URL, and long-lived token.');
+      return;
+    }
+    if (!/^https?:\/\//i.test(haBaseUrl.trim())) {
+      setError('Base URL must start with http:// or https://');
+      return;
+    }
     setLoading(true);
     const res = await fetch('/api/installer/hubs/provision', {
       method: 'POST',
@@ -92,7 +87,13 @@ export default function ProvisionClient({ installerName }: { installerName: stri
         'x-device-id': deviceId,
         'x-device-label': deviceLabel,
       },
-      body: JSON.stringify({ serial: serial.trim() }),
+      body: JSON.stringify({
+        serial: serial.trim(),
+        haBaseUrl: normalizeBaseUrl(haBaseUrl),
+        haLongLivedToken: haToken.trim(),
+        haUsername: haUser.trim(),
+        haPassword: haPass,
+      }),
     });
     const data: ProvisionResponse = await res.json().catch(() => ({ ok: false, error: 'Invalid response' }));
     setLoading(false);
@@ -230,7 +231,7 @@ export default function ProvisionClient({ installerName }: { installerName: stri
           {qrPayload && (
             <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <h2 className="text-sm font-semibold text-slate-800">Share with homeowner</h2>
-              <p className="text-xs text-slate-600 mt-1">QR includes HA admin creds, token, serial, and bootstrap secret.</p>
+              <p className="text-xs text-slate-600 mt-1">QR includes only the Dinodia serial and bootstrap secret (no HA credentials).</p>
               {qrDataUrl && (
                 <div className="mt-3 flex flex-col items-center gap-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}

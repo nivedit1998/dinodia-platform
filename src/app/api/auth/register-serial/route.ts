@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Role } from '@prisma/client';
+import { Role, HomeStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { buildVerifyLinkEmail } from '@/lib/emailTemplates';
@@ -10,20 +10,6 @@ import { HubInstallError, verifyBootstrapClaim } from '@/lib/hubInstall';
 const REPLY_TO = 'niveditgupta@dinodiasmartliving.com';
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-function normalizeBaseUrl(value: string) {
-  const trimmed = value.trim();
-  let parsed: URL;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    throw new Error('That base URL is not valid.');
-  }
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    throw new Error('Base URL must start with http:// or https://');
-  }
-  return trimmed.replace(/\/+$/, '');
-}
-
 export async function POST(req: NextRequest) {
   let body: {
     serial?: string;
@@ -33,10 +19,6 @@ export async function POST(req: NextRequest) {
     email?: string;
     deviceId?: string;
     deviceLabel?: string;
-    haUsername?: string;
-    haPassword?: string;
-    haBaseUrl?: string;
-    haLongLivedToken?: string;
   };
 
   try {
@@ -53,13 +35,9 @@ export async function POST(req: NextRequest) {
     email,
     deviceId,
     deviceLabel,
-    haUsername,
-    haPassword,
-    haBaseUrl,
-    haLongLivedToken,
   } = body ?? {};
 
-  if (!serial || !bootstrapSecret || !username || !password || !email || !deviceId || !haUsername || !haPassword || !haBaseUrl || !haLongLivedToken) {
+  if (!serial || !bootstrapSecret || !username || !password || !email || !deviceId) {
     return NextResponse.json({ error: 'All fields are required.' }, { status: 400 });
   }
 
@@ -67,62 +45,49 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Please enter a valid email address.' }, { status: 400 });
   }
 
-  let normalizedBaseUrl: string;
-  try {
-    normalizedBaseUrl = normalizeBaseUrl(haBaseUrl);
-  } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 400 });
-  }
-
   const existingUser = await prisma.user.findUnique({ where: { username } });
   if (existingUser) {
     return NextResponse.json({ error: 'That username is already taken.' }, { status: 409 });
   }
 
-  let hubInstall;
-  try {
-    hubInstall = await verifyBootstrapClaim(serial, bootstrapSecret);
-  } catch (err) {
+  const hubInstall = await verifyBootstrapClaim(serial, bootstrapSecret).catch((err) => {
     if (err instanceof HubInstallError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
+      return err;
     }
     throw err;
+  });
+  if (hubInstall instanceof HubInstallError) {
+    return NextResponse.json({ error: hubInstall.message }, { status: hubInstall.status });
   }
 
-  const normalizedToken = haLongLivedToken.trim();
-  const duplicateToken = await prisma.haConnection.findFirst({
-    where: { longLivedToken: normalizedToken },
-    select: { id: true },
+  const homeId = hubInstall.homeId;
+  if (!homeId) {
+    return NextResponse.json(
+      { error: 'This Dinodia Hub is not fully provisioned. Ask your installer to provision it.' },
+      { status: 400 }
+    );
+  }
+
+  const home = await prisma.home.findUnique({
+    where: { id: homeId },
+    include: {
+      users: { select: { id: true }, take: 1 },
+      haConnection: true,
+    },
   });
-  if (duplicateToken) {
-    return NextResponse.json({ error: 'That Dinodia Hub is already linked to another account.' }, { status: 409 });
+  if (!home || !home.haConnection) {
+    return NextResponse.json(
+      { error: 'Dinodia Hub provisioning is incomplete. Ask your installer to provision it again.' },
+      { status: 400 }
+    );
+  }
+  if (home.users.length > 0) {
+    return NextResponse.json({ error: 'This Dinodia Hub is already claimed.' }, { status: 409 });
   }
 
   const passwordHash = await hashPassword(password);
 
   const result = await prisma.$transaction(async (tx) => {
-    const haConnection = await tx.haConnection.create({
-      data: {
-        baseUrl: normalizedBaseUrl,
-        cloudUrl: null,
-        haUsername: haUsername.trim(),
-        haPassword,
-        longLivedToken: normalizedToken,
-      },
-    });
-
-    const home = await tx.home.create({
-      data: {
-        haConnectionId: haConnection.id,
-        addressLine1: '',
-        addressLine2: null,
-        city: '',
-        state: null,
-        postcode: '',
-        country: '',
-      },
-    });
-
     const admin = await tx.user.create({
       data: {
         username,
@@ -130,22 +95,22 @@ export async function POST(req: NextRequest) {
         role: Role.ADMIN,
         emailPending: email,
         emailVerifiedAt: null,
-        homeId: home.id,
-        haConnectionId: haConnection.id,
+        homeId,
+        haConnectionId: home.haConnection.id,
       },
     });
 
     await tx.haConnection.update({
-      where: { id: haConnection.id },
+      where: { id: home.haConnection.id },
       data: { ownerId: admin.id },
     });
 
-    await tx.hubInstall.update({
-      where: { id: hubInstall.id },
-      data: { homeId: home.id },
+    await tx.home.update({
+      where: { id: homeId },
+      data: { status: HomeStatus.ACTIVE },
     });
 
-    return { admin, homeId: home.id };
+    return { admin, homeId };
   });
 
   const challenge = await createAuthChallenge({

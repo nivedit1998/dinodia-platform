@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
-import { Role } from '@prisma/client';
+import { Role, HomeStatus } from '@prisma/client';
 import { createAuthChallenge, buildVerifyUrl, getAppUrl } from '@/lib/authChallenges';
 import { buildVerifyLinkEmail } from '@/lib/emailTemplates';
 import { sendEmail } from '@/lib/email';
@@ -11,36 +11,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    const {
-      username,
-      password,
-      email,
-      haUsername,
-      haPassword,
-      haBaseUrl,
-      haLongLivedToken,
-      deviceId,
-      deviceLabel,
-      dinodiaSerial,
-      bootstrapSecret,
-    } = body;
+    const { username, password, email, deviceId, deviceLabel, dinodiaSerial, bootstrapSecret } = body;
 
-    if (
-      !username ||
-      !password ||
-      !haUsername ||
-      !haPassword ||
-      !haBaseUrl ||
-      !haLongLivedToken ||
-      !email ||
-      !deviceId ||
-      !dinodiaSerial ||
-      !bootstrapSecret
-    ) {
-      return NextResponse.json(
-        { error: 'Please fill in all fields to connect your Dinodia Hub.' },
-        { status: 400 }
-      );
+    if (!username || !password || !email || !deviceId || !dinodiaSerial || !bootstrapSecret) {
+      return NextResponse.json({ error: 'Please fill in all fields to connect your Dinodia Hub.' }, { status: 400 });
     }
 
     const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -56,19 +30,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'That username is already taken. Try another one.' }, { status: 400 });
     }
 
-    const normalizedToken = haLongLivedToken.trim();
-    if (normalizedToken.length === 0) {
-      return NextResponse.json({ error: 'Please fill in all fields to connect your Dinodia Hub.' }, { status: 400 });
-    }
-
-    const existingHub = await prisma.haConnection.findFirst({
-      where: { longLivedToken: normalizedToken },
-      select: { id: true },
-    });
-    if (existingHub) {
-      return NextResponse.json({ error: 'Dinodia Hub already owned' }, { status: 409 });
-    }
-
     let hubInstall;
     try {
       hubInstall = await verifyBootstrapClaim(dinodiaSerial, bootstrapSecret);
@@ -79,31 +40,34 @@ export async function POST(req: NextRequest) {
       throw err;
     }
 
+    const homeId = hubInstall.homeId;
+    if (!homeId) {
+      return NextResponse.json(
+        { error: 'This Dinodia Hub is not fully provisioned. Ask your installer to provision it.' },
+        { status: 400 }
+      );
+    }
+
+    const home = await prisma.home.findUnique({
+      where: { id: homeId },
+      include: {
+        users: { select: { id: true }, take: 1 },
+        haConnection: true,
+      },
+    });
+    if (!home || !home.haConnection) {
+      return NextResponse.json(
+        { error: 'Dinodia Hub provisioning is incomplete. Ask your installer to provision it again.' },
+        { status: 400 }
+      );
+    }
+    if (home.users.length > 0) {
+      return NextResponse.json({ error: 'This Dinodia Hub is already claimed.' }, { status: 409 });
+    }
+
     const passwordHash = await hashPassword(password);
 
     const { admin } = await prisma.$transaction(async (tx) => {
-      const haConnection = await tx.haConnection.create({
-        data: {
-          baseUrl: haBaseUrl.trim().replace(/\/+$/, ''),
-          cloudUrl: null,
-          haUsername,
-          haPassword,
-          longLivedToken: normalizedToken,
-        },
-      });
-
-      const home = await tx.home.create({
-        data: {
-          haConnectionId: haConnection.id,
-          addressLine1: '',
-          addressLine2: null,
-          city: '',
-          state: null,
-          postcode: '',
-          country: '',
-        },
-      });
-
       const createdAdmin = await tx.user.create({
         data: {
           username,
@@ -111,19 +75,19 @@ export async function POST(req: NextRequest) {
           role: Role.ADMIN,
           emailPending: email,
           emailVerifiedAt: null,
-          homeId: home.id,
-          haConnectionId: haConnection.id,
+          homeId,
+          haConnectionId: home.haConnection.id,
         },
       });
 
       await tx.haConnection.update({
-        where: { id: haConnection.id },
+        where: { id: home.haConnection.id },
         data: { ownerId: createdAdmin.id },
       });
 
-      await tx.hubInstall.update({
-        where: { id: hubInstall.id },
-        data: { homeId: home.id },
+      await tx.home.update({
+        where: { id: homeId },
+        data: { status: HomeStatus.ACTIVE },
       });
 
       return { admin: createdAdmin };

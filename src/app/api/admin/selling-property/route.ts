@@ -344,13 +344,19 @@ export async function POST(req: NextRequest) {
     });
     const usersDeleted = await tx.user.deleteMany({ where: { id: { in: userIds }, homeId: home.id } });
 
-    await tx.hubInstall.updateMany({
-      where: { homeId: home.id },
-      data: { homeId: null },
+    await tx.haConnection.update({
+      where: { id: haConnection.id },
+      data: { ownerId: null },
     });
-
-    await tx.home.delete({ where: { id: home.id } });
-    await tx.haConnection.delete({ where: { id: haConnection.id } });
+    await tx.home.update({
+      where: { id: home.id },
+      data: {
+        status: 'UNCLAIMED',
+        claimCodeHash: null,
+        claimCodeIssuedAt: null,
+        claimCodeConsumedAt: null,
+      },
+    });
 
     return {
       trustedDevices: trustedDevices.count,

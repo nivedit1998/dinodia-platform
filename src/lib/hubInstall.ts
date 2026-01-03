@@ -23,11 +23,21 @@ export async function verifyBootstrapClaim(serialRaw: string, bootstrapSecretRaw
     throw new HubInstallError('Serial and bootstrap secret are required.', 400);
   }
 
-  const hubInstall = await prisma.hubInstall.findUnique({ where: { serial } });
+  const hubInstall = await prisma.hubInstall.findUnique({
+    where: { serial },
+    include: {
+      home: {
+        select: {
+          id: true,
+          users: { select: { id: true }, take: 1 },
+        },
+      },
+    },
+  });
   if (!hubInstall) {
     throw new HubInstallError('That serial is not provisioned.', 404);
   }
-  if (hubInstall.homeId) {
+  if (hubInstall.home && hubInstall.home.users.length > 0) {
     throw new HubInstallError('This hub is already claimed.', 409);
   }
 
