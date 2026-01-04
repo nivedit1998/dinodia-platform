@@ -236,9 +236,9 @@ model HubInstall {
   bootstrapSecretCiphertext   String
   syncSecretCiphertext        String?
   platformSyncEnabled         Boolean    @default(true)
-  platformSyncIntervalMinutes Int        @default(5)
-  rotateEveryDays             Int        @default(14)     // days
-  graceMinutes                Int        @default(10080)  // minutes (7 days)
+  platformSyncIntervalMinutes Int        @default(2)
+  rotateEveryMinutes          Int        @default(60)     // minutes
+  graceMinutes                Int        @default(20)     // minutes
   publishedHubTokenVersion    Int        @default(0)
   lastAckedHubTokenVersion    Int        @default(0)
   lastSeenAt                  DateTime?

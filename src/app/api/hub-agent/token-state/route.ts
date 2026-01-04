@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { HubTokenStatus } from '@prisma/client';
+import { HubTokenStatus, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import {
   decryptSyncSecret,
+  generateHubToken,
   getAcceptedTokenHashes,
   getLatestVersion,
   publishPendingIfAcked,
   revokeExpiredGraceTokens,
 } from '@/lib/hubTokens';
 import { verifyHmac } from '@/lib/hubCrypto';
+
+function isUniqueConstraintError(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+}
 
 export async function POST(req: NextRequest) {
   let body: { serial?: string; ts?: number; nonce?: string; sig?: string; agentSeenVersion?: number };
@@ -27,7 +32,18 @@ export async function POST(req: NextRequest) {
 
   const hubInstall = await prisma.hubInstall.findUnique({
     where: { serial: serial.trim() },
-    include: { hubTokens: true },
+    select: {
+      id: true,
+      serial: true,
+      syncSecretCiphertext: true,
+      platformSyncEnabled: true,
+      platformSyncIntervalMinutes: true,
+      rotateEveryMinutes: true,
+      graceMinutes: true,
+      publishedHubTokenVersion: true,
+      lastAckedHubTokenVersion: true,
+      hubTokens: true,
+    },
   });
   if (!hubInstall) {
     return NextResponse.json({ error: 'Unknown hub serial.' }, { status: 404 });
@@ -59,6 +75,63 @@ export async function POST(req: NextRequest) {
       publishedVersion,
       hubInstall.graceMinutes
     );
+  }
+
+  // Seed a pending token if all tokens were wiped (e.g., home reset).
+  const pendingToken = await prisma.hubToken.findFirst({
+    where: { hubInstallId: hubInstall.id, status: HubTokenStatus.PENDING },
+    orderBy: { version: 'asc' },
+    select: { id: true, version: true },
+  });
+
+  const activeToken = await prisma.hubToken.findFirst({
+    where: {
+      hubInstallId: hubInstall.id,
+      status: HubTokenStatus.ACTIVE,
+      publishedAt: { not: null },
+    },
+    orderBy: { version: 'desc' },
+    select: { id: true, version: true, publishedAt: true },
+  });
+
+  if (!pendingToken && !activeToken) {
+    const seed = generateHubToken();
+    try {
+      await prisma.hubToken.create({
+        data: {
+          hubInstallId: hubInstall.id,
+          version: 1,
+          status: HubTokenStatus.PENDING,
+          tokenHash: seed.hash,
+          tokenCiphertext: seed.ciphertext,
+        },
+      });
+    } catch (err) {
+      if (!isUniqueConstraintError(err)) throw err;
+    }
+  } else if (!pendingToken && activeToken && hubInstall.platformSyncEnabled) {
+    const rotateMinutes = hubInstall.rotateEveryMinutes ?? 60;
+    const rotateMs = rotateMinutes * 60 * 1000;
+    const ageMs = now.getTime() - new Date(activeToken.publishedAt as Date).getTime();
+
+    if (ageMs >= rotateMs) {
+      const latestVersion = await getLatestVersion(hubInstall.id);
+      const nextVersion = latestVersion + 1;
+      const token = generateHubToken();
+      try {
+        await prisma.hubToken.create({
+          data: {
+            hubInstallId: hubInstall.id,
+            version: nextVersion,
+            status: HubTokenStatus.PENDING,
+            tokenHash: token.hash,
+            tokenCiphertext: token.ciphertext,
+          },
+        });
+      } catch (err) {
+        if (!isUniqueConstraintError(err)) throw err;
+      }
+    }
   }
 
   const latestVersion = await getLatestVersion(hubInstall.id);

@@ -123,6 +123,10 @@ export async function POST(req: NextRequest) {
     const adminUserIds = await prisma.user
       .findMany({ where: { homeId: home.id, role: Role.ADMIN }, select: { id: true } })
       .then((rows) => rows.map((r) => r.id));
+    const hubInstall = await prisma.hubInstall.findFirst({
+      where: { homeId: home.id },
+      select: { id: true },
+    });
 
     await prisma.auditEvent.create({
       data: {
@@ -307,11 +311,11 @@ export async function POST(req: NextRequest) {
     cloudLogout = await logoutHaCloud(haConnection, cleanupSummary.endpointUsed);
   }
 
-  const dbDeletionResult = await prisma.$transaction(async (tx) => {
-    const events = await tx.auditEvent.findMany({ where: { homeId: home.id } });
-    if (events.length > 0) {
-      await tx.auditEventArchive.createMany({
-        data: events.map((event) => ({
+    const dbDeletionResult = await prisma.$transaction(async (tx) => {
+      const events = await tx.auditEvent.findMany({ where: { homeId: home.id } });
+      if (events.length > 0) {
+        await tx.auditEventArchive.createMany({
+          data: events.map((event) => ({
           type: event.type,
           metadata: event.metadata as Prisma.InputJsonValue,
           homeId: event.homeId ?? null,
@@ -338,16 +342,29 @@ export async function POST(req: NextRequest) {
     await tx.stepUpApproval.deleteMany({ where: { userId: { in: userIds } } });
     await tx.remoteAccessLease.deleteMany({ where: { userId: { in: userIds } } });
     await tx.automationOwnership.deleteMany({ where: { homeId: home.id } });
-    const devices = await tx.device.deleteMany({ where: { haConnectionId: haConnection.id } });
-    const monitoringReadings = await tx.monitoringReading.deleteMany({
-      where: { haConnectionId: haConnection.id },
-    });
-    const usersDeleted = await tx.user.deleteMany({ where: { id: { in: userIds }, homeId: home.id } });
+      const devices = await tx.device.deleteMany({ where: { haConnectionId: haConnection.id } });
+      const monitoringReadings = await tx.monitoringReading.deleteMany({
+        where: { haConnectionId: haConnection.id },
+      });
+      const usersDeleted = await tx.user.deleteMany({ where: { id: { in: userIds }, homeId: home.id } });
 
-    await tx.haConnection.update({
-      where: { id: haConnection.id },
-      data: { ownerId: null },
-    });
+      if (hubInstall) {
+        await tx.hubToken.deleteMany({ where: { hubInstallId: hubInstall.id } });
+        await tx.hubInstall.update({
+          where: { id: hubInstall.id },
+          data: {
+            syncSecretCiphertext: null,
+            publishedHubTokenVersion: 0,
+            lastAckedHubTokenVersion: 0,
+            lastSeenAt: null,
+          },
+        });
+      }
+
+      await tx.haConnection.update({
+        where: { id: haConnection.id },
+        data: { ownerId: null },
+      });
     await tx.home.update({
       where: { id: home.id },
       data: {

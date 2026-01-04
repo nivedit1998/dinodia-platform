@@ -112,9 +112,9 @@ export async function POST(req: NextRequest) {
         serial,
         bootstrapSecretCiphertext: encryptedBootstrap,
         platformSyncEnabled: true,
-        platformSyncIntervalMinutes: 5,
-        rotateEveryDays: 14,
-        graceMinutes: 60 * 24 * 7,
+        platformSyncIntervalMinutes: 2,
+        rotateEveryMinutes: 60,
+        graceMinutes: 20,
         homeId: home.id,
       },
     });
