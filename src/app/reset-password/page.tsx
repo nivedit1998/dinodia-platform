@@ -1,0 +1,172 @@
+'use client';
+
+import Image from 'next/image';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+
+export default function ResetPasswordPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const token = useMemo(() => searchParams.get('token') || '', [searchParams]);
+
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // Prevent referrer headers from leaking the token.
+    const meta = document.createElement('meta');
+    meta.name = 'referrer';
+    meta.content = 'no-referrer';
+    document.head.appendChild(meta);
+    return () => {
+      document.head.removeChild(meta);
+    };
+  }, []);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+
+    if (!token) {
+      setError('Reset link is missing or invalid.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/password-reset/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, newPassword, confirmPassword }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      setLoading(false);
+
+      if (!res.ok) {
+        setError(
+          data?.error ||
+            'We could not reset your password right now. Please try again.'
+        );
+        return;
+      }
+
+      setInfo('Password updated. You can now log in with your new password.');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      console.error(err);
+      setLoading(false);
+      setError('We could not reset your password right now. Please try again.');
+    }
+  }
+
+  if (!token) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4 py-10 bg-slate-50">
+        <div className="w-full max-w-md bg-white shadow-lg rounded-2xl p-8 text-center">
+          <h1 className="text-xl font-semibold mb-2">Reset link missing</h1>
+          <p className="text-sm text-slate-600 mb-4">
+            The reset link is missing or invalid. Request a new one to continue.
+          </p>
+          <button
+            className="text-sm text-indigo-600 hover:underline"
+            onClick={() => router.push('/forgot-password')}
+          >
+            Request a reset link
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center px-4 py-10 bg-slate-50">
+      <div className="w-full max-w-md bg-white shadow-lg rounded-2xl p-8">
+        <div className="mb-6 flex items-center justify-center">
+          <Image
+            src="/brand/logo-lockup.png"
+            alt="Dinodia Smart Living"
+            width={220}
+            height={64}
+            className="h-auto w-48 sm:w-56"
+            priority
+          />
+        </div>
+        <h1 className="text-2xl font-semibold mb-2 text-center">
+          Choose a new password
+        </h1>
+        <p className="text-sm text-slate-500 mb-6 text-center">
+          Enter and confirm your new password.
+        </p>
+
+        {error && (
+          <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+            {error}
+          </div>
+        )}
+        {info && (
+          <div className="mb-4 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+            {info}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">New password</label>
+            <input
+              type="password"
+              className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              required
+              minLength={8}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Confirm new password
+            </label>
+            <input
+              type="password"
+              className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+              required
+              minLength={8}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full mt-2 bg-indigo-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {loading ? 'Resetting…' : 'Reset password'}
+          </button>
+        </form>
+
+        <div className="mt-4 text-center space-x-4">
+          <button
+            className="text-xs text-indigo-600 hover:underline"
+            onClick={() => router.push('/login')}
+          >
+            Back to login
+          </button>
+          <button
+            className="text-xs text-slate-600 hover:underline"
+            onClick={() => router.push('/forgot-password')}
+          >
+            Request a new link
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

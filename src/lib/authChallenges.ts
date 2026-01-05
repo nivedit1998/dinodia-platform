@@ -131,6 +131,9 @@ export async function resendChallengeEmail(id: string): Promise<{ ok: boolean; r
   });
 
   if (!challenge) return { ok: false, reason: 'NOT_FOUND' };
+  if (challenge.purpose === AuthChallengePurpose.PASSWORD_RESET) {
+    return { ok: false, reason: 'UNSUPPORTED' };
+  }
   if (challenge.consumedAt) return { ok: false, reason: 'ALREADY_CONSUMED' };
   if (challenge.approvedAt) return { ok: false, reason: 'ALREADY_APPROVED' };
   if (challenge.expiresAt < new Date()) return { ok: false, reason: 'EXPIRED' };
@@ -235,4 +238,8 @@ export async function consumeChallenge(args: {
 
 export function buildVerifyUrl(token: string) {
   return `${getAppUrl()}/auth/verify?token=${token}`;
+}
+
+export function buildPasswordResetUrl(token: string) {
+  return `${getAppUrl()}/reset-password?token=${token}`;
 }

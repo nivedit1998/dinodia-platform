@@ -343,6 +343,15 @@ export default function LoginPage() {
             >
               {loading ? 'Working…' : 'Login'}
             </button>
+            <div className="text-right">
+              <button
+                type="button"
+                className="mt-2 text-xs text-indigo-600 hover:underline"
+                onClick={() => router.push('/forgot-password')}
+              >
+                Forgot password?
+              </button>
+            </div>
           </form>
         )}
 

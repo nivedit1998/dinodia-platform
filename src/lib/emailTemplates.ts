@@ -77,6 +77,50 @@ export function buildVerifyLinkEmail(params: BuildVerifyLinkEmailParams) {
   return { subject, html, text };
 }
 
+export type BuildPasswordResetEmailParams = {
+  resetUrl: string;
+  appUrl: string;
+  username?: string;
+  ttlMinutes?: number;
+};
+
+export function buildPasswordResetEmail(params: BuildPasswordResetEmailParams) {
+  const { resetUrl, appUrl, username, ttlMinutes = 10 } = params;
+
+  const greeting = username ? `Hi ${username},` : 'Hi,';
+  const ttlCopy = ttlMinutes ? `This link expires in ${ttlMinutes} minutes.` : 'This link expires soon.';
+
+  const subject = 'Reset your Dinodia password';
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 520px; color: #0f172a;">
+      <h2 style="color: #0f172a; margin-bottom: 12px;">Dinodia Smart Living</h2>
+      <p style="margin: 0 0 12px 0;">${greeting}</p>
+      <p style="margin: 0 0 12px 0;">We received a request to reset your Dinodia password. Click below to choose a new one.</p>
+      <p style="margin: 0 0 16px 0;">
+        <a href="${resetUrl}" style="background:#111827;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Reset password</a>
+      </p>
+      <p style="margin: 0 0 12px 0;">Or open this link: <a href="${resetUrl}">${resetUrl}</a></p>
+      <p style="margin: 0 0 12px 0; color: #475569;">${ttlCopy}</p>
+      <p style="margin: 0 0 12px 0; color: #475569;">If you didn’t request this, you can ignore this email. Your password won’t change until you reset it.</p>
+      <p style="margin: 0 0 12px 0; color: #475569;">You can always return to <a href="${appUrl}">${appUrl}</a> to sign in again.</p>
+    </div>
+  `;
+
+  const text = [
+    'Dinodia Smart Living',
+    greeting,
+    '',
+    'We received a request to reset your Dinodia password. Use the link below to choose a new one:',
+    resetUrl,
+    '',
+    ttlCopy,
+    'If you didn’t request this, you can ignore this email. Your password won’t change until you reset it.',
+    `You can return to ${appUrl} to sign in again.`,
+  ].join('\n');
+
+  return { subject, html, text };
+}
+
 export type BuildClaimCodeEmailParams = {
   claimCode: string;
   appUrl: string;

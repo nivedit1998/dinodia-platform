@@ -48,6 +48,7 @@ enum AuthChallengePurpose {
   TENANT_ENABLE_2FA
   LOGIN_NEW_DEVICE
   REMOTE_ACCESS_SETUP
+  PASSWORD_RESET
 }
 
 enum DeviceStatus {
