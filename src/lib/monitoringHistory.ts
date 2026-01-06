@@ -124,17 +124,88 @@ export function aggregateMonitoringHistory({
   baseline,
   bucket,
   omitFirstIfNoBaseline = true,
+  entityId,
 }: {
   readings: ReadingInput[];
   baseline?: BaselineInput;
   bucket: HistoryBucket;
   omitFirstIfNoBaseline?: boolean;
+  entityId: string;
 }): { unit: string | null; points: HistoryPoint[] } {
   const unit = firstUnit(baseline ?? null, readings);
-  const isEnergyUnit = typeof unit === 'string' && unit.toLowerCase().includes('wh');
+  const isEnergyUnit = typeof unit === 'string' && unit.toLowerCase() === 'kwh';
+  const isBattery = entityId.toLowerCase().includes('battery');
 
   if (readings.length === 0) {
     return { unit, points: [] };
+  }
+
+  if (isBattery) {
+    // Build per-day latest reading first.
+    const dailyLatest: Record<
+      string,
+      { bucketStart: Date; label: string; value: number; capturedAt: Date }
+    > = {};
+    for (const reading of readings) {
+      const numeric = typeof reading.numericValue === 'number' ? reading.numericValue : NaN;
+      if (!Number.isFinite(numeric)) continue;
+      const capturedAt = new Date(reading.capturedAt);
+      const info = getBucketInfo('daily', capturedAt);
+      const existing = dailyLatest[info.key];
+      if (!existing || capturedAt.getTime() >= existing.capturedAt.getTime()) {
+        dailyLatest[info.key] = {
+          bucketStart: info.bucketStart,
+          label: info.label,
+          value: numeric,
+          capturedAt,
+        };
+      }
+    }
+
+    const dailyPoints = Object.values(dailyLatest).sort(
+      (a, b) => a.bucketStart.getTime() - b.bucketStart.getTime()
+    );
+
+    if (bucket === 'daily') {
+      return {
+        unit,
+        points: dailyPoints.map((p) => ({
+          bucketStart: p.bucketStart.toISOString(),
+          label: p.label,
+          value: p.value,
+          count: 1,
+        })),
+      };
+    }
+
+    const buckets: Record<string, { sum: number; count: number; bucketStart: Date; label: string }> = {};
+    for (const day of dailyPoints) {
+      const info = getBucketInfo(bucket, day.bucketStart);
+      const existing = buckets[info.key];
+      if (!existing) {
+        buckets[info.key] = {
+          sum: day.value,
+          count: 1,
+          bucketStart: info.bucketStart,
+          label: info.label,
+        };
+      } else {
+        existing.sum += day.value;
+        existing.count += 1;
+      }
+    }
+
+    const points = Object.values(buckets)
+      .filter((b) => b.count > 0)
+      .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
+      .map((b) => ({
+        bucketStart: b.bucketStart.toISOString(),
+        label: b.label,
+        value: b.sum / b.count,
+        count: b.count,
+      }));
+
+    return { unit, points };
   }
 
   if (isEnergyUnit) {

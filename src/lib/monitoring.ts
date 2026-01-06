@@ -12,7 +12,10 @@ export async function captureMonitoringSnapshotForConnection(haConnectionId: num
       typeof d.attributes?.unit_of_measurement === 'string'
         ? d.attributes.unit_of_measurement.trim()
         : '';
-    return unit.length > 0;
+    const entityId = d.entityId.toLowerCase();
+    const isBattery = entityId.includes('battery');
+    const isKwh = unit.toLowerCase() === 'kwh';
+    return isBattery || isKwh;
   });
 
   if (monitoringDevices.length === 0) {
@@ -29,6 +32,7 @@ export async function captureMonitoringSnapshotForConnection(haConnectionId: num
       typeof d.attributes?.unit_of_measurement === 'string'
         ? d.attributes.unit_of_measurement.trim()
         : '';
+    const isBattery = d.entityId.toLowerCase().includes('battery');
     const numeric = Number(d.state);
 
     return {
@@ -36,7 +40,7 @@ export async function captureMonitoringSnapshotForConnection(haConnectionId: num
       entityId: d.entityId,
       state: String(d.state ?? ''),
       numericValue: Number.isFinite(numeric) ? numeric : null,
-      unit,
+      unit: isBattery ? unit || null : unit,
       // TODO: consider deduping by date if cron ever runs more than once per day.
     };
   });

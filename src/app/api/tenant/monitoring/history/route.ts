@@ -114,6 +114,7 @@ export async function GET(req: NextRequest) {
     baseline: baseline ?? null,
     bucket,
     omitFirstIfNoBaseline: true,
+    entityId,
   });
 
   return NextResponse.json({
