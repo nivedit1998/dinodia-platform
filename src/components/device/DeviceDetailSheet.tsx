@@ -22,6 +22,7 @@ type DeviceDetailSheetProps = {
   historyEndpoint?: string;
   onOpenAdminEdit?: () => void;
   linkedSensors?: UIDevice[];
+  allowDeviceControl?: boolean;
 };
 
 export function DeviceDetailSheet({
@@ -34,6 +35,7 @@ export function DeviceDetailSheet({
   historyEndpoint = '/api/admin/monitoring/history',
   onOpenAdminEdit,
   linkedSensors,
+  allowDeviceControl = true,
 }: DeviceDetailSheetProps) {
   const label = getPrimaryLabel(device);
   const accent = getDetailAccent(label);
@@ -127,7 +129,7 @@ export function DeviceDetailSheet({
                 <Icon className="h-9 w-9 text-slate-900 sm:h-10 sm:w-10" />
               </div>
               <div className="text-sm text-slate-600">
-                Live controls for{' '}
+                {allowDeviceControl ? 'Live controls for ' : 'View only • '}
                 <span className="font-medium text-slate-900">{device.name}</span>
               </div>
             </div>
@@ -137,6 +139,7 @@ export function DeviceDetailSheet({
               device={device}
               onActionComplete={onActionComplete}
               relatedDevices={relatedDevices}
+              allowDeviceControl={allowDeviceControl}
             />
             {Array.isArray(linkedSensors) && linkedSensors.length > 0 && (
               <div className="mt-8 space-y-4 rounded-3xl border border-slate-100 bg-white/70 p-4 shadow-sm sm:p-6">

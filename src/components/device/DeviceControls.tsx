@@ -22,11 +22,12 @@ export type ControlPayload = {
   value?: number;
 };
 
-export function useDeviceCommand(onActionComplete?: () => void) {
+export function useDeviceCommand(onActionComplete?: () => void, enabled = true) {
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
 
   const sendCommand = useCallback(
     async (payload: ControlPayload) => {
+      if (!enabled) return;
       setPendingCommand(payload.command);
       try {
         const res = await fetch('/api/device-control', {
@@ -45,7 +46,7 @@ export function useDeviceCommand(onActionComplete?: () => void) {
         setPendingCommand(null);
       }
     },
-    [onActionComplete]
+    [enabled, onActionComplete]
   );
 
   return { pendingCommand, sendCommand };
@@ -131,18 +132,23 @@ type DeviceControlsProps = {
   device: UIDevice;
   onActionComplete?: () => void;
   relatedDevices?: UIDevice[];
+  allowDeviceControl?: boolean;
 };
 
 export function DeviceControls({
   device,
   onActionComplete,
   relatedDevices,
+  allowDeviceControl = true,
 }: DeviceControlsProps) {
   const label = getPrimaryLabel(device);
   const attrs = device.attributes || {};
   const actions = useMemo(() => getActionsForDevice(device, 'dashboard'), [device]);
   const actionMap = useMemo(() => buildActionMap(actions), [actions]);
-  const { pendingCommand, sendCommand } = useDeviceCommand(onActionComplete);
+  const { pendingCommand, sendCommand } = useDeviceCommand(
+    onActionComplete,
+    allowDeviceControl
+  );
   const brightnessValue = getBrightnessPercent(attrs);
   const volumeValue = getVolumePercent(attrs);
   const blindPosition = getBlindPosition(attrs);
@@ -288,7 +294,19 @@ export function DeviceControls({
     volumePct,
   ]);
 
-  return <div className="space-y-6">{content}</div>;
+  return (
+    <div className="space-y-6">
+      {allowDeviceControl ? (
+        content
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500">
+            Device control is available to tenants only.
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function renderLightControls({

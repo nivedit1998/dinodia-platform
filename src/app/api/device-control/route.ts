@@ -8,7 +8,6 @@ import {
 } from '@/lib/deviceControl';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { Role } from '@prisma/client';
-import { requireTrustedAdminDevice, toTrustedDeviceResponse } from '@/lib/deviceAuth';
 
 export async function POST(req: NextRequest) {
   const me = await getCurrentUserFromRequest(req);
@@ -19,14 +18,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (me.role === Role.ADMIN) {
-    try {
-      await requireTrustedAdminDevice(req, me.id);
-    } catch (err) {
-      const deviceError = toTrustedDeviceResponse(err);
-      if (deviceError) return deviceError;
-      throw err;
-    }
+  if (me.role !== Role.TENANT) {
+    return NextResponse.json(
+      { ok: false, error: 'Device control is available to tenants only.' },
+      { status: 403 }
+    );
   }
 
   const allowed = await checkRateLimit(`device-control:${me.id}`, {

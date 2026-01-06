@@ -582,6 +582,7 @@ export default function AdminDashboard(props: Props) {
                         onActionComplete={() => loadDevices({ silent: true, force: true })}
                         showAdminControls
                         onOpenAdminEdit={() => setEditingDeviceId(device.entityId)}
+                        allowDeviceControl={false}
                       />
                     ))}
                   </div>
@@ -609,6 +610,7 @@ export default function AdminDashboard(props: Props) {
           linkedSensors={linkedSensors}
           allowSensorHistory
           onOpenAdminEdit={() => setEditingDeviceId(openDevice.entityId)}
+          allowDeviceControl={false}
         />
       )}
 

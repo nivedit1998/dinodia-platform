@@ -25,6 +25,7 @@ type DeviceTileProps = {
   onActionComplete?: () => void;
   onOpenAdminEdit?: () => void;
   showAdminControls?: boolean;
+  allowDeviceControl?: boolean;
 };
 
 export function DeviceTile({
@@ -34,6 +35,7 @@ export function DeviceTile({
   onActionComplete,
   onOpenAdminEdit,
   showAdminControls = false,
+  allowDeviceControl = true,
 }: DeviceTileProps) {
   const label = getPrimaryLabel(device);
   const actions = useMemo(() => getActionsForDevice(device, 'dashboard'), [device]);
@@ -41,7 +43,10 @@ export function DeviceTile({
   const isActive = isDeviceActive(label, device);
   const secondary = getDeviceSecondaryText(label, device);
   const area = getDeviceArea(device);
-  const { pendingCommand, sendCommand } = useDeviceCommand(onActionComplete);
+  const { pendingCommand, sendCommand } = useDeviceCommand(
+    onActionComplete,
+    allowDeviceControl
+  );
   const primaryAction = getPrimaryAction(label, device, actions);
   const batteryDisplay = batteryPercent != null ? formatBatteryForTile(batteryPercent) : null;
 
@@ -106,7 +111,7 @@ export function DeviceTile({
             } ${primaryAction ? 'cursor-pointer' : 'cursor-default'}`}
             onClick={(event) => {
               event.stopPropagation();
-              if (!primaryAction) {
+              if (!primaryAction || !allowDeviceControl) {
                 onOpenDetails();
                 return;
               }
@@ -116,7 +121,7 @@ export function DeviceTile({
                 value: primaryAction.value,
               });
             }}
-            disabled={pendingCommand !== null || !primaryAction}
+            disabled={pendingCommand !== null || !primaryAction || !allowDeviceControl}
           >
             {pendingCommand ? (
               <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/50 border-t-transparent" />
