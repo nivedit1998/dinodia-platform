@@ -27,6 +27,7 @@ type DeviceTileProps = {
   showAdminControls?: boolean;
   showControlButton?: boolean;
   allowDeviceControl?: boolean;
+  kwhTotal?: number | null;
 };
 
 export function DeviceTile({
@@ -38,6 +39,7 @@ export function DeviceTile({
   showAdminControls = false,
   showControlButton = true,
   allowDeviceControl = true,
+  kwhTotal = null,
 }: DeviceTileProps) {
   const label = getPrimaryLabel(device);
   const actions = useMemo(() => getActionsForDevice(device, 'dashboard'), [device]);
@@ -91,6 +93,11 @@ export function DeviceTile({
           </p>
           <p className="text-lg font-semibold text-slate-900">{device.name}</p>
           <p className="text-sm text-slate-500">{secondary}</p>
+          {kwhTotal !== null && Number.isFinite(kwhTotal) && (
+            <p className="inline-flex w-fit items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+              Energy (Total): {kwhTotal.toFixed(2)} kWh
+            </p>
+          )}
           {batteryDisplay && (
             <p
               className={`inline-flex w-fit items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${batteryDisplay.className}`}

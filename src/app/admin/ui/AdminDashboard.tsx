@@ -407,6 +407,59 @@ export default function AdminDashboard(props: Props) {
         isSensorEntity(candidate)
     );
   }, [devices, openDevice]);
+  const kwhSensorsByEntityId = useMemo(() => {
+    const map = new Map<string, string>();
+    devices.forEach((device) => {
+      if (isSensorEntity(device)) return;
+      const groupId = getDeviceGroupingId(device);
+      if (!groupId) return;
+      const sensor = devices.find(
+        (d) =>
+          d.entityId !== device.entityId &&
+          getDeviceGroupingId(d) === groupId &&
+          isSensorEntity(d) &&
+          typeof d.attributes?.unit_of_measurement === 'string' &&
+          d.attributes.unit_of_measurement === 'kWh'
+      );
+      if (sensor) {
+        map.set(device.entityId, sensor.entityId);
+      }
+    });
+    return map;
+  }, [devices]);
+  const [kwhTotals, setKwhTotals] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const sensorIds = Array.from(new Set(Array.from(kwhSensorsByEntityId.values())));
+    if (sensorIds.length === 0) {
+      setKwhTotals({});
+      return;
+    }
+    void (async () => {
+      try {
+        const res = await fetch('/api/admin/monitoring/kwh-totals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entityIds: sensorIds }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok || !Array.isArray(data.totals)) {
+          throw new Error(data?.error || 'Failed to load energy totals');
+        }
+        const map: Record<string, number> = {};
+        for (const row of data.totals) {
+          if (!row || typeof row.entityId !== 'string') continue;
+          if (typeof row.totalKwh === 'number' && Number.isFinite(row.totalKwh)) {
+            map[row.entityId] = row.totalKwh;
+          }
+        }
+        setKwhTotals(map);
+      } catch (err) {
+        console.warn('Failed to fetch kWh totals', err);
+        setKwhTotals({});
+      }
+    })();
+  }, [kwhSensorsByEntityId]);
 
   const relatedDevices =
     openDevice && getGroupLabel(openDevice) === 'Home Security'
@@ -584,6 +637,11 @@ export default function AdminDashboard(props: Props) {
                         onOpenAdminEdit={() => setEditingDeviceId(device.entityId)}
                         allowDeviceControl={false}
                         showControlButton={false}
+                        kwhTotal={
+                          kwhSensorsByEntityId.has(device.entityId)
+                            ? kwhTotals[kwhSensorsByEntityId.get(device.entityId)!] ?? null
+                            : null
+                        }
                       />
                     ))}
                   </div>
