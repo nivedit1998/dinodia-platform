@@ -53,5 +53,15 @@ export async function POST(req: NextRequest) {
     return { entityId, firstKwh, firstCapturedAt: first?.capturedAt ?? null };
   });
 
-  return NextResponse.json({ ok: true, baselines });
+  const priceEnv = process.env.ELECTRICITY_PRICE_PER_KWH;
+  const pricePerKwh =
+    typeof priceEnv === 'string' && priceEnv.trim().length > 0
+      ? Number(priceEnv)
+      : null;
+  const validPrice =
+    pricePerKwh !== null && Number.isFinite(pricePerKwh) && pricePerKwh >= 0
+      ? pricePerKwh
+      : null;
+
+  return NextResponse.json({ ok: true, baselines, pricePerKwh: validPrice });
 }
