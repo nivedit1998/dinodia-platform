@@ -31,8 +31,7 @@ const EMPTY_TWO_FA_FORM = {
 
 const CHALLENGE_POLL_INTERVAL_MS = 2500;
 
-const ALEXA_SKILL_URL =
-  'https://www.amazon.com/s?k=Dinodia+Smart+Living&i=alexa-skills';
+const ALEXA_SKILL_URL = 'https://alexa.amazon.com/spa/index.html#search/dinodia%20smart%20living';
 
 export default function TenantSettings({ username }: Props) {
   const [form, setForm] = useState(EMPTY_FORM);
