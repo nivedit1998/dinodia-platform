@@ -27,7 +27,7 @@ type Props = {
 
 const ALL_AREAS = 'All areas';
 const REFRESH_THROTTLE_MS = 3000;
-const ALEXA_SKILL_URL = 'https://alexa.amazon.com/spa/index.html#search/dinodia%20smart%20living';
+const ALEXA_SKILL_URL = 'https://www.amazon.co.uk/gp/product/B0GGCC4BDS?nodl=0';
 
 function devicesAreDifferent(a: UIDevice[], b: UIDevice[]) {
   if (a.length !== b.length) return true;
