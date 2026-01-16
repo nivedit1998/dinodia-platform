@@ -79,6 +79,16 @@ const VISUALS: Record<string, DeviceVisual> = {
     detailAccent: 'from-orange-50 to-white',
     icon: (props) => <BoilerIcon {...props} />,
   },
+  Sockets: {
+    label: 'Sockets',
+    size: 'small',
+    activeBg: 'bg-gradient-to-br from-slate-100/90 via-slate-50/70 to-white',
+    inactiveBg: 'bg-white/80',
+    iconActiveBg: 'bg-slate-800 text-white',
+    iconInactiveBg: 'bg-white/70 text-slate-600',
+    detailAccent: 'from-slate-50 to-white',
+    icon: (props) => <PlugIcon {...props} />,
+  },
   Doorbell: {
     label: 'Doorbell',
     size: 'small',
@@ -172,6 +182,12 @@ export function getDeviceSecondaryText(label: string, device: UIDevice) {
       );
     case 'Boiler':
       return `Target ${formatTemperature(attrs.temperature)}`;
+    case 'Sockets': {
+      const unit = readAttr<string>(attrs, 'unit_of_measurement');
+      const state = device.state?.toString?.() ?? '';
+      if (unit) return `${state} ${unit}`.trim();
+      return state || 'No data';
+    }
     case 'Doorbell':
       return device.state ? capitalizeState(device.state) : 'Idle';
     case 'Home Security':
@@ -196,6 +212,11 @@ export function isDeviceActive(label: string, device: UIDevice) {
       return state === 'open' || state === 'opening';
     case 'Boiler':
       return true;
+    case 'Sockets': {
+      const numeric = Number(state);
+      if (!Number.isNaN(numeric)) return numeric > 0;
+      return state === 'on';
+    }
     case 'Doorbell':
     case 'Home Security':
       return true;
@@ -331,6 +352,17 @@ function SpeakerIcon({ className = '' }: IconProps) {
       <rect x="7" y="3" width="10" height="18" rx="2" strokeWidth="1.5" />
       <circle cx="12" cy="15" r="3" strokeWidth="1.5" />
       <circle cx="12" cy="7" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function PlugIcon({ className = '' }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} stroke="currentColor" fill="none">
+      <path d="M9 3v6M15 3v6" strokeWidth="1.5" strokeLinecap="round" />
+      <rect x="7" y="9" width="10" height="6" rx="2" strokeWidth="1.5" />
+      <path d="M12 15v4" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M10 19h4" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

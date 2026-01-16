@@ -168,6 +168,12 @@ export const CAPABILITIES: Record<string, DeviceCapability> = {
       },
     ],
   },
+  Sockets: {
+    label: 'Sockets',
+    actions: [],
+    triggers: [],
+    excludeFromAutomations: true,
+  },
   TV: {
     label: 'TV',
     actions: [
@@ -255,7 +261,8 @@ export function getTileEligibleDevicesForTenantDashboard(devices: UIDevice[]) {
     if (!areaName) return false;
     const cap = getCapabilitiesForDevice(d);
     if (!cap) return false;
-    const primary = !isDetailState(d.state);
+    const label = getPrimaryLabel(d);
+    const primary = !isDetailState(d.state) || label === 'Sockets';
     if (!primary) return false;
     return getGroupLabel(d) !== OTHER_LABEL;
   });

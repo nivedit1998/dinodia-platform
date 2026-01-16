@@ -6,7 +6,10 @@ export async function captureMonitoringSnapshotForConnection(haConnectionId: num
   const devices = await getDevicesForHaConnection(haConnectionId);
   const totalDevices = devices.length;
 
-  const monitoringCandidates = devices.filter((d) => getGroupLabel(d) === OTHER_LABEL);
+  const monitoringCandidates = devices.filter((d) => {
+    const group = getGroupLabel(d);
+    return group === OTHER_LABEL || group === 'Sockets';
+  });
   const monitoringDevices = monitoringCandidates.filter((d) => {
     const unit =
       typeof d.attributes?.unit_of_measurement === 'string'
