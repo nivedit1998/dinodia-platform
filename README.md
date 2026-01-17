@@ -46,6 +46,7 @@ All deployments (local, preview, production) must define the following variables
 | `AWS_ACCESS_KEY_ID` | AWS access key with permission to send via SES. |
 | `AWS_SECRET_ACCESS_KEY` | Secret for the SES access key. |
 | `SES_FROM_EMAIL` | Verified SES sender address/name (e.g. `Dinodia Smart Living <no-reply@dinodiasmartliving.com>`). |
+| `APPLE_REVIEW_DEMO_BYPASS_ENABLED`, `APPLE_REVIEW_DEMO_USERNAME` | Optional: bypass mobile-login email/device verification for a specific demo user (use only during App Review). |
 
 SES variables are required for the new email verification/device-trust flows once they are enabled.
 

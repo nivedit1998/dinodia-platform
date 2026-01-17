@@ -9,13 +9,16 @@ import {
 } from '@/lib/authChallenges';
 import { buildVerifyLinkEmail } from '@/lib/emailTemplates';
 import { sendEmail } from '@/lib/email';
-import { isDeviceTrusted, touchTrustedDevice } from '@/lib/deviceTrust';
+import { isDeviceTrusted, touchTrustedDevice, trustDevice } from '@/lib/deviceTrust';
 import { registerOrValidateDevice, DeviceBlockedError } from '@/lib/deviceRegistry';
 import { checkRateLimit } from '@/lib/rateLimit';
 import { getClientIp } from '@/lib/requestInfo';
 
 const REPLY_TO = 'niveditgupta@dinodiasmartliving.com';
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const APPLE_REVIEW_DEMO_BYPASS_ENABLED =
+  (process.env.APPLE_REVIEW_DEMO_BYPASS_ENABLED || '').toLowerCase() === 'true';
+const APPLE_REVIEW_DEMO_USERNAME = (process.env.APPLE_REVIEW_DEMO_USERNAME || '').toLowerCase();
 
 export async function POST(req: NextRequest) {
   try {
@@ -88,6 +91,28 @@ export async function POST(req: NextRequest) {
         { error: 'Device information is required to continue.' },
         { status: 400 }
       );
+    }
+
+    // Apple review bypass: trust device + skip email/device verification for the configured demo user.
+    const isAppleDemoUser =
+      APPLE_REVIEW_DEMO_BYPASS_ENABLED &&
+      APPLE_REVIEW_DEMO_USERNAME.length > 0 &&
+      user.username.toLowerCase() === APPLE_REVIEW_DEMO_USERNAME;
+
+    if (isAppleDemoUser) {
+      await trustDevice(user.id, deviceId, deviceLabel);
+      const trustedRow = await prisma.trustedDevice.findUnique({
+        where: { userId_deviceId: { userId: user.id, deviceId } },
+      });
+      type SessionVersionRow = { sessionVersion?: number | null };
+      const sessionVersion = (trustedRow as unknown as SessionVersionRow | null)?.sessionVersion ?? 0;
+      const token = createKioskToken(sessionUser, deviceId, sessionVersion);
+      console.log('[mobile-login] Apple review bypass', {
+        userId: user.id,
+        username: user.username,
+        deviceId,
+      });
+      return NextResponse.json({ ok: true, token, role: user.role, cloudEnabled });
     }
 
     try {
