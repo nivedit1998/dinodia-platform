@@ -25,7 +25,7 @@ let sesClient: SESClient | null = null;
 
 function resolveSesConfig(): SesMode {
   const isProd = process.env.NODE_ENV === 'production';
-  const region = process.env.AWS_REGION;
+  const region = process.env.AWS_SES_REGION || process.env.AWS_REGION;
   const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
   const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
   const fromEmail = process.env.SES_FROM_EMAIL;
@@ -35,7 +35,7 @@ function resolveSesConfig(): SesMode {
   }
 
   const missing = [];
-  if (!region) missing.push('AWS_REGION');
+  if (!region) missing.push('AWS_SES_REGION or AWS_REGION');
   if (!accessKeyId) missing.push('AWS_ACCESS_KEY_ID');
   if (!secretAccessKey) missing.push('AWS_SECRET_ACCESS_KEY');
   if (!fromEmail) missing.push('SES_FROM_EMAIL');

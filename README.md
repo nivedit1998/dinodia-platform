@@ -40,7 +40,9 @@ All deployments (local, preview, production) must define the following variables
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN`, `KV_REST_API_READ_ONLY_TOKEN` | (Recommended) Vercel KV endpoints/keys for distributed rate limiting. When unset, limits fall back to per-instance memory. |
 | `CRON_SECRET` | Shared secret used to secure the monitoring snapshot cron route (`/api/cron/monitoring-snapshot`). Send it via `Authorization: Bearer` (query param is disabled by default). |
 | `DISABLE_CRON_QUERY_SECRET` | Defaults to `true`; set to `false` only if you must support `?secret=` cron calls. |
-| `AWS_REGION` | AWS region used by SES for outbound Dinodia emails (2FA/verification). |
+| `AWS_REGION` | Default AWS region (fallback for SES/SQS). |
+| `AWS_SES_REGION` | AWS region for SES email (overrides `AWS_REGION` when set). |
+| `AWS_SQS_REGION` | AWS region for Alexa ChangeReport SQS queue (overrides `AWS_REGION` when set). |
 | `AWS_ACCESS_KEY_ID` | AWS access key with permission to send via SES. |
 | `AWS_SECRET_ACCESS_KEY` | Secret for the SES access key. |
 | `SES_FROM_EMAIL` | Verified SES sender address/name (e.g. `Dinodia Smart Living <no-reply@dinodiasmartliving.com>`). |

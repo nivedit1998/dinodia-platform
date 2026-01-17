@@ -19,9 +19,9 @@ function getQueueUrl() {
 }
 
 function getSqsClient() {
-  const region = process.env.AWS_REGION;
+  const region = process.env.AWS_SQS_REGION || process.env.AWS_REGION;
   if (!region) {
-    throw new Error('AWS_REGION is not configured');
+    throw new Error('AWS_SQS_REGION or AWS_REGION is not configured');
   }
   return new SQSClient({ region });
 }
