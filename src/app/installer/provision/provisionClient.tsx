@@ -12,6 +12,7 @@ export default function ProvisionClient({ installerName }: { installerName: stri
   const [serial, setSerial] = useState('');
   const [bootstrapSecret, setBootstrapSecret] = useState<string | null>(null);
   const [haBaseUrl, setHaBaseUrl] = useState('');
+  const [haCloudUrl, setHaCloudUrl] = useState('');
   const [haToken, setHaToken] = useState('');
   const [haUser, setHaUser] = useState('');
   const [haPass, setHaPass] = useState('');
@@ -24,6 +25,11 @@ export default function ProvisionClient({ installerName }: { installerName: stri
   const [deviceLabel] = useState(() => getDeviceLabel());
 
   function normalizeBaseUrl(value: string) {
+    const trimmed = value.trim();
+    return trimmed.replace(/\/+$/, '');
+  }
+
+  function normalizeCloudUrl(value: string) {
     const trimmed = value.trim();
     return trimmed.replace(/\/+$/, '');
   }
@@ -71,12 +77,24 @@ export default function ProvisionClient({ installerName }: { installerName: stri
       setError('Preparing device info. Try again in a moment.');
       return;
     }
-    if (!haBaseUrl.trim() || !haToken.trim() || !haUser.trim() || !haPass.trim()) {
-      setError('Enter HA admin credentials, base URL, and long-lived token.');
+    if (!haBaseUrl.trim() || !haCloudUrl.trim() || !haToken.trim() || !haUser.trim() || !haPass.trim()) {
+      setError('Enter HA admin credentials, base URL, cloud URL, and long-lived token.');
       return;
     }
     if (!/^https?:\/\//i.test(haBaseUrl.trim())) {
       setError('Base URL must start with http:// or https://');
+      return;
+    }
+    try {
+      const parsed = new URL(haCloudUrl.trim());
+      if (parsed.protocol !== 'https:') {
+        throw new Error('Cloud URL must start with https://');
+      }
+      if (!parsed.hostname.toLowerCase().endsWith('.dinodiasmartliving.com')) {
+        throw new Error('Cloud URL must end with .dinodiasmartliving.com');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Enter a valid cloud URL (https://xxx.dinodiasmartliving.com).');
       return;
     }
     setLoading(true);
@@ -90,6 +108,7 @@ export default function ProvisionClient({ installerName }: { installerName: stri
       body: JSON.stringify({
         serial: serial.trim(),
         haBaseUrl: normalizeBaseUrl(haBaseUrl),
+        haCloudUrl: normalizeCloudUrl(haCloudUrl),
         haLongLivedToken: haToken.trim(),
         haUsername: haUser.trim(),
         haPassword: haPass,
@@ -174,21 +193,35 @@ export default function ProvisionClient({ installerName }: { installerName: stri
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700">Base URL</label>
-                <input
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  value={haBaseUrl}
-                  onChange={(e) => setHaBaseUrl(e.target.value)}
-                  placeholder="http://homeassistant.local:8123"
-                  autoComplete="off"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700">Long-lived access token</label>
-                <input
-                  type="password"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+              <label className="block text-sm font-medium text-slate-700">Base URL</label>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                value={haBaseUrl}
+                onChange={(e) => setHaBaseUrl(e.target.value)}
+                placeholder="http://homeassistant.local:8123"
+                autoComplete="off"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Cloud URL (Dinodia Cloudflare)</label>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                value={haCloudUrl}
+                onChange={(e) => setHaCloudUrl(e.target.value)}
+                placeholder="https://xxx.dinodiasmartliving.com"
+                autoComplete="off"
+                required
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Must start with https:// and end with .dinodiasmartliving.com
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Long-lived access token</label>
+              <input
+                type="password"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
                   value={haToken}
                   onChange={(e) => setHaToken(e.target.value)}
                   autoComplete="off"
