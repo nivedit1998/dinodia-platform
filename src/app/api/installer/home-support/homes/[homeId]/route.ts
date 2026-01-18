@@ -1,0 +1,144 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { Role } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
+import { getCurrentUserFromRequest } from '@/lib/auth';
+import { requireTrustedPrivilegedDevice } from '@/lib/deviceAuth';
+import { resolveHaLongLivedToken, resolveHaUiCredentials } from '@/lib/haSecrets';
+
+function parseHomeId(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const num = Number(raw);
+  return Number.isInteger(num) && num > 0 ? num : null;
+}
+
+export async function GET(
+  req: NextRequest,
+  context: { params: Promise<{ homeId: string }> }
+) {
+  const me = await getCurrentUserFromRequest(req);
+  if (!me || me.role !== Role.INSTALLER) {
+    return NextResponse.json({ error: 'Installer access required.' }, { status: 401 });
+  }
+
+  const deviceErr = await requireTrustedPrivilegedDevice(req, me.id).catch((err) => err);
+  if (deviceErr instanceof Error) {
+    return NextResponse.json({ error: deviceErr.message }, { status: 403 });
+  }
+
+  const { homeId: rawHomeId } = await context.params;
+  const homeId = parseHomeId(rawHomeId);
+  if (!homeId) {
+    return NextResponse.json({ error: 'Invalid home id.' }, { status: 400 });
+  }
+
+  const home = await prisma.home.findUnique({
+    where: { id: homeId },
+    select: {
+      id: true,
+      createdAt: true,
+      hubInstall: {
+        select: {
+          id: true,
+          serial: true,
+          lastSeenAt: true,
+          createdAt: true,
+          platformSyncEnabled: true,
+          rotateEveryMinutes: true,
+          graceMinutes: true,
+          publishedHubTokenVersion: true,
+          lastAckedHubTokenVersion: true,
+        },
+      },
+      haConnection: {
+        select: {
+          id: true,
+          baseUrl: true,
+          cloudUrl: true,
+          haUsername: true,
+          haUsernameCiphertext: true,
+          haPassword: true,
+          haPasswordCiphertext: true,
+          longLivedToken: true,
+          longLivedTokenCiphertext: true,
+        },
+      },
+      users: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          role: true,
+          accessRules: { select: { area: true } },
+          alexaEventToken: { select: { id: true } },
+        },
+      },
+    },
+  });
+
+  if (!home || !home.haConnection) {
+    return NextResponse.json({ error: 'Home not found.' }, { status: 404 });
+  }
+
+  const installedAt = home.hubInstall?.createdAt ?? home.createdAt;
+
+  let creds: {
+    haUsername: string;
+    haPassword: string;
+    baseUrl: string;
+    cloudUrl: string | null;
+    longLivedToken: string;
+  };
+  try {
+    const { haUsername, haPassword } = resolveHaUiCredentials(home.haConnection);
+    const { longLivedToken } = resolveHaLongLivedToken(home.haConnection);
+    creds = {
+      haUsername,
+      haPassword,
+      baseUrl: home.haConnection.baseUrl,
+      cloudUrl: home.haConnection.cloudUrl ?? null,
+      longLivedToken,
+    };
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+  }
+
+  const homeowners = home.users
+    .filter((u) => u.role === Role.ADMIN)
+    .map((u) => ({ email: u.email ?? null, username: u.username }));
+
+  const tenants = home.users
+    .filter((u) => u.role === Role.TENANT)
+    .map((u) => ({
+      email: u.email ?? null,
+      username: u.username,
+      areas: u.accessRules.map((r) => r.area).filter(Boolean),
+    }));
+
+  const alexaEnabled = home.users
+    .filter((u) => !!u.alexaEventToken)
+    .map((u) => ({ email: u.email ?? null, username: u.username }));
+
+  const hubStatus = home.hubInstall
+    ? {
+        serial: home.hubInstall.serial,
+        lastSeenAt: home.hubInstall.lastSeenAt,
+        platformSyncEnabled: home.hubInstall.platformSyncEnabled,
+        rotateEveryMinutes: home.hubInstall.rotateEveryMinutes,
+        graceMinutes: home.hubInstall.graceMinutes,
+        publishedHubTokenVersion: home.hubInstall.publishedHubTokenVersion,
+        lastAckedHubTokenVersion: home.hubInstall.lastAckedHubTokenVersion,
+        installedAt,
+      }
+    : { serial: null, lastSeenAt: null, installedAt };
+
+  return NextResponse.json({
+    ok: true,
+    homeId: home.id,
+    installedAt,
+    credentials: creds,
+    hubStatus,
+    homeowners,
+    tenants,
+    alexaEnabled,
+  });
+}
