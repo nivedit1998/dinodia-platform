@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import type { HaConnectionLike } from '@/lib/homeAssistant';
-import { resolveHaSecrets } from '@/lib/haSecrets';
+import { resolveHaLongLivedToken } from '@/lib/haSecrets';
 
 export type ViewMode = 'home' | 'holiday';
 
@@ -26,8 +26,8 @@ export async function getUserWithHaConnection(userId: number) {
     throw new Error('Dinodia Hub connection isn’t set up yet for this home.');
   }
 
-  const secrets = resolveHaSecrets(haConnection);
-  const hydrated = { ...haConnection, ...secrets };
+  const { longLivedToken } = resolveHaLongLivedToken(haConnection);
+  const hydrated = { ...haConnection, longLivedToken };
 
   return { user, haConnection: hydrated };
 }

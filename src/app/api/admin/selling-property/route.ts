@@ -15,7 +15,7 @@ import { buildClaimCodeEmail } from '@/lib/emailTemplates';
 import { sendEmail } from '@/lib/email';
 import { getAppUrl } from '@/lib/authChallenges';
 import { requireTrustedAdminDevice, toTrustedDeviceResponse } from '@/lib/deviceAuth';
-import { resolveHaSecrets } from '@/lib/haSecrets';
+import { resolveHaLongLivedToken } from '@/lib/haSecrets';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -285,7 +285,7 @@ export async function POST(req: NextRequest) {
   let cleanupSummary: HaCleanupSummary | null = null;
   let cloudLogout: Awaited<ReturnType<typeof logoutHaCloud>> | null = null;
   if (cleanupMode === 'platform') {
-    const hydratedHa = { ...haConnection, ...resolveHaSecrets(haConnection) };
+    const hydratedHa = { ...haConnection, ...resolveHaLongLivedToken(haConnection) };
     try {
       cleanupSummary = await performHaCleanup(hydratedHa, haConnection.id);
     } catch (err) {

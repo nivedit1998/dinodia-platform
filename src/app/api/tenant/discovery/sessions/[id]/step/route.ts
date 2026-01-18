@@ -13,7 +13,7 @@ import { prisma } from '@/lib/prisma';
 import { fetchRegistrySnapshot } from '@/lib/haRegistrySnapshot';
 import { finalizeCommissioningSuccess } from '@/lib/deviceCommissioningWorkflow';
 import { isSafeDiscoverySchema, sanitizeHaStep } from '@/lib/haDiscovery';
-import { resolveHaSecrets } from '@/lib/haSecrets';
+import { resolveHaLongLivedToken } from '@/lib/haSecrets';
 
 type Body = {
   userInput?: Record<string, unknown>;
@@ -99,7 +99,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       { status: 400 }
     );
   }
-  const ha = resolveHaCloudFirst({ ...haConnection, ...resolveHaSecrets(haConnection) });
+  const ha = resolveHaCloudFirst({ ...haConnection, ...resolveHaLongLivedToken(haConnection) });
 
   let { before } = getSessionSnapshots(session);
   if (!before) {

@@ -8,37 +8,21 @@ import { getDeviceLabel, getOrCreateDeviceId } from '@/lib/clientDevice';
 type ChallengeStatus = 'PENDING' | 'APPROVED' | 'CONSUMED' | 'EXPIRED' | null;
 
 type HubDetails = {
-  haBaseUrl?: string;
-  haLongLivedToken?: string;
-  haUsername?: string;
-  haPassword?: string;
   dinodiaSerial?: string;
   bootstrapSecret?: string;
 };
-
-function normalizeBaseUrl(url: string): string {
-  return url.trim().replace(/\/+$/, '');
-}
 
 function parseHubQrPayload(raw: string): HubDetails | null {
   const text = (raw || '').trim();
   if (!text) return null;
 
-  // New scheme: dinodia://hub?v=2&b=<baseUrl>&t=<token>&u=<user>&p=<pass>&s=<serial>&bs=<bootstrapSecret>
+  // v3: dinodia://hub?v=3&s=<serial>&bs=<bootstrapSecret>
   if (/^dinodia:\/\//i.test(text)) {
     try {
       const parsed = new URL(text);
-      const baseUrl = parsed.searchParams.get('b') || parsed.searchParams.get('baseUrl');
-      const token = parsed.searchParams.get('t') || parsed.searchParams.get('token');
-      const user = parsed.searchParams.get('u') || parsed.searchParams.get('user');
-      const pass = parsed.searchParams.get('p') || parsed.searchParams.get('pass');
       const serial = parsed.searchParams.get('s') || parsed.searchParams.get('serial');
       const bs = parsed.searchParams.get('bs') || parsed.searchParams.get('bootstrapSecret');
       return {
-        haBaseUrl: baseUrl || undefined,
-        haLongLivedToken: token || undefined,
-        haUsername: user || undefined,
-        haPassword: pass || undefined,
         dinodiaSerial: serial || undefined,
         bootstrapSecret: bs || undefined,
       };
@@ -47,16 +31,11 @@ function parseHubQrPayload(raw: string): HubDetails | null {
     }
   }
 
-  // JSON payload fallback
+  // JSON payload fallback (only serial/bootstrap allowed)
   try {
     const data = JSON.parse(text);
     if (data && typeof data === 'object') {
       return {
-        haBaseUrl: data.baseUrl || data.haBaseUrl || undefined,
-        haLongLivedToken:
-          data.longLivedToken || data.token || data.t || data.llToken || data.haLongLivedToken,
-        haUsername: data.haUsername || data.haAdminUser || data.u || undefined,
-        haPassword: data.haPassword || data.haAdminPass || data.p || undefined,
         dinodiaSerial: data.serial || data.s || undefined,
         bootstrapSecret: data.bootstrapSecret || data.bs || undefined,
       };
@@ -65,8 +44,7 @@ function parseHubQrPayload(raw: string): HubDetails | null {
     // not JSON
   }
 
-  // Token-only legacy QR
-  return { haLongLivedToken: text };
+  return null;
 }
 
 export default function RegisterAdminPage() {
@@ -78,10 +56,6 @@ export default function RegisterAdminPage() {
     confirmEmail: '',
     dinodiaSerial: '',
     bootstrapSecret: '',
-    haBaseUrl: '',
-    haLongLivedToken: '',
-    haUsername: '',
-    haPassword: '',
   });
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -99,21 +73,8 @@ export default function RegisterAdminPage() {
     typeof window === 'undefined' ? '' : getDeviceLabel()
   );
   const hubDetected = useMemo(
-    () =>
-      form.haBaseUrl.trim().length > 0 &&
-      form.haLongLivedToken.trim().length > 0 &&
-      form.haUsername.trim().length > 0 &&
-      form.haPassword.trim().length > 0 &&
-      form.dinodiaSerial.trim().length > 0 &&
-      form.bootstrapSecret.trim().length > 0,
-    [
-      form.haBaseUrl,
-      form.haLongLivedToken,
-      form.haPassword,
-      form.haUsername,
-      form.dinodiaSerial,
-      form.bootstrapSecret,
-    ]
+    () => form.dinodiaSerial.trim().length > 0 && form.bootstrapSecret.trim().length > 0,
+    [form.dinodiaSerial, form.bootstrapSecret]
   );
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -166,10 +127,6 @@ export default function RegisterAdminPage() {
       setInfo('Dinodia Hub detected via QR.');
       setForm((prev) => ({
         ...prev,
-        haBaseUrl: normalizeBaseUrl(parsed.haBaseUrl || prev.haBaseUrl || ''),
-        haLongLivedToken: (parsed.haLongLivedToken || prev.haLongLivedToken).trim(),
-        haUsername: (parsed.haUsername || prev.haUsername).trim(),
-        haPassword: (parsed.haPassword || prev.haPassword).trim(),
         dinodiaSerial: (parsed.dinodiaSerial || prev.dinodiaSerial).trim(),
         bootstrapSecret: (parsed.bootstrapSecret || prev.bootstrapSecret).trim(),
       }));
@@ -336,16 +293,6 @@ export default function RegisterAdminPage() {
       setError('Enter the Dinodia serial and bootstrap secret from the installer.');
       return;
     }
-    if (
-      !form.haBaseUrl.trim() ||
-      !form.haLongLivedToken.trim() ||
-      !form.haUsername.trim() ||
-      !form.haPassword.trim()
-    ) {
-      setError('Scan the Dinodia Hub QR code to fill in the hub details.');
-      return;
-    }
-
     setLoading(true);
     const res = await fetch('/api/auth/register-admin', {
       method: 'POST',
@@ -353,10 +300,6 @@ export default function RegisterAdminPage() {
         username: form.username,
         password: form.password,
         email: form.email,
-        haBaseUrl: normalizeBaseUrl(form.haBaseUrl),
-        haUsername: form.haUsername.trim(),
-        haPassword: form.haPassword,
-        haLongLivedToken: form.haLongLivedToken.trim(),
         deviceId,
         deviceLabel,
         dinodiaSerial: form.dinodiaSerial.trim(),

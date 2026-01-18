@@ -5,7 +5,7 @@ import { resolveHaCloudFirst } from '@/lib/haConnection';
 import { abortMatterConfigFlow } from '@/lib/matterConfigFlow';
 import { findSessionForUser, shapeSessionResponse } from '@/lib/matterSessions';
 import { prisma } from '@/lib/prisma';
-import { resolveHaSecrets } from '@/lib/haSecrets';
+import { resolveHaLongLivedToken } from '@/lib/haSecrets';
 
 export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id: sessionId } = await context.params;
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       },
     });
     if (haConnection) {
-      const ha = resolveHaCloudFirst({ ...haConnection, ...resolveHaSecrets(haConnection) });
+      const ha = resolveHaCloudFirst({ ...haConnection, ...resolveHaLongLivedToken(haConnection) });
       await abortMatterConfigFlow(ha, session.haFlowId);
     }
   }

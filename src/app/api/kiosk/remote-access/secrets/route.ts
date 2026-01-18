@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Role, StepUpPurpose } from '@prisma/client';
 import { readDeviceHeaders, requireKioskDeviceSession } from '@/lib/deviceAuth';
-import { getUserWithHaConnection } from '@/lib/haConnection';
 import { validateRemoteAccessLease } from '@/lib/remoteAccessLease';
 
 export const runtime = 'nodejs';
@@ -30,14 +29,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  try {
-    const { haConnection } = await getUserWithHaConnection(user.id);
-    return NextResponse.json({
-      haUsername: haConnection.haUsername,
-      haPassword: haConnection.haPassword,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unable to load Dinodia Hub settings.';
-    return NextResponse.json({ error: message }, { status: 400 });
-  }
+  // Remote access setup has been retired; do not return HA credentials.
+  return NextResponse.json(
+    { error: 'Remote access setup has been retired. Contact support if you need help.', retired: true },
+    { status: 410 }
+  );
 }

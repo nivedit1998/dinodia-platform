@@ -10,10 +10,22 @@ type HasHaSecrets = {
   longLivedTokenCiphertext?: string | null;
 };
 
-export function resolveHaSecrets(record: HasHaSecrets): {
+export function resolveHaLongLivedToken(record: HasHaSecrets): { longLivedToken: string } {
+  const longLivedToken =
+    (record.longLivedTokenCiphertext
+      ? decryptAtRest(record.longLivedTokenCiphertext)
+      : record.longLivedToken) ?? null;
+
+  if (!longLivedToken) {
+    throw new Error('Home Assistant long-lived token is missing.');
+  }
+
+  return { longLivedToken };
+}
+
+export function resolveHaUiCredentials(record: HasHaSecrets): {
   haUsername: string;
   haPassword: string;
-  longLivedToken: string;
 } {
   const haUsername =
     (record.haUsernameCiphertext
@@ -23,16 +35,12 @@ export function resolveHaSecrets(record: HasHaSecrets): {
     (record.haPasswordCiphertext
       ? decryptAtRest(record.haPasswordCiphertext)
       : record.haPassword) ?? null;
-  const longLivedToken =
-    (record.longLivedTokenCiphertext
-      ? decryptAtRest(record.longLivedTokenCiphertext)
-      : record.longLivedToken) ?? null;
 
-  if (!haUsername || !haPassword || !longLivedToken) {
-    throw new Error('Home Assistant credentials are missing or incomplete.');
+  if (!haUsername || !haPassword) {
+    throw new Error('Home Assistant UI credentials are missing or incomplete.');
   }
 
-  return { haUsername, haPassword, longLivedToken };
+  return { haUsername, haPassword };
 }
 
 export function buildEncryptedHaSecrets(input: {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { scheduleAlexaChangeReportForEntityStateChange } from '@/lib/deviceControl';
 import { getUserWithHaConnection, resolveHaCloudFirst } from '@/lib/haConnection';
 import { prisma } from '@/lib/prisma';
-import { resolveHaSecrets } from '@/lib/haSecrets';
+import { resolveHaLongLivedToken } from '@/lib/haSecrets';
 
 const WEBHOOK_SECRET = process.env.HA_WEBHOOK_SECRET;
 const FALLBACK_EVENTS_USER_ID = Number(process.env.ALEXA_EVENTS_USER_ID || NaN);
@@ -37,15 +37,11 @@ async function resolveHaForEntity(
           baseUrl: true,
           cloudUrl: true,
           longLivedToken: true,
-          haUsername: true,
-          haUsernameCiphertext: true,
-          haPassword: true,
-          haPasswordCiphertext: true,
           longLivedTokenCiphertext: true,
         },
       });
       if (haConnection) {
-        const secrets = resolveHaSecrets(haConnection);
+        const secrets = resolveHaLongLivedToken(haConnection);
         return {
           haConnection: { ...haConnection, ...secrets },
           haConnectionId: haConnection.id,
@@ -69,7 +65,7 @@ async function resolveHaForEntity(
       include: { haConnection: true },
     });
     if (device?.haConnection) {
-      const secrets = resolveHaSecrets(device.haConnection);
+      const secrets = resolveHaLongLivedToken(device.haConnection);
       return {
         haConnection: { ...device.haConnection, ...secrets },
         haConnectionId: device.haConnection.id,

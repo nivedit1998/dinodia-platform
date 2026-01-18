@@ -13,7 +13,7 @@ import {
 import { prisma } from '@/lib/prisma';
 import { finalizeCommissioningSuccess } from '../../workflow';
 import { fetchRegistrySnapshot } from '@/lib/haRegistrySnapshot';
-import { resolveHaSecrets } from '@/lib/haSecrets';
+import { resolveHaLongLivedToken } from '@/lib/haSecrets';
 
 type StepBody = {
   setupPayload?: string | null;
@@ -143,7 +143,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       { status: 400 }
     );
   }
-  const ha = resolveHaCloudFirst({ ...haConnection, ...resolveHaSecrets(haConnection) });
+    const ha = resolveHaCloudFirst({ ...haConnection, ...resolveHaLongLivedToken(haConnection) });
 
   let { before } = getSessionSnapshots(session);
   if (!before) {
