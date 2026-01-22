@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { resolveHaLongLivedToken, resolveHaUiCredentials } from '@/lib/haSecrets';
 import { computeSupportApproval } from '@/lib/supportRequests';
+import { decryptBootstrapSecret } from '@/lib/hubTokens';
 
 function parseHomeId(raw: string | undefined): number | null {
   if (!raw) return null;
@@ -34,6 +35,7 @@ export async function GET(
       hubInstall: {
         select: {
           id: true,
+          bootstrapSecretCiphertext: true,
           serial: true,
           lastSeenAt: true,
           createdAt: true,
@@ -113,6 +115,7 @@ export async function GET(
     baseUrl: string;
     cloudUrl: string | null;
     longLivedToken: string;
+    bootstrapSecret?: string;
   };
   try {
     const { haUsername, haPassword } = resolveHaUiCredentials(home.haConnection);
@@ -124,6 +127,9 @@ export async function GET(
       cloudUrl: home.haConnection.cloudUrl ?? null,
       longLivedToken,
     };
+    if (homeAccessApproved && home.hubInstall?.bootstrapSecretCiphertext) {
+      creds.bootstrapSecret = decryptBootstrapSecret(home.hubInstall.bootstrapSecretCiphertext);
+    }
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }

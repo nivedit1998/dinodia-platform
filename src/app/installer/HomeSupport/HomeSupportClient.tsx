@@ -18,6 +18,7 @@ type HomeDetail = {
     baseUrl: string;
     cloudUrl: string | null;
     longLivedToken: string;
+    bootstrapSecret?: string;
   };
   homeSupportRequest?: RequestSummary | null;
   hubStatus: {
@@ -392,6 +393,7 @@ export default function HomeSupportClient({ installerName }: { installerName: st
                                 <CredentialRow label="Base URL" value={detail.credentials?.baseUrl} />
                                 <CredentialRow label="Cloud URL" value={detail.credentials?.cloudUrl} />
                                 <CredentialRow label="Long-lived token" value={detail.credentials?.longLivedToken} />
+                                <CredentialRow label="Bootstrap secret" value={detail.credentials?.bootstrapSecret} />
                               </div>
                             ) : (
                               <p className="mt-2 text-xs text-slate-600">
