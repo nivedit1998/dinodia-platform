@@ -2,17 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
-import { requireTrustedPrivilegedDevice } from '@/lib/deviceAuth';
 
 export async function GET(req: NextRequest) {
   const me = await getCurrentUserFromRequest(req);
   if (!me || me.role !== Role.INSTALLER) {
     return NextResponse.json({ error: 'Installer access required.' }, { status: 401 });
-  }
-
-  const deviceErr = await requireTrustedPrivilegedDevice(req, me.id).catch((err) => err);
-  if (deviceErr instanceof Error) {
-    return NextResponse.json({ error: deviceErr.message }, { status: 403 });
   }
 
   const homes = await prisma.home.findMany({

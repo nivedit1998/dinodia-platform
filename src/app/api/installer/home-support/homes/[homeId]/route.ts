@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
-import { requireTrustedPrivilegedDevice } from '@/lib/deviceAuth';
 import { resolveHaLongLivedToken, resolveHaUiCredentials } from '@/lib/haSecrets';
 
 function parseHomeId(raw: string | undefined): number | null {
@@ -18,11 +17,6 @@ export async function GET(
   const me = await getCurrentUserFromRequest(req);
   if (!me || me.role !== Role.INSTALLER) {
     return NextResponse.json({ error: 'Installer access required.' }, { status: 401 });
-  }
-
-  const deviceErr = await requireTrustedPrivilegedDevice(req, me.id).catch((err) => err);
-  if (deviceErr instanceof Error) {
-    return NextResponse.json({ error: deviceErr.message }, { status: 403 });
   }
 
   const { homeId: rawHomeId } = await context.params;
@@ -81,6 +75,23 @@ export async function GET(
 
   const installedAt = home.hubInstall?.createdAt ?? home.createdAt;
 
+  const latestHomeRequest = await prisma.supportRequest.findFirst({
+    where: { homeId, installerUserId: me.id, kind: 'HOME_ACCESS' },
+    orderBy: { createdAt: 'desc' },
+    select: { authChallengeId: true },
+  });
+
+  let homeAccessApproved = false;
+  if (latestHomeRequest?.authChallengeId) {
+    const challenge = await prisma.authChallenge.findUnique({
+      where: { id: latestHomeRequest.authChallengeId },
+      select: { approvedAt: true, expiresAt: true },
+    });
+    if (challenge?.approvedAt && challenge.expiresAt > new Date()) {
+      homeAccessApproved = true;
+    }
+  }
+
   let creds: {
     haUsername: string;
     haPassword: string;
@@ -118,6 +129,13 @@ export async function GET(
     .filter((u) => !!u.alexaEventToken)
     .map((u) => ({ email: u.email ?? null, username: u.username }));
 
+  const users = home.users.map((u) => ({
+    id: u.id,
+    username: u.username,
+    email: u.email ?? null,
+    role: u.role,
+  }));
+
   const hubStatus = home.hubInstall
     ? {
         serial: home.hubInstall.serial,
@@ -135,10 +153,12 @@ export async function GET(
     ok: true,
     homeId: home.id,
     installedAt,
-    credentials: creds,
+    homeAccessApproved,
+    credentials: homeAccessApproved ? creds : undefined,
     hubStatus,
     homeowners,
     tenants,
     alexaEnabled,
+    users,
   });
 }

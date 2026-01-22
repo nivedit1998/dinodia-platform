@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { getDeviceLabel, getOrCreateDeviceId } from '@/lib/clientDevice';
 
 type HomeSummary = {
   homeId: number;
@@ -12,7 +11,8 @@ type HomeSummary = {
 type HomeDetail = {
   homeId: number;
   installedAt: string;
-  credentials: {
+  homeAccessApproved: boolean;
+  credentials?: {
     haUsername: string;
     haPassword: string;
     baseUrl: string;
@@ -32,30 +32,25 @@ type HomeDetail = {
   homeowners: { email: string | null; username: string }[];
   tenants: { email: string | null; username: string; areas: string[] }[];
   alexaEnabled: { email: string | null; username: string }[];
+  users: { id: number; username: string; email: string | null; role: string }[];
 };
 
-type DevicesByUser = {
-  userId: number;
-  username: string;
-  email: string | null;
-  role: string;
-  devices: UIDevice[];
+type RequestStatus = 'PENDING' | 'APPROVED' | 'EXPIRED' | 'CONSUMED' | 'NOT_FOUND';
+
+type RequestTracking = {
+  status: RequestStatus | 'IDLE';
+  requestId?: string;
+  expiresAt?: string | null;
 };
 
-type UIDevice = {
-  entityId: string;
-  deviceId: string;
-  name: string;
-  state: string;
-  area: string | null;
-  areaName: string | null;
-  labels?: (string | null)[];
-  label?: string | null;
-  labelCategory?: string | null;
-  domain?: string | null;
-};
-
-type DevicesResponse = { ok: true; devicesByUser: DevicesByUser[] };
+function formatDate(value: string | null | undefined) {
+  if (!value) return '—';
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return value;
+  }
+}
 
 export default function HomeSupportClient({ installerName }: { installerName: string }) {
   const [homes, setHomes] = useState<HomeSummary[]>([]);
@@ -67,12 +62,8 @@ export default function HomeSupportClient({ installerName }: { installerName: st
   const [detailLoading, setDetailLoading] = useState<Record<number, boolean>>({});
   const [detailError, setDetailError] = useState<Record<number, string | null>>({});
 
-  const [devices, setDevices] = useState<Record<number, DevicesResponse>>({});
-  const [devicesLoading, setDevicesLoading] = useState<Record<number, boolean>>({});
-  const [devicesError, setDevicesError] = useState<Record<number, string | null>>({});
-
-  const deviceId = useMemo(() => getOrCreateDeviceId(), []);
-  const deviceLabel = useMemo(() => getDeviceLabel(), []);
+  const [homeRequests, setHomeRequests] = useState<Record<number, RequestTracking>>({});
+  const [userRequests, setUserRequests] = useState<Record<string, RequestTracking>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -80,16 +71,9 @@ export default function HomeSupportClient({ installerName }: { installerName: st
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch('/api/installer/home-support/homes', {
-          headers: {
-            'x-device-id': deviceId ?? '',
-            'x-device-label': deviceLabel ?? '',
-          },
-        });
+        const res = await fetch('/api/installer/home-support/homes');
         const data = await res.json();
-        if (!res.ok || !data?.ok) {
-          throw new Error(data?.error || 'Failed to load homes.');
-        }
+        if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load homes.');
         if (!cancelled) setHomes(data.homes ?? []);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load homes.');
@@ -101,55 +85,23 @@ export default function HomeSupportClient({ installerName }: { installerName: st
     return () => {
       cancelled = true;
     };
-  }, [deviceId, deviceLabel]);
+  }, []);
 
   async function loadDetail(homeId: number) {
     setDetailError((prev) => ({ ...prev, [homeId]: null }));
     setDetailLoading((prev) => ({ ...prev, [homeId]: true }));
     try {
-      const res = await fetch(`/api/installer/home-support/homes/${homeId}`, {
-        headers: {
-          'x-device-id': deviceId ?? '',
-          'x-device-label': deviceLabel ?? '',
-        },
-      });
+      const res = await fetch(`/api/installer/home-support/homes/${homeId}`);
       const data = await res.json();
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || 'Failed to load home details.');
-      }
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load details.');
       setDetails((prev) => ({ ...prev, [homeId]: data }));
     } catch (err) {
       setDetailError((prev) => ({
         ...prev,
-        [homeId]: err instanceof Error ? err.message : 'Failed to load home details.',
+        [homeId]: err instanceof Error ? err.message : 'Failed to load details.',
       }));
     } finally {
       setDetailLoading((prev) => ({ ...prev, [homeId]: false }));
-    }
-  }
-
-  async function loadDevices(homeId: number) {
-    setDevicesError((prev) => ({ ...prev, [homeId]: null }));
-    setDevicesLoading((prev) => ({ ...prev, [homeId]: true }));
-    try {
-      const res = await fetch(`/api/installer/home-support/homes/${homeId}/devices`, {
-        headers: {
-          'x-device-id': deviceId ?? '',
-          'x-device-label': deviceLabel ?? '',
-        },
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || 'Failed to load devices.');
-      }
-      setDevices((prev) => ({ ...prev, [homeId]: data }));
-    } catch (err) {
-      setDevicesError((prev) => ({
-        ...prev,
-        [homeId]: err instanceof Error ? err.message : 'Failed to load devices.',
-      }));
-    } finally {
-      setDevicesLoading((prev) => ({ ...prev, [homeId]: false }));
     }
   }
 
@@ -161,16 +113,110 @@ export default function HomeSupportClient({ installerName }: { installerName: st
     }
   }
 
-  function formatDate(value: string | null | undefined) {
-    if (!value) return '—';
+  async function requestHomeAccess(homeId: number) {
+    setHomeRequests((prev) => ({ ...prev, [homeId]: { status: 'PENDING' } }));
     try {
-      return new Date(value).toLocaleString();
+      const res = await fetch('/api/installer/support/home-access/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ homeId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Request failed');
+      setHomeRequests((prev) => ({
+        ...prev,
+        [homeId]: { status: 'PENDING', requestId: data.requestId, expiresAt: data.expiresAt },
+      }));
+      if (data.requestId) {
+        void pollStatus(data.requestId, (status) => {
+          setHomeRequests((prev) => ({
+            ...prev,
+            [homeId]: { ...(prev[homeId] || {}), status },
+          }));
+          if (status === 'APPROVED') {
+            void loadDetail(homeId);
+          }
+        });
+      }
     } catch {
-      return value;
+      setHomeRequests((prev) => ({
+        ...prev,
+        [homeId]: { status: 'NOT_FOUND' },
+      }));
     }
   }
 
-  function CredentialRow({ label, value }: { label: string; value: string | null }) {
+  async function requestUserAccess(homeId: number, userId: number) {
+    const key = `${homeId}:${userId}`;
+    setUserRequests((prev) => ({ ...prev, [key]: { status: 'PENDING' } }));
+    try {
+      const res = await fetch('/api/installer/support/user-access/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ homeId, userId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Request failed');
+      setUserRequests((prev) => ({
+        ...prev,
+        [key]: { status: 'PENDING', requestId: data.requestId, expiresAt: data.expiresAt },
+      }));
+      if (data.requestId) {
+        void pollStatus(data.requestId, (status) => {
+          setUserRequests((prev) => ({
+            ...prev,
+            [key]: { ...(prev[key] || {}), status },
+          }));
+        });
+      }
+    } catch {
+      setUserRequests((prev) => ({
+        ...prev,
+        [key]: { status: 'NOT_FOUND' },
+      }));
+    }
+  }
+
+  async function pollStatus(requestId: string, onUpdate: (status: RequestStatus) => void) {
+    let done = false;
+    async function loop() {
+      if (done) return;
+      try {
+        const res = await fetch(`/api/installer/support/requests/${requestId}/status`);
+        const data = await res.json();
+        const status: RequestStatus = data?.status || 'NOT_FOUND';
+        onUpdate(status);
+        if (status === 'PENDING') {
+          setTimeout(loop, 4000);
+        } else {
+          done = true;
+        }
+      } catch {
+        done = true;
+      }
+    }
+    void loop();
+  }
+
+  async function impersonate(requestId: string) {
+    const res = await fetch(`/api/installer/support/requests/${requestId}/impersonate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.ok || !data.redirectTo) {
+      alert(data?.error || 'Impersonation failed');
+      return;
+    }
+    window.location.href = data.redirectTo;
+  }
+
+  const homesSorted = useMemo(
+    () => [...homes].sort((a, b) => b.homeId - a.homeId),
+    [homes]
+  );
+
+  function CredentialRow({ label, value }: { label: string; value: string | null | undefined }) {
     return (
       <div className="flex flex-col">
         <span className="text-xs font-medium text-slate-600">{label}</span>
@@ -207,7 +253,7 @@ export default function HomeSupportClient({ installerName }: { installerName: st
           <div className="flex items-center justify-between gap-3">
             <div>
               <h1 className="text-2xl font-semibold text-slate-900">Home Support</h1>
-              <p className="text-sm text-slate-600">View installed homes and troubleshoot access.</p>
+              <p className="text-sm text-slate-600">Request approval to view credentials and impersonate users.</p>
             </div>
           </div>
 
@@ -215,14 +261,12 @@ export default function HomeSupportClient({ installerName }: { installerName: st
           {error && <p className="mt-4 text-sm text-rose-600">{error}</p>}
 
           <div className="mt-6 space-y-4">
-            {homes.map((home) => {
+            {homesSorted.map((home) => {
               const isOpen = expandedHomeId === home.homeId;
               const detail = details[home.homeId];
               const dLoading = detailLoading[home.homeId];
               const dError = detailError[home.homeId];
-              const devData = devices[home.homeId];
-              const devLoading = devicesLoading[home.homeId];
-              const devError = devicesError[home.homeId];
+              const homeReq = homeRequests[home.homeId] || { status: 'IDLE' };
               return (
                 <div
                   key={home.homeId}
@@ -231,9 +275,7 @@ export default function HomeSupportClient({ installerName }: { installerName: st
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">Home #{home.homeId}</p>
-                      <p className="text-xs text-slate-600">
-                        Installed {formatDate(home.installedAt)}
-                      </p>
+                      <p className="text-xs text-slate-600">Installed {formatDate(home.installedAt)}</p>
                     </div>
                     <button
                       onClick={() => toggleHome(home.homeId)}
@@ -251,26 +293,46 @@ export default function HomeSupportClient({ installerName }: { installerName: st
                       {detail && (
                         <div className="space-y-4">
                           <section className="rounded-md bg-white p-3 shadow-inner ring-1 ring-slate-200">
-                            <p className="text-sm font-semibold text-slate-900">
-                              Home Credentials (Sensitive)
-                            </p>
-                            <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
-                              <CredentialRow label="HA Username" value={detail.credentials.haUsername} />
-                              <CredentialRow label="HA Password" value={detail.credentials.haPassword} />
-                              <CredentialRow label="Base URL" value={detail.credentials.baseUrl} />
-                              <CredentialRow label="Cloud URL" value={detail.credentials.cloudUrl} />
-                              <CredentialRow label="Long-lived token" value={detail.credentials.longLivedToken} />
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-slate-900">Home Support</p>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-600">
+                                  Status: {detail.homeAccessApproved || homeReq.status === 'APPROVED'
+                                    ? 'Approved'
+                                    : homeReq.status === 'PENDING'
+                                    ? 'Pending'
+                                    : 'Not requested'}
+                                </span>
+                                {!detail.homeAccessApproved && homeReq.status !== 'APPROVED' && (
+                                  <button
+                                    onClick={() => requestHomeAccess(home.homeId)}
+                                    className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                  >
+                                    Request home access approval
+                                  </button>
+                                )}
+                              </div>
                             </div>
+                            {(detail.homeAccessApproved || homeReq.status === 'APPROVED') ? (
+                              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <CredentialRow label="HA Username" value={detail.credentials?.haUsername} />
+                                <CredentialRow label="HA Password" value={detail.credentials?.haPassword} />
+                                <CredentialRow label="Base URL" value={detail.credentials?.baseUrl} />
+                                <CredentialRow label="Cloud URL" value={detail.credentials?.cloudUrl} />
+                                <CredentialRow label="Long-lived token" value={detail.credentials?.longLivedToken} />
+                              </div>
+                            ) : (
+                              <p className="mt-2 text-xs text-slate-600">
+                                Request homeowner approval to view credentials.
+                              </p>
+                            )}
                           </section>
 
                           <section className="rounded-md bg-white p-3 shadow-inner ring-1 ring-slate-200">
                             <p className="text-sm font-semibold text-slate-900">Hub Local connection Status</p>
                             <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
                               <CredentialRow label="Serial" value={detail.hubStatus?.serial ?? null} />
-                              <CredentialRow
-                                label="Last seen"
-                                value={formatDate(detail.hubStatus?.lastSeenAt)}
-                              />
+                              <CredentialRow label="Last seen" value={formatDate(detail.hubStatus?.lastSeenAt)} />
                               <CredentialRow
                                 label="Token version (published/acked)"
                                 value={
@@ -287,9 +349,7 @@ export default function HomeSupportClient({ installerName }: { installerName: st
                             <ul className="mt-2 space-y-1 text-sm text-slate-800">
                               {detail.homeowners.length === 0 && <li>None</li>}
                               {detail.homeowners.map((u) => (
-                                <li key={u.username}>
-                                  {u.email ?? 'No email'} ({u.username})
-                                </li>
+                                <li key={u.username}>{u.email ?? 'No email'} ({u.username})</li>
                               ))}
                             </ul>
                           </section>
@@ -320,53 +380,46 @@ export default function HomeSupportClient({ installerName }: { installerName: st
                           </section>
 
                           <section className="rounded-md bg-white p-3 shadow-inner ring-1 ring-slate-200">
-                            <div className="flex items-center justify-between">
-                              <p className="text-sm font-semibold text-slate-900">Devices (per user)</p>
-                              <button
-                                onClick={() => loadDevices(home.homeId)}
-                                className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                                disabled={devLoading}
-                              >
-                                {devLoading ? 'Loading…' : devData ? 'Refresh devices' : 'Load devices'}
-                              </button>
-                            </div>
-                            {devError && <p className="mt-2 text-sm text-rose-600">{devError}</p>}
-                            {devData && (
-                              <div className="mt-3 space-y-3">
-                                {devData.devicesByUser.map((u) => (
-                                  <div key={u.userId} className="rounded border border-slate-200 p-2">
-                                    <p className="text-sm font-semibold text-slate-800">
-                                      {u.email ?? u.username} — {u.role}
-                                    </p>
-                                    {u.devices.length === 0 ? (
-                                      <p className="text-xs text-slate-600">No devices in scope.</p>
-                                    ) : (
-                                      <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                                        {u.devices.map((d) => (
-                                          <li key={`${u.userId}-${d.entityId}`} className="flex flex-wrap gap-1">
-                                            <span className="font-mono">{d.entityId}</span>
-                                            <span className="text-slate-500">•</span>
-                                            <span>{d.name}</span>
-                                            {d.areaName && (
-                                              <>
-                                                <span className="text-slate-500">•</span>
-                                                <span>Area: {d.areaName}</span>
-                                              </>
-                                            )}
-                                            {d.labelCategory && (
-                                              <>
-                                                <span className="text-slate-500">•</span>
-                                                <span>Label: {d.labelCategory}</span>
-                                              </>
-                                            )}
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    )}
+                            <p className="text-sm font-semibold text-slate-900">User Support</p>
+                            <div className="mt-2 space-y-3">
+                              {detail.users.map((user) => {
+                                const key = `${home.homeId}:${user.id}`;
+                                const uReq = userRequests[key] || { status: 'IDLE' as RequestStatus | 'IDLE' };
+                                const approved = uReq.status === 'APPROVED';
+                                return (
+                                  <div key={user.id} className="rounded border border-slate-200 p-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div>
+                                        <p className="text-sm font-semibold text-slate-800">
+                                          {user.email ?? user.username} — {user.role}
+                                        </p>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs text-slate-600">
+                                          Status: {approved ? 'Approved' : uReq.status === 'PENDING' ? 'Pending' : 'Not requested'}
+                                        </span>
+                                        {!approved && (
+                                          <button
+                                            onClick={() => requestUserAccess(home.homeId, user.id)}
+                                            className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                          >
+                                            Request user remote access approval
+                                          </button>
+                                        )}
+                                        {approved && uReq.requestId && (
+                                          <button
+                                            onClick={() => impersonate(uReq.requestId!)}
+                                            className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                                          >
+                                            Impersonate
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
-                                ))}
-                              </div>
-                            )}
+                                );
+                              })}
+                            </div>
                           </section>
                         </div>
                       )}
@@ -376,7 +429,7 @@ export default function HomeSupportClient({ installerName }: { installerName: st
               );
             })}
 
-            {!loading && homes.length === 0 && (
+            {!loading && homesSorted.length === 0 && (
               <p className="text-sm text-slate-600">No homes found for this installer.</p>
             )}
           </div>

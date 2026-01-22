@@ -13,6 +13,17 @@ export type AuthUser = {
   role: Role;
 };
 
+export type ImpersonationMeta = {
+  installerUserId: number;
+  supportRequestId: string;
+  expiresAt: string;
+};
+
+export type AuthClaims = AuthUser & {
+  impersonation?: ImpersonationMeta;
+  exp?: number;
+};
+
 type KioskTokenClaims = AuthUser & {
   kind: 'KIOSK';
   deviceId: string;
@@ -64,6 +75,11 @@ export function createToken(user: AuthUser) {
   return jwt.sign(user, JWT_SECRET, { expiresIn: '7d' });
 }
 
+export function createTokenWithExpiry(user: AuthUser, expiresInSeconds: number, impersonation?: ImpersonationMeta) {
+  const payload: AuthClaims = impersonation ? { ...user, impersonation } : user;
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: expiresInSeconds });
+}
+
 export function createKioskToken(user: AuthUser, deviceId: string, sessionVersion: number) {
   const claims: KioskTokenClaims = {
     ...user,
@@ -83,6 +99,17 @@ export async function setAuthCookie(token: string) {
     secure: process.env.NODE_ENV === 'production',
     path: '/',
     maxAge: 7 * 24 * 60 * 60,
+  });
+}
+
+export async function setAuthCookieWithTtl(token: string, maxAgeSeconds: number) {
+  const cookieStore = await cookies();
+  cookieStore.set(JWT_COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: maxAgeSeconds,
   });
 }
 
@@ -166,6 +193,22 @@ export async function getKioskAuthFromRequest(
       deviceId: payload.deviceId,
       sessionVersion: Number(payload.sessionVersion ?? 0),
     };
+  } catch {
+    return null;
+  }
+}
+
+export async function getJwtClaimsFromRequest(req: NextRequest): Promise<AuthClaims | null> {
+  const authHeader = req.headers.get('authorization');
+  let token: string | null = null;
+  if (authHeader?.toLowerCase().startsWith('bearer ')) {
+    token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  } else {
+    token = (await cookies()).get(JWT_COOKIE_NAME)?.value ?? null;
+  }
+  if (!token) return null;
+  try {
+    return jwt.verify(token, JWT_SECRET) as AuthClaims;
   } catch {
     return null;
   }

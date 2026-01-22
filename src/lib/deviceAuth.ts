@@ -2,7 +2,7 @@ import 'server-only';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
-import { getKioskAuthFromRequest } from './auth';
+import { getJwtClaimsFromRequest, getKioskAuthFromRequest } from './auth';
 import { prisma } from './prisma';
 import { DeviceBlockedError, ensureActiveDevice } from './deviceRegistry';
 
@@ -75,6 +75,12 @@ export async function requireKioskDeviceSession(req: NextRequest): Promise<{
 }
 
 export async function requireTrustedAdminDevice(req: NextRequest, userId: number): Promise<void> {
+  const claims = await getJwtClaimsFromRequest(req);
+  if (claims?.impersonation?.installerUserId) {
+    // Support impersonation session: skip trusted-device checks.
+    return;
+  }
+
   const { deviceId } = readDeviceHeaders(req);
   const kioskAuth = await getKioskAuthFromRequest(req);
   if (kioskAuth) {

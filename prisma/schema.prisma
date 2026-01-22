@@ -49,6 +49,8 @@ enum AuthChallengePurpose {
   LOGIN_NEW_DEVICE
   REMOTE_ACCESS_SETUP
   PASSWORD_RESET
+  SUPPORT_HOME_ACCESS
+  SUPPORT_USER_REMOTE_SUPPORT
 }
 
 enum DeviceStatus {
@@ -59,6 +61,11 @@ enum DeviceStatus {
 
 enum StepUpPurpose {
   REMOTE_ACCESS_SETUP
+}
+
+enum SupportRequestKind {
+  HOME_ACCESS
+  USER_REMOTE_ACCESS
 }
 
 model Home {
@@ -407,4 +414,18 @@ model AutomationOwnership {
   @@index([userId])
   @@index([automationId])
   @@unique([automationId, homeId])
+}
+
+model SupportRequest {
+  id              String             @id @default(uuid())
+  kind            SupportRequestKind
+  homeId          Int
+  targetUserId    Int?
+  installerUserId Int
+  authChallengeId String             @unique
+  createdAt       DateTime           @default(now())
+
+  @@index([homeId])
+  @@index([targetUserId])
+  @@index([installerUserId])
 }

@@ -2,7 +2,9 @@ type VerifyEmailKind =
   | 'ADMIN_EMAIL_VERIFY'
   | 'TENANT_ENABLE_2FA'
   | 'LOGIN_NEW_DEVICE'
-  | 'REMOTE_ACCESS_SETUP';
+  | 'REMOTE_ACCESS_SETUP'
+  | 'SUPPORT_HOME_ACCESS'
+  | 'SUPPORT_USER_REMOTE_SUPPORT';
 
 export type BuildVerifyLinkEmailParams = {
   kind: VerifyEmailKind;
@@ -25,6 +27,10 @@ export function buildVerifyLinkEmail(params: BuildVerifyLinkEmailParams) {
         return 'Approve new device login on Dinodia';
       case 'REMOTE_ACCESS_SETUP':
         return 'Approve remote access setup on Dinodia';
+      case 'SUPPORT_HOME_ACCESS':
+        return 'Approve installer home support access';
+      case 'SUPPORT_USER_REMOTE_SUPPORT':
+        return 'Approve installer remote support access';
       default:
         return 'Verify your Dinodia access';
     }
@@ -40,6 +46,10 @@ export function buildVerifyLinkEmail(params: BuildVerifyLinkEmailParams) {
         return `Approve this sign-in${deviceLabel ? ` from "${deviceLabel}"` : ''} before continuing.`;
       case 'REMOTE_ACCESS_SETUP':
         return `Approve remote access setup${deviceLabel ? ` on "${deviceLabel}"` : ''} to continue.`;
+      case 'SUPPORT_HOME_ACCESS':
+        return 'Allow your installer to view sensitive home credentials for support.';
+      case 'SUPPORT_USER_REMOTE_SUPPORT':
+        return 'Allow your installer to access your Dinodia dashboard for support.';
       default:
         return 'Complete email verification to continue.';
     }
@@ -72,6 +82,56 @@ export function buildVerifyLinkEmail(params: BuildVerifyLinkEmailParams) {
     '',
     'This link expires soon.',
     `Return to ${appUrl} to sign in again if needed.`,
+  ].join('\n');
+
+  return { subject, html, text };
+}
+
+export type BuildSupportApprovalEmailParams = {
+  kind: 'SUPPORT_HOME_ACCESS' | 'SUPPORT_USER_REMOTE_SUPPORT';
+  verifyUrl: string;
+  appUrl: string;
+  installerUsername: string;
+  homeId: number;
+  targetUsername?: string;
+};
+
+export function buildSupportApprovalEmail(params: BuildSupportApprovalEmailParams) {
+  const { kind, verifyUrl, appUrl, installerUsername, homeId, targetUsername } = params;
+  const isHome = kind === 'SUPPORT_HOME_ACCESS';
+  const subject = isHome
+    ? 'Approve installer home support access'
+    : 'Approve installer remote support access';
+  const greeting = targetUsername ? `Hi ${targetUsername},` : 'Hi,';
+  const purposeCopy = isHome
+    ? `Allow installer "${installerUsername}" to view home credentials for Home #${homeId} to troubleshoot.`
+    : `Allow installer "${installerUsername}" to temporarily access your Dinodia dashboard for Home #${homeId}.`;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 520px; color: #0f172a;">
+      <h2 style="color: #0f172a; margin-bottom: 12px;">Dinodia Smart Living</h2>
+      <p style="margin: 0 0 12px 0;">${greeting}</p>
+      <p style="margin: 0 0 12px 0;">${purposeCopy}</p>
+      <p style="margin: 0 0 16px 0;">Click to approve this request:</p>
+      <p style="margin: 0 0 16px 0;">
+        <a href="${verifyUrl}" style="background:#111827;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Approve access</a>
+      </p>
+      <p style="margin: 0 0 12px 0;">Or open this link: <a href="${verifyUrl}">${verifyUrl}</a></p>
+      <p style="margin: 0 0 12px 0; color: #475569;">This approval link expires soon.</p>
+      <p style="margin: 0 0 12px 0; color: #475569;">You can return to <a href="${appUrl}">${appUrl}</a> anytime.</p>
+    </div>
+  `;
+
+  const text = [
+    'Dinodia Smart Living',
+    greeting,
+    '',
+    purposeCopy,
+    'Approve access:',
+    verifyUrl,
+    '',
+    'This approval link expires soon.',
+    `Return to ${appUrl} anytime.`,
   ].join('\n');
 
   return { subject, html, text };
