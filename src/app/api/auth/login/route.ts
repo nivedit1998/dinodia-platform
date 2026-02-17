@@ -4,6 +4,7 @@ import {
   authenticateWithCredentials,
   clearAuthCookie,
   createSessionForUser,
+  hashPassword,
 } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import {
@@ -27,7 +28,15 @@ export async function POST(req: NextRequest) {
     // Ensure installer account exists/updated if env-managed
     await ensureInstallerAccount();
 
-    const { username, password, deviceId, deviceLabel, email } = await req.json();
+    const {
+      username,
+      password,
+      deviceId,
+      deviceLabel,
+      email,
+      newPassword,
+      confirmNewPassword,
+    } = await req.json();
 
     const ip = getClientIp(req);
     const rateKey = `login:${ip}:${(username || '').toLowerCase()}`;
@@ -60,6 +69,7 @@ export async function POST(req: NextRequest) {
         id: true,
         username: true,
         role: true,
+        mustChangePassword: true,
         email: true,
         emailPending: true,
         emailVerifiedAt: true,
@@ -220,6 +230,39 @@ export async function POST(req: NextRequest) {
     // Tenant
     const hasVerifiedEmail = Boolean(user.email && user.emailVerifiedAt);
     const requiresInitialEmailSetup = !hasVerifiedEmail || user.email2faEnabled === false;
+
+    if (user.mustChangePassword) {
+      if (typeof newPassword !== 'string' || typeof confirmNewPassword !== 'string') {
+        return NextResponse.json({
+          ok: true,
+          role: user.role,
+          requiresPasswordChange: true,
+          passwordPolicy: { minLength: 8 },
+        });
+      }
+      if (newPassword !== confirmNewPassword) {
+        return NextResponse.json({ error: 'New passwords do not match.' }, { status: 400 });
+      }
+      if (newPassword.length < 8) {
+        return NextResponse.json(
+          { error: 'Password must be at least 8 characters.' },
+          { status: 400 }
+        );
+      }
+      if (newPassword === password) {
+        return NextResponse.json(
+          { error: 'New password must be different from the current password.' },
+          { status: 400 }
+        );
+      }
+
+      const now = new Date();
+      const passwordHash = await hashPassword(newPassword);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash, mustChangePassword: false, passwordChangedAt: now },
+      });
+    }
 
     if (requiresInitialEmailSetup) {
       if (!deviceId) {

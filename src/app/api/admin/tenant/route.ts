@@ -74,6 +74,8 @@ export async function POST(req: NextRequest) {
     data: {
       username,
       passwordHash,
+      mustChangePassword:
+        (process.env.TENANT_FIRST_LOGIN_PASSWORD_CHANGE_ENABLED ?? '').toLowerCase() === 'true',
       role: Role.TENANT,
       homeId: user.homeId,
       haConnectionId: haConnection.id,

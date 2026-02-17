@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
-import { authenticateWithCredentials, createKioskToken } from '@/lib/auth';
+import { authenticateWithCredentials, createKioskToken, hashPassword } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import {
   createAuthChallenge,
@@ -22,7 +22,15 @@ const APPLE_REVIEW_DEMO_USERNAME = (process.env.APPLE_REVIEW_DEMO_USERNAME || ''
 
 export async function POST(req: NextRequest) {
   try {
-    const { username, password, deviceId, deviceLabel, email } = await req.json();
+    const {
+      username,
+      password,
+      deviceId,
+      deviceLabel,
+      email,
+      newPassword,
+      confirmNewPassword,
+    } = await req.json();
 
     const ip = getClientIp(req);
     const rateKey = `mobile-login:${ip}:${(username || '').toLowerCase()}`;
@@ -55,6 +63,7 @@ export async function POST(req: NextRequest) {
         id: true,
         username: true,
         role: true,
+        mustChangePassword: true,
         email: true,
         emailPending: true,
         emailVerifiedAt: true,
@@ -91,6 +100,40 @@ export async function POST(req: NextRequest) {
         { error: 'Device information is required to continue.' },
         { status: 400 }
       );
+    }
+
+    // Enforce first-login password change for tenants before any bypass/token issuance.
+    if (user.role === Role.TENANT && user.mustChangePassword) {
+      if (typeof newPassword !== 'string' || typeof confirmNewPassword !== 'string') {
+        return NextResponse.json({
+          ok: true,
+          role: user.role,
+          requiresPasswordChange: true,
+          passwordPolicy: { minLength: 8 },
+        });
+      }
+      if (newPassword !== confirmNewPassword) {
+        return NextResponse.json({ error: 'New passwords do not match.' }, { status: 400 });
+      }
+      if (newPassword.length < 8) {
+        return NextResponse.json(
+          { error: 'Password must be at least 8 characters.' },
+          { status: 400 }
+        );
+      }
+      if (newPassword === password) {
+        return NextResponse.json(
+          { error: 'New password must be different from the current password.' },
+          { status: 400 }
+        );
+      }
+
+      const now = new Date();
+      const passwordHash = await hashPassword(newPassword);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash, mustChangePassword: false, passwordChangedAt: now },
+      });
     }
 
     // Apple review bypass: trust device + skip email/device verification for the configured demo user.

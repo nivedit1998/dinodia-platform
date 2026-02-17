@@ -118,6 +118,8 @@ model User {
   id                Int           @id @default(autoincrement())
   username          String        @unique
   passwordHash      String
+  mustChangePassword Boolean      @default(false)
+  passwordChangedAt DateTime?
   email             String?
   emailPending      String?
   emailVerifiedAt   DateTime?
