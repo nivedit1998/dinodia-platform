@@ -29,6 +29,7 @@ export default function LoginPage() {
 
   const awaitingVerification = !!challengeId;
   const TENANT_SETUP_KEY = 'tenant_setup_state';
+  const TENANT_FIRST_LOGIN_KEY = 'tenant_first_login_state';
 
   const persistTenantSetupState = useCallback(
     (state: {
@@ -46,6 +47,17 @@ export default function LoginPage() {
             challengeId: state.challengeId ?? null,
           })
         );
+      } catch {
+        // best effort
+      }
+    },
+    []
+  );
+
+  const persistTenantFirstLoginState = useCallback(
+    (state: { username: string; password: string; deviceId: string; deviceLabel: string }) => {
+      try {
+        sessionStorage.setItem(TENANT_FIRST_LOGIN_KEY, JSON.stringify(state));
       } catch {
         // best effort
       }
@@ -175,6 +187,21 @@ export default function LoginPage() {
         data.error ||
           'We couldn’t log you in. Check your details and try again.'
       );
+      return;
+    }
+
+    if (data.requiresPasswordChange && data.role === 'TENANT') {
+      if (!deviceId || !deviceLabel) {
+        setError('Device information is missing. Please try again.');
+        return;
+      }
+      persistTenantFirstLoginState({
+        username,
+        password,
+        deviceId,
+        deviceLabel,
+      });
+      router.push('/tenant/first-login');
       return;
     }
 

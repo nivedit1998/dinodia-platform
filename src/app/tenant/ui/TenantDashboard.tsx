@@ -3,11 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { UIDevice } from '@/types/device';
-import {
-  getGroupLabel,
-  sortLabels,
-  OTHER_LABEL,
-} from '@/lib/deviceLabels';
+import { getGroupLabel, sortLabels, OTHER_LABEL } from '@/lib/deviceLabels';
 import { isSensorEntity } from '@/lib/deviceSensors';
 import { getDeviceGroupingId } from '@/lib/deviceIdentity';
 import { DeviceTile } from '@/components/device/DeviceTile';
@@ -16,11 +12,9 @@ import { subscribeToRefresh } from '@/lib/refreshBus';
 import { logout as performLogout } from '@/lib/logout';
 import Image from 'next/image';
 import { getTileEligibleDevicesForTenantDashboard } from '@/lib/deviceCapabilities';
-import {
-  buildBatteryPercentByDeviceGroup,
-  getBatteryPercentForDevice,
-} from '@/lib/deviceBattery';
+import { buildBatteryPercentByDeviceGroup, getBatteryPercentForDevice } from '@/lib/deviceBattery';
 import { useDevicesVersionPolling } from '@/lib/useDevicesVersionPolling';
+import TenantAccessRosterDialog from './TenantAccessRosterDialog';
 
 type Props = {
   username: string;
@@ -29,6 +23,39 @@ type Props = {
 const ALL_AREAS = 'All areas';
 const REFRESH_THROTTLE_MS = 3000;
 const ALEXA_SKILL_URL = 'https://www.amazon.co.uk/gp/product/B0GGCC4BDS?nodl=0';
+
+type SupportMeta = {
+  kind: 'HOME_ACCESS' | 'USER_REMOTE_ACCESS';
+  requestId: string;
+  approvedAt: string;
+  validUntil: string;
+  viaUser?: { id: number; username: string; role: 'ADMIN' | 'TENANT' } | null;
+};
+
+type AccessUser = {
+  id: number;
+  username: string;
+  role: 'ADMIN' | 'TENANT' | 'INSTALLER';
+  roleLabel: 'Homeowner' | 'Tenant' | 'Support Agent';
+  email: string | null;
+  emailMasked: boolean;
+  areas: string[];
+  support?: SupportMeta | null;
+};
+
+type AccessRoster = {
+  ok: true;
+  tenantAreas: string[];
+  counts: { uniqueUsers: number; uniqueOtherUsers: number };
+  users: AccessUser[];
+};
+
+type AreaShareSummary = Record<
+  string,
+  { otherTenants: number; supportAgents: number; homeowners: number }
+>;
+
+type UsersByArea = Record<string, AccessUser[]>;
 
 function devicesAreDifferent(a: UIDevice[], b: UIDevice[]) {
   if (a.length !== b.length) return true;
@@ -59,7 +86,7 @@ function formatClock(date: Date) {
 }
 
 export default function TenantDashboard(props: Props) {
-  void props;
+  const { username } = props;
   const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
   const [clock, setClock] = useState(() => formatClock(new Date()));
   const [devices, setDevices] = useState<UIDevice[]>([]);
@@ -84,6 +111,11 @@ export default function TenantDashboard(props: Props) {
   const [areaMenuOpen, setAreaMenuOpen] = useState(false);
   const areaMenuRef = useRef<HTMLDivElement | null>(null);
   const [showAlexaLink, setShowAlexaLink] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [roster, setRoster] = useState<AccessRoster | null>(null);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [rosterError, setRosterError] = useState<string | null>(null);
+  const [groupBy, setGroupBy] = useState<'area' | 'user'>('area');
 
   const resolveDeviceErrorMessage = useCallback(async (dataError?: string) => {
     return (
@@ -226,6 +258,30 @@ export default function TenantDashboard(props: Props) {
     return () => cancelAnimationFrame(frame);
   }, [loadDevices]);
 
+  const loadRoster = useCallback(async () => {
+    setRosterError(null);
+    setRosterLoading(true);
+    try {
+      const res = await fetch('/api/tenant/access-roster', {
+        cache: 'no-store',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Unable to load access roster.');
+      }
+      setRoster(data as AccessRoster);
+    } catch (err) {
+      setRosterError(
+        err instanceof Error
+          ? err.message
+          : 'We could not load who has access. Please try again.'
+      );
+    } finally {
+      setRosterLoading(false);
+    }
+  }, []);
+
   const handleVersionChange = useCallback(() => {
     void loadDevices({ silent: true, force: true });
   }, [loadDevices]);
@@ -233,6 +289,10 @@ export default function TenantDashboard(props: Props) {
   useDevicesVersionPolling({
     onVersionChange: handleVersionChange,
   });
+
+  useEffect(() => {
+    void loadRoster();
+  }, [loadRoster]);
 
   useEffect(() => {
     let active = true;
@@ -312,6 +372,39 @@ export default function TenantDashboard(props: Props) {
     () => getTileEligibleDevicesForTenantDashboard(devices),
     [devices]
   );
+
+  const usersByArea: UsersByArea = useMemo(() => {
+    if (!roster) return {};
+    const map: UsersByArea = {};
+    for (const user of roster.users) {
+      for (const area of user.areas) {
+        if (!map[area]) map[area] = [];
+        map[area].push(user);
+      }
+    }
+    return map;
+  }, [roster]);
+
+  const areaShareSummary: AreaShareSummary = useMemo(() => {
+    const summary: AreaShareSummary = {};
+    if (!roster) return summary;
+    for (const area of roster.tenantAreas) {
+      summary[area] = { otherTenants: 0, supportAgents: 0, homeowners: 0 };
+    }
+    for (const user of roster.users) {
+      for (const area of user.areas) {
+        if (!summary[area]) summary[area] = { otherTenants: 0, supportAgents: 0, homeowners: 0 };
+        if (user.role === 'TENANT' && user.username !== username) {
+          summary[area].otherTenants += 1;
+        } else if (user.role === 'INSTALLER') {
+          summary[area].supportAgents += 1;
+        } else if (user.role === 'ADMIN') {
+          summary[area].homeowners += 1;
+        }
+      }
+    }
+    return summary;
+  }, [username, roster]);
 
   const batteryByGroup = useMemo(
     () => buildBatteryPercentByDeviceGroup(devices),
@@ -404,25 +497,49 @@ export default function TenantDashboard(props: Props) {
                   <div className="absolute left-0 z-10 mt-2 w-56 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
                     <button
                       type="button"
-                      className="flex w-full items-center rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                      className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left hover:bg-slate-50"
                       onClick={() => {
                         setSelectedArea(ALL_AREAS);
                         setAreaMenuOpen(false);
                       }}
                     >
-                      All my rooms
+                      <span>All my rooms</span>
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                        {areaOptions.length}
+                      </span>
                     </button>
                     {areaOptions.map((area) => (
                       <button
                         key={area}
                         type="button"
-                        className="flex w-full items-center rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                        className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
                         onClick={() => {
                           setSelectedArea(area);
                           setAreaMenuOpen(false);
                         }}
                       >
-                        {area}
+                        <span className="truncate">{area}</span>
+                        <span className="flex items-center gap-1 text-[11px] font-medium">
+                          {areaShareSummary[area]?.otherTenants ? (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700">
+                              Shared
+                              {areaShareSummary[area].otherTenants > 1 && (
+                                <span className="ml-1">
+                                  +{areaShareSummary[area].otherTenants - 1}
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">
+                              Private
+                            </span>
+                          )}
+                          {areaShareSummary[area]?.supportAgents ? (
+                            <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-indigo-700">
+                              Support
+                            </span>
+                          ) : null}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -487,6 +604,24 @@ export default function TenantDashboard(props: Props) {
                     aria-label="Refreshing devices"
                   />
                 )}
+              </div>
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-label="Access roster"
+                  onClick={() => setAccessOpen(true)}
+                  className="flex h-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-white"
+                >
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[13px] font-bold text-white">
+                    👥
+                  </span>
+                  <span className="hidden sm:inline">Access</span>
+                  {roster && roster.counts.uniqueOtherUsers > 0 && !rosterError && (
+                    <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1 text-[11px] font-bold text-white shadow">
+                      {roster.counts.uniqueOtherUsers}
+                    </span>
+                  )}
+                </button>
               </div>
               <div className="relative" ref={menuRef}>
                 <button
@@ -617,6 +752,18 @@ export default function TenantDashboard(props: Props) {
           historyEndpoint="/api/tenant/monitoring/history"
         />
       )}
+      <TenantAccessRosterDialog
+        open={accessOpen}
+        onClose={() => setAccessOpen(false)}
+        roster={roster}
+        loading={rosterLoading}
+        error={rosterError}
+        onRetry={() => void loadRoster()}
+        groupBy={groupBy}
+        setGroupBy={setGroupBy}
+        usersByArea={usersByArea}
+        areaShareSummary={areaShareSummary}
+      />
     </div>
   );
 }
