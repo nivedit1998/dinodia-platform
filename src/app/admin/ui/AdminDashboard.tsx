@@ -14,6 +14,8 @@ type SummaryCostPoint = { bucketStart: string; label: string; estimatedCost: num
 type SummaryEntity = { entityId: string; totalKwhDelta: number; estimatedCost?: number; area?: string | null };
 type SummaryArea = { area: string; totalKwhDelta: number; estimatedCost?: number; topEntities: SummaryEntity[] };
 type BatteryRow = { entityId: string; latestBatteryPercent: number; capturedAt: string };
+type BatteryPoint = { bucketStart: string; label: string; avgPercent: number; count: number };
+type EntityOption = { entityId: string; name: string; area: string; lastCapturedAt: string };
 
 type SummaryResponse = {
   ok: boolean;
@@ -24,6 +26,7 @@ type SummaryResponse = {
   coverage: { entitiesWithReadings: number; entitiesMonitored: number };
   seriesTotalKwh: SummaryPoint[];
   seriesTotalCost: SummaryCostPoint[];
+  seriesBatteryAvgPercent: BatteryPoint[];
   topEntities: SummaryEntity[];
   byArea: SummaryArea[];
   batteryLow: BatteryRow[];
@@ -53,12 +56,8 @@ const dateOnly = (date: Date) => {
 const numberFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
 const costFmt = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 2 });
 
-function MiniBarChart({ points, color = '#0ea5e9' }: { points: SummaryPoint[]; color?: string }) {
-  const max = useMemo(
-    () => Math.max(...points.map((p) => p.totalKwhDelta), 0),
-    [points]
-  );
-
+function MiniBarChart({ points, color = '#0ea5e9' }: { points: { label: string; value: number }[]; color?: string }) {
+  const max = useMemo(() => Math.max(...points.map((p) => p.value), 0), [points]);
   if (!points.length || max <= 0) {
     return (
       <div className="rounded-xl border border-slate-200/70 bg-white/70 px-4 py-8 text-center text-sm text-slate-500">
@@ -66,21 +65,101 @@ function MiniBarChart({ points, color = '#0ea5e9' }: { points: SummaryPoint[]; c
       </div>
     );
   }
-
   return (
     <div className="flex items-end gap-1 rounded-xl border border-slate-200/70 bg-white/70 px-4 py-6">
       {points.map((p) => {
-        const heightPct = Math.max(8, (p.totalKwhDelta / max) * 100);
+        const heightPct = Math.max(8, (p.value / max) * 100);
         return (
-          <div key={p.bucketStart} className="flex-1">
+          <div key={p.label} className="flex-1">
             <div
               className="rounded-md"
               style={{ height: `${heightPct}%`, background: color }}
-              title={`${p.label}: ${p.totalKwhDelta.toFixed(2)} kWh`}
+              title={`${p.label}: ${p.value.toFixed(2)}`}
             />
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function MiniLineChart({ points, color = '#0ea5e9' }: { points: { label: string; value: number }[]; color?: string }) {
+  const max = Math.max(...points.map((p) => p.value), 0);
+  if (!points.length || max <= 0) {
+    return (
+      <div className="rounded-xl border border-slate-200/70 bg-white/70 px-4 py-8 text-center text-sm text-slate-500">
+        No readings in this range.
+      </div>
+    );
+  }
+  return (
+    <div className="relative h-48 rounded-xl border border-slate-200/70 bg-white/70 px-4 py-4">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
+        {points.map((p, idx) => {
+          if (idx === 0) return null;
+          const prev = points[idx - 1];
+          const x1 = ((idx - 1) / Math.max(points.length - 1, 1)) * 100;
+          const x2 = (idx / Math.max(points.length - 1, 1)) * 100;
+          const y1 = 100 - (prev.value / max) * 100;
+          const y2 = 100 - (p.value / max) * 100;
+          return <line key={`${prev.label}-${p.label}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={1.5} />;
+        })}
+        {points.map((p, idx) => {
+          const x = (idx / Math.max(points.length - 1, 1)) * 100;
+          const y = 100 - (p.value / max) * 100;
+          return <circle key={p.label} cx={x} cy={y} r={2} fill={color} />;
+        })}
+      </svg>
+      <div className="absolute bottom-2 right-3 text-xs text-slate-500">Max {max.toFixed(1)}</div>
+    </div>
+  );
+}
+
+function MultiSelect({
+  label,
+  options,
+  selected,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  placeholder?: string;
+}) {
+  const toggle = (value: string) => {
+    if (selected.includes(value)) {
+      onChange(selected.filter((v) => v !== value));
+    } else {
+      onChange([...selected, value]);
+    }
+  };
+  return (
+    <div className="min-w-[220px] rounded-xl border border-slate-200 bg-white/80 p-3 shadow-sm">
+      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">{label}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {selected.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => toggle(s)}
+            className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
+          >
+            <span>{s}</span>
+            <span>×</span>
+          </button>
+        ))}
+        {selected.length === 0 && <span className="text-xs text-slate-500">{placeholder || 'All'}</span>}
+      </div>
+      <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-slate-100 bg-white">
+        {options.map((opt) => (
+          <label key={opt} className="flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+            <input type="checkbox" className="h-4 w-4" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
+            <span className="truncate">{opt}</span>
+          </label>
+        ))}
+      </div>
     </div>
   );
 }
@@ -96,8 +175,14 @@ export default function AdminDashboard({ username }: Props) {
   const [to, setTo] = useState('');
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [areas, setAreas] = useState<string[]>([]);
+  const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
+  const [energyEntities, setEnergyEntities] = useState<EntityOption[]>([]);
+  const [batteryEntities, setBatteryEntities] = useState<EntityOption[]>([]);
+  const [selectedEnergyEntities, setSelectedEnergyEntities] = useState<string[]>([]);
+  const [selectedBatteryEntities, setSelectedBatteryEntities] = useState<string[]>([]);
+  const [selectorsError, setSelectorsError] = useState<string | null>(null);
 
-  // Initialise custom range defaults when selected
   useEffect(() => {
     if (preset !== 'custom') return;
     if (from && to) return;
@@ -134,6 +219,9 @@ export default function AdminDashboard({ username }: Props) {
     } else {
       params.set('days', preset);
     }
+    selectedAreas.forEach((a) => params.append('areas', a));
+    selectedEnergyEntities.forEach((e) => params.append('energyEntityIds', e));
+    selectedBatteryEntities.forEach((e) => params.append('batteryEntityIds', e));
     return params.toString();
   };
 
@@ -152,9 +240,7 @@ export default function AdminDashboard({ username }: Props) {
       const data = (await res.json().catch(() => null)) as (SummaryResponse & { error?: string }) | null;
       if (!res.ok || !data?.ok) {
         const message =
-          data && typeof data.error === 'string' && data.error.length > 0
-            ? data.error
-            : 'Unable to load analytics right now.';
+          data && typeof data.error === 'string' && data.error.length > 0 ? data.error : 'Unable to load analytics right now.';
         throw new Error(message);
       }
       setSummary(data);
@@ -168,10 +254,48 @@ export default function AdminDashboard({ username }: Props) {
     }
   };
 
+  const loadSelectors = async () => {
+    try {
+      setSelectorsError(null);
+      const [areasRes, entitiesRes] = await Promise.all([
+        platformFetch('/api/admin/areas', { cache: 'no-store', credentials: 'include' }),
+        platformFetch('/api/admin/monitoring/entities', { cache: 'no-store', credentials: 'include' }),
+      ]);
+      const areasData = await areasRes.json().catch(() => ({}));
+      const entitiesData = await entitiesRes.json().catch(() => ({}));
+      if (!areasRes.ok) throw new Error(areasData.error || 'Unable to load areas.');
+      if (!entitiesRes.ok) throw new Error(entitiesData.error || 'Unable to load entities.');
+      const areaList = Array.isArray(areasData.areas)
+        ? Array.from(
+            new Set(
+              areasData.areas
+                .filter((a: unknown): a is string => typeof a === 'string')
+                .map((a: string) => a.trim())
+                .filter((a: string) => a.length > 0)
+            )
+          )
+        : [];
+      setAreas(
+        [...areaList, 'Unassigned']
+          .filter((a): a is string => typeof a === 'string' && a.length > 0)
+          .sort((a, b) => a.localeCompare(b))
+      );
+      setEnergyEntities(Array.isArray(entitiesData.energyEntities) ? entitiesData.energyEntities : []);
+      setBatteryEntities(Array.isArray(entitiesData.batteryEntities) ? entitiesData.batteryEntities : []);
+    } catch (err) {
+      console.error('Failed to load selectors', err);
+      setSelectorsError((err as Error).message || 'Unable to load filters.');
+    }
+  };
+
   useEffect(() => {
     void loadSummary();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bucket, preset, from, to]);
+  }, [bucket, preset, from, to, selectedAreas, selectedEnergyEntities, selectedBatteryEntities]);
+
+  useEffect(() => {
+    void loadSelectors();
+  }, []);
 
   const lastSnapshotDisplay = summary ? formatDateTime(summary.lastSnapshotAt) : 'Not available';
   const lastFetchedDisplay = lastFetchedAt ? formatDateTime(lastFetchedAt) : 'Never';
@@ -243,9 +367,7 @@ export default function AdminDashboard({ username }: Props) {
                   type="button"
                   onClick={() => setPreset(p)}
                   className={`rounded-full border px-3 py-1 text-sm font-semibold ${
-                    preset === p
-                      ? 'border-sky-500 bg-sky-50 text-sky-700'
-                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    preset === p ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                   }`}
                 >
                   {p}d
@@ -255,9 +377,7 @@ export default function AdminDashboard({ username }: Props) {
                 type="button"
                 onClick={() => setPreset('custom')}
                 className={`rounded-full border px-3 py-1 text-sm font-semibold ${
-                  preset === 'custom'
-                    ? 'border-sky-500 bg-sky-50 text-sky-700'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  preset === 'custom' ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
                 Custom
@@ -304,9 +424,7 @@ export default function AdminDashboard({ username }: Props) {
                 disabled={loading}
                 className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
               >
-                {loading && (
-                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/60 border-t-white" />
-                )}
+                {loading && <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/60 border-t-white" />}
                 Refresh
               </button>
               <p className="text-xs text-slate-500">Last refresh: {lastFetchedDisplay}</p>
@@ -317,21 +435,40 @@ export default function AdminDashboard({ username }: Props) {
               {error}
             </div>
           )}
+          {selectorsError && (
+            <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {selectorsError}
+            </div>
+          )}
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-3">
+          <MultiSelect label="Areas" options={areas} selected={selectedAreas} onChange={setSelectedAreas} placeholder="All areas" />
+          <MultiSelect
+            label="Energy entities"
+            options={energyEntities.map((e) => e.entityId)}
+            selected={selectedEnergyEntities}
+            onChange={setSelectedEnergyEntities}
+            placeholder="All energy entities"
+          />
+          <MultiSelect
+            label="Battery entities"
+            options={batteryEntities.map((e) => e.entityId)}
+            selected={selectedBatteryEntities}
+            onChange={setSelectedBatteryEntities}
+            placeholder="All battery entities"
+          />
         </section>
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Total energy</p>
             <p className="text-2xl font-semibold text-slate-900">{numberFmt.format(totalKwh)} kWh</p>
-            <p className="text-xs text-slate-500">
-              {summary ? `${formatDateTime(summary.range.from)} → ${formatDateTime(summary.range.to)}` : ''}
-            </p>
+            <p className="text-xs text-slate-500">{summary ? `${formatDateTime(summary.range.from)} → ${formatDateTime(summary.range.to)}` : ''}</p>
           </div>
           <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Estimated cost</p>
-            <p className="text-2xl font-semibold text-slate-900">
-              {totalCost != null ? costFmt.format(totalCost) : 'Price not set'}
-            </p>
+            <p className="text-2xl font-semibold text-slate-900">{totalCost != null ? costFmt.format(totalCost) : 'Price not set'}</p>
             <p className="text-xs text-slate-500">
               {summary?.pricePerKwh != null ? `Price £${summary.pricePerKwh}/kWh` : 'Set ELECTRICITY_PRICE_PER_KWH'}
             </p>
@@ -343,13 +480,9 @@ export default function AdminDashboard({ username }: Props) {
           </div>
           <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Coverage</p>
-            <p className="text-2xl font-semibold text-slate-900">
-              {coveragePct != null ? `${coveragePct}%` : '—'}
-            </p>
+            <p className="text-2xl font-semibold text-slate-900">{coveragePct != null ? `${coveragePct}%` : '—'}</p>
             <p className="text-xs text-slate-500">
-              {summary
-                ? `${summary.coverage.entitiesWithReadings} / ${summary.coverage.entitiesMonitored || '—'} entities`
-                : 'No data'}
+              {summary ? `${summary.coverage.entitiesWithReadings} / ${summary.coverage.entitiesMonitored || '—'} entities` : 'No data'}
             </p>
           </div>
         </section>
@@ -357,16 +490,35 @@ export default function AdminDashboard({ username }: Props) {
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-900">Energy trend</h2>
-            <span className="text-xs text-slate-500">
-              Bucket: {bucket}, points: {summary?.seriesTotalKwh.length ?? 0}
-            </span>
+            <span className="text-xs text-slate-500">Bucket: {bucket}, points: {summary?.seriesTotalKwh.length ?? 0}</span>
           </div>
-          <MiniBarChart points={summary?.seriesTotalKwh ?? []} />
+          {bucket === 'daily' ? (
+            <MiniBarChart points={(summary?.seriesTotalKwh ?? []).map((p) => ({ label: p.label, value: p.totalKwhDelta }))} />
+          ) : (
+            <MiniLineChart points={(summary?.seriesTotalKwh ?? []).map((p) => ({ label: p.label, value: p.totalKwhDelta }))} />
+          )}
           {summary?.seriesTotalCost?.length ? (
-            <div className="mt-2 text-sm text-slate-600">
-              Cost trend uses price per kWh from config; totals mirror energy buckets.
-            </div>
+            <div className="mt-2 text-sm text-slate-600">Cost trend uses price per kWh from config; totals mirror energy buckets.</div>
           ) : null}
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-900">Battery trend</h2>
+            <span className="text-xs text-slate-500">Bucket: {bucket}, points: {summary?.seriesBatteryAvgPercent.length ?? 0}</span>
+          </div>
+          {bucket === 'daily' ? (
+            <MiniBarChart
+              points={(summary?.seriesBatteryAvgPercent ?? []).map((p) => ({ label: p.label, value: p.avgPercent }))}
+              color="#a855f7"
+            />
+          ) : (
+            <MiniLineChart
+              points={(summary?.seriesBatteryAvgPercent ?? []).map((p) => ({ label: p.label, value: p.avgPercent }))}
+              color="#a855f7"
+            />
+          )}
+          <p className="text-xs text-slate-500">Average of latest battery % per entity per bucket.</p>
         </section>
 
         <section className="grid gap-6 lg:grid-cols-2">
@@ -391,9 +543,7 @@ export default function AdminDashboard({ username }: Props) {
                       <td className="px-3 py-2 font-mono text-xs">{row.entityId}</td>
                       <td className="px-3 py-2">{row.area ?? 'Unassigned'}</td>
                       <td className="px-3 py-2 text-right">{row.totalKwhDelta.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-right">
-                        {row.estimatedCost != null ? costFmt.format(row.estimatedCost) : '—'}
-                      </td>
+                      <td className="px-3 py-2 text-right">{row.estimatedCost != null ? costFmt.format(row.estimatedCost) : '—'}</td>
                     </tr>
                   ))}
                   {(summary?.topEntities?.length ?? 0) === 0 && (
@@ -428,9 +578,7 @@ export default function AdminDashboard({ username }: Props) {
                     <tr key={row.area} className="odd:bg-white even:bg-slate-50/60">
                       <td className="px-3 py-2">{row.area}</td>
                       <td className="px-3 py-2 text-right">{row.totalKwhDelta.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-right">
-                        {row.estimatedCost != null ? costFmt.format(row.estimatedCost) : '—'}
-                      </td>
+                      <td className="px-3 py-2 text-right">{row.estimatedCost != null ? costFmt.format(row.estimatedCost) : '—'}</td>
                       <td className="px-3 py-2 text-xs text-slate-600">
                         {row.topEntities.length === 0
                           ? '—'
@@ -444,7 +592,7 @@ export default function AdminDashboard({ username }: Props) {
                   {(summary?.byArea?.length ?? 0) === 0 && (
                     <tr>
                       <td colSpan={4} className="px-3 py-4 text-center text-slate-500">
-                        No area data yet (add overrides or areas to reduce “Unassigned”).
+                        No area data yet (assign areas to reduce Unassigned).
                       </td>
                     </tr>
                   )}
@@ -473,9 +621,7 @@ export default function AdminDashboard({ username }: Props) {
                   <tr key={row.entityId} className="odd:bg-white even:bg-slate-50/60">
                     <td className="px-3 py-2 font-mono text-xs">{row.entityId}</td>
                     <td className="px-3 py-2 text-red-600 font-semibold">{row.latestBatteryPercent}%</td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {new Date(row.capturedAt).toLocaleString('en-GB', { timeZone: 'UTC' })}
-                    </td>
+                    <td className="px-3 py-2 text-slate-600">{new Date(row.capturedAt).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
                   </tr>
                 ))}
                 {(summary?.batteryLow?.length ?? 0) === 0 && (
@@ -488,9 +634,7 @@ export default function AdminDashboard({ username }: Props) {
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-slate-500">
-            Battery entities are detected by unit % and an entity id containing “battery”. Threshold fixed at 25%.
-          </p>
+          <p className="text-xs text-slate-500">Battery entities are detected by unit % and an entity id containing “battery”. Threshold fixed at 25%.</p>
         </section>
       </div>
     </div>

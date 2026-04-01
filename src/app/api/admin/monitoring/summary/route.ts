@@ -9,6 +9,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_DAYS = 90;
 const BATTERY_LOW_THRESHOLD = 25;
 const UNASSIGNED = 'Unassigned';
+const MAX_FILTER_ENTITIES = 2000;
 
 type BucketInfo = { key: string; bucketStart: Date; label: string };
 
@@ -116,6 +117,15 @@ function addBucketTotal(map: Map<string, BucketTotal>, info: BucketInfo, delta: 
   }
 }
 
+function parseMulti(searchParams: URLSearchParams, key: string): string[] {
+  const direct = searchParams.getAll(key);
+  const bracketed = searchParams.getAll(`${key}[]`);
+  const combined = [...direct, ...bracketed]
+    .map((v) => (v ?? '').trim())
+    .filter((v) => v.length > 0);
+  return Array.from(new Set(combined)).slice(0, MAX_FILTER_ENTITIES);
+}
+
 export async function GET(req: NextRequest) {
   const me = await getCurrentUserFromRequest(req);
   if (!me || me.role !== Role.ADMIN) {
@@ -143,6 +153,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: range.error }, { status: 400 });
   }
   const { from, to } = range;
+  const areasFilter = new Set(parseMulti(searchParams, 'areas'));
+  const energyEntityFilter = new Set(parseMulti(searchParams, 'energyEntityIds'));
+  const batteryEntityFilter = new Set(parseMulti(searchParams, 'batteryEntityIds'));
 
   const lastSnapshot = await prisma.monitoringReading.findFirst({
     where: { haConnectionId },
@@ -161,11 +174,17 @@ export async function GET(req: NextRequest) {
     select: { entityId: true, area: true },
   });
   const areaByEntity = new Map(deviceAreas.map((d) => [d.entityId, (d.area ?? '').trim() || null]));
+  const areaAllowed = (entityId: string) => {
+    const area = areaByEntity.get(entityId) || UNASSIGNED;
+    if (areasFilter.size === 0) return true;
+    return areasFilter.has(area);
+  };
 
   const energyRows = await prisma.monitoringReading.findMany({
     where: {
       haConnectionId,
       unit: 'kWh',
+      ...(energyEntityFilter.size > 0 ? { entityId: { in: Array.from(energyEntityFilter) } } : {}),
       capturedAt: { gte: from, lte: to },
     },
     orderBy: [{ entityId: 'asc' }, { capturedAt: 'asc' }],
@@ -199,6 +218,7 @@ export async function GET(req: NextRequest) {
 
   const flushEntity = (entityId: string, readings: EnergyRow[]) => {
     if (readings.length === 0) return;
+    if (!areaAllowed(entityId)) return;
     const baseline = baselineByEntity.get(entityId);
     const baselineValue = baseline && isFiniteNumber(baseline.numericValue) ? baseline.numericValue : null;
     let prev = baselineValue;
@@ -259,11 +279,55 @@ export async function GET(req: NextRequest) {
       haConnectionId,
       unit: '%',
       entityId: { contains: 'battery', mode: 'insensitive' },
+      ...(batteryEntityFilter.size > 0 ? { entityId: { in: Array.from(batteryEntityFilter) } } : {}),
       capturedAt: { gte: from, lte: to },
     },
     orderBy: [{ entityId: 'asc' }, { capturedAt: 'desc' }],
     select: { entityId: true, numericValue: true, capturedAt: true },
   });
+
+  const batteryLatestByDay: Record<
+    string,
+    { entityId: string; bucketStart: Date; label: string; value: number; capturedAt: Date }
+  > = {};
+  for (const row of batteryRows) {
+    if (!areaAllowed(row.entityId)) continue;
+    const numeric = isFiniteNumber(row.numericValue) ? row.numericValue : null;
+    if (numeric === null) continue;
+    const info = getBucketInfoUtc('daily', row.capturedAt);
+    const key = `${row.entityId}:${info.key}`;
+    const existing = batteryLatestByDay[key];
+    if (!existing || row.capturedAt.getTime() > existing.capturedAt.getTime()) {
+      batteryLatestByDay[key] = {
+        entityId: row.entityId,
+        bucketStart: info.bucketStart,
+        label: info.label,
+        value: numeric,
+        capturedAt: row.capturedAt,
+      };
+    }
+  }
+
+  const batteryBuckets: Record<string, { sum: number; count: number; bucketStart: Date; label: string }> = {};
+  for (const entry of Object.values(batteryLatestByDay)) {
+    const info = getBucketInfoUtc(bucket, entry.bucketStart);
+    const existing = batteryBuckets[info.key];
+    if (!existing) {
+      batteryBuckets[info.key] = { sum: entry.value, count: 1, bucketStart: info.bucketStart, label: info.label };
+    } else {
+      existing.sum += entry.value;
+      existing.count += 1;
+    }
+  }
+
+  const seriesBatteryAvgPercent = Object.values(batteryBuckets)
+    .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
+    .map((b) => ({
+      bucketStart: b.bucketStart.toISOString(),
+      label: b.label,
+      avgPercent: b.sum / b.count,
+      count: b.count,
+    }));
 
   const batteryLow: Array<{ entityId: string; latestBatteryPercent: number; capturedAt: string }> = [];
   const seenBattery = new Set<string>();
@@ -364,6 +428,7 @@ export async function GET(req: NextRequest) {
     seriesTotalCost,
     topEntities,
     byArea: cappedAreas,
+    seriesBatteryAvgPercent,
     batteryLow,
   });
 }
