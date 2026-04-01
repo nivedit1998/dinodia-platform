@@ -16,6 +16,13 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  if (me.role === Role.ADMIN) {
+    return NextResponse.json(
+      { error: 'Admin dashboards are observe-only.' },
+      { status: 403 }
+    );
+  }
+
   const fresh = req.nextUrl.searchParams.get('fresh');
   const bypassCache = fresh === '1';
 

@@ -15,6 +15,20 @@ type TenantStringField = 'username' | 'password';
 type SellingMode = 'FULL_RESET' | 'OWNER_TRANSFER';
 type TenantInfo = { id: number; username: string; areas: string[] };
 type TenantActionState = { saving: boolean; error: string | null };
+type DeviceOverride = {
+  entityId: string;
+  name: string;
+  area?: string | null;
+  label?: string | null;
+  blindTravelSeconds?: number | null;
+};
+type ObservedEntity = {
+  entityId: string;
+  unit?: string | null;
+  lastCapturedAt?: string;
+  hasOverride?: boolean;
+};
+type OverrideForm = { entityId: string; name: string; area: string; label: string; blindTravelSeconds: string };
 
 const EMPTY_TENANT_FORM: TenantForm = { username: '', password: '', areas: [] };
 const EMPTY_PASSWORD_FORM = {
@@ -55,7 +69,6 @@ export default function AdminSettings({ username }: Props) {
     status: 'checking' | 'enabled' | 'disabled' | 'error';
     message: string | null;
   }>({ status: 'enabled', message: null });
-  const [alexaDevicesAvailable, setAlexaDevicesAvailable] = useState(false);
   const [passwordSectionOpen, setPasswordSectionOpen] = useState(false);
   const [sellingModalOpen, setSellingModalOpen] = useState(false);
   const [sellingMode, setSellingMode] = useState<SellingMode | null>(null);
@@ -63,6 +76,20 @@ export default function AdminSettings({ username }: Props) {
   const [sellingError, setSellingError] = useState<string | null>(null);
   const [sellingClaimCode, setSellingClaimCode] = useState<string | null>(null);
   const [claimCopyStatus, setClaimCopyStatus] = useState<string | null>(null);
+
+  const [overrideSearch, setOverrideSearch] = useState('');
+  const [overrides, setOverrides] = useState<DeviceOverride[]>([]);
+  const [observedEntities, setObservedEntities] = useState<ObservedEntity[]>([]);
+  const [overridesLoading, setOverridesLoading] = useState(false);
+  const [overrideAlert, setOverrideAlert] = useState<StatusMessage>(null);
+  const [overrideForm, setOverrideForm] = useState<OverrideForm>({
+    entityId: '',
+    name: '',
+    area: '',
+    label: '',
+    blindTravelSeconds: '',
+  });
+  const [editingOverrideId, setEditingOverrideId] = useState<string | null>(null);
 
   function updateTenantField(key: TenantStringField, value: string) {
     setTenantForm((prev) => ({ ...prev, [key]: value }));
@@ -72,23 +99,20 @@ export default function AdminSettings({ username }: Props) {
     setPasswordForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  const loadAvailableAreas = useCallback(async (fresh = false) => {
+  const loadAvailableAreas = useCallback(async () => {
     try {
-      const res = await platformFetch(fresh ? '/api/devices?fresh=1' : '/api/devices');
+      const res = await platformFetch('/api/admin/areas', { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to load devices');
+        throw new Error(data.error || 'Failed to load areas');
       }
-      const areaSet = new Set<string>();
-      const list: Array<{ area?: string | null; areaName?: string | null }> =
-        Array.isArray(data.devices) ? data.devices : [];
-      for (const device of list) {
-        const areaName = (device.area ?? device.areaName ?? '').trim();
-        if (areaName) {
-          areaSet.add(areaName);
-        }
-      }
-      setAvailableAreas(Array.from(areaSet).sort((a, b) => a.localeCompare(b)));
+      const list: string[] = Array.isArray(data.areas)
+        ? data.areas
+            .filter((a: unknown): a is string => typeof a === 'string')
+            .map((a: string) => a.trim())
+            .filter(Boolean)
+        : [];
+      setAvailableAreas(Array.from(new Set(list)).sort((a, b) => a.localeCompare(b)));
     } catch (err) {
       if (process.env.NODE_ENV !== 'production') {
         console.warn('Unable to load area suggestions', err);
@@ -97,13 +121,8 @@ export default function AdminSettings({ username }: Props) {
   }, []);
 
   useEffect(() => {
-    void loadAvailableAreas(false);
+    void loadAvailableAreas();
   }, [loadAvailableAreas]);
-
-  useEffect(() => {
-    if (remoteStatus.status !== 'enabled') return;
-    void loadAvailableAreas(true);
-  }, [remoteStatus.status, loadAvailableAreas]);
 
   function addArea(areaValue?: string) {
     const valueToUse = areaValue ?? newAreaInput;
@@ -125,12 +144,116 @@ export default function AdminSettings({ username }: Props) {
 
   const refreshRemoteStatus = useCallback(async () => {
     setRemoteStatus({ status: 'enabled', message: null });
-    setAlexaDevicesAvailable(true);
   }, []);
 
   useEffect(() => {
     void refreshRemoteStatus();
   }, [refreshRemoteStatus]);
+
+  const loadOverrides = useCallback(async () => {
+    setOverridesLoading(true);
+    setOverrideAlert(null);
+    try {
+      const params = new URLSearchParams();
+      if (overrideSearch.trim()) params.set('q', overrideSearch.trim());
+      params.set('days', '90');
+      const res = await platformFetch(
+        `/api/admin/device-overrides${params.toString() ? `?${params.toString()}` : ''}`,
+        { cache: 'no-store' }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to load device overrides.');
+      }
+      setOverrides(Array.isArray(data.devices) ? data.devices : []);
+      setObservedEntities(Array.isArray(data.observedEntities) ? data.observedEntities : []);
+    } catch (err) {
+      setOverrideAlert({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to load device overrides.',
+      });
+    } finally {
+      setOverridesLoading(false);
+    }
+  }, [overrideSearch]);
+
+  useEffect(() => {
+    void loadOverrides();
+  }, [loadOverrides]);
+
+  function startNewOverride(entityId = '') {
+    setEditingOverrideId(null);
+    setOverrideForm({
+      entityId,
+      name: entityId,
+      area: '',
+      label: '',
+      blindTravelSeconds: '',
+    });
+  }
+
+  function startEditOverride(override: DeviceOverride) {
+    setEditingOverrideId(override.entityId);
+    setOverrideForm({
+      entityId: override.entityId,
+      name: override.name || override.entityId,
+      area: override.area ?? '',
+      label: override.label ?? '',
+      blindTravelSeconds:
+        override.blindTravelSeconds != null ? String(override.blindTravelSeconds) : '',
+    });
+  }
+
+  async function saveOverride() {
+    setOverrideAlert(null);
+    const entityId = overrideForm.entityId.trim();
+    const name = (overrideForm.name || entityId).trim();
+    if (!entityId || !name) {
+      setOverrideAlert({ type: 'error', message: 'Entity ID and name are required.' });
+      return;
+    }
+
+    let blindTravelSeconds: number | null = null;
+    const blindRaw = overrideForm.blindTravelSeconds.trim();
+    if (blindRaw) {
+      const parsed = Number(blindRaw);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        setOverrideAlert({
+          type: 'error',
+          message: 'Blind travel time must be a positive number of seconds.',
+        });
+        return;
+      }
+      blindTravelSeconds = parsed;
+    }
+
+    try {
+      const res = await platformFetch('/api/admin/device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entityId,
+          name,
+          area: overrideForm.area.trim(),
+          label: overrideForm.label.trim(),
+          blindTravelSeconds,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to save device override.');
+      }
+      setOverrideAlert({ type: 'success', message: 'Device override saved.' });
+      startNewOverride('');
+      void loadOverrides();
+      void loadAvailableAreas();
+    } catch (err) {
+      setOverrideAlert({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to save device override.',
+      });
+    }
+  }
 
   async function handleTenantSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -512,13 +635,6 @@ export default function AdminSettings({ username }: Props) {
           </button>
               {menuOpen && (
                 <div className="absolute right-0 mt-2 w-48 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
-                  <a
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
-                    href="/devices/manage"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    Manage Devices
-                  </a>
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
@@ -619,11 +735,11 @@ export default function AdminSettings({ username }: Props) {
                 Remote access
               </h3>
               <p className="text-[11px] text-slate-500 mt-1">
-                Enabling remote access gives Alexa support to all your tenants and enables
-                cloud mode so you can control your devices from anywhere in the world.
+                Remote access is managed from the mobile app or Dinodia Kiosk. This admin portal is
+                observe-only; tenant control continues to use the existing mobile/Kiosk flows.
               </p>
               <p className="text-[11px] text-slate-500 mt-1">
-                Remote access can be enabled from your iOS/Android phone or the Dinodia Kiosk.
+                Use the apps or Kiosk to change remote connectivity; this page only checks status.
               </p>
               <div
                 className={`mt-3 rounded-lg border px-4 py-3 text-xs ${remoteStatusToneClass}`}
@@ -667,13 +783,6 @@ export default function AdminSettings({ username }: Props) {
                   </button>
                 )}
               </div>
-              {alexaDevicesAvailable && (
-                <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-xs text-indigo-900">
-                  <p className="text-sm font-semibold">
-                    Congratulations your tenants can now connect their Dinodia smart home devices to Alexa!
-                  </p>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -935,6 +1044,213 @@ export default function AdminSettings({ username }: Props) {
               )}
             </div>
           )}
+        </div>
+
+        <div className="border border-slate-200 rounded-xl p-4 lg:col-span-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-semibold">Device metadata (overrides)</h2>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Assign names/areas/labels for sensor entities without calling Home Assistant. Suggestions come
+                from observed monitoring data.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                className="w-full min-w-[220px] rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Search entity id or name"
+                value={overrideSearch}
+                onChange={(e) => setOverrideSearch(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => void loadOverrides()}
+                disabled={overridesLoading}
+                className="inline-flex items-center justify-center rounded-full border border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {overridesLoading ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
+          </div>
+          {overrideAlert && (
+            <p
+              className={`mt-3 rounded-lg px-3 py-2 text-xs ${
+                overrideAlert.type === 'success'
+                  ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border border-red-200 bg-red-50 text-red-700'
+              }`}
+            >
+              {overrideAlert.message}
+            </p>
+          )}
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-lg border border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+                <h3 className="text-sm font-semibold text-slate-900">Existing overrides</h3>
+                <span className="text-[11px] text-slate-500">{overrides.length} items</span>
+              </div>
+              <div className="max-h-80 overflow-auto">
+                <table className="w-full text-xs text-slate-700">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Entity</th>
+                      <th className="px-3 py-2 text-left">Name</th>
+                      <th className="px-3 py-2 text-left">Area</th>
+                      <th className="px-3 py-2 text-left">Label</th>
+                      <th className="px-3 py-2 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overrides.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-3 text-center text-slate-500">
+                          No overrides yet.
+                        </td>
+                      </tr>
+                    )}
+                    {overrides.map((ov) => (
+                      <tr key={ov.entityId} className="odd:bg-white even:bg-slate-50/70">
+                        <td className="px-3 py-2 font-mono">{ov.entityId}</td>
+                        <td className="px-3 py-2">{ov.name}</td>
+                        <td className="px-3 py-2">{ov.area || 'Unassigned'}</td>
+                        <td className="px-3 py-2">{ov.label || '—'}</td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            className="text-indigo-600 hover:text-indigo-800"
+                            onClick={() => startEditOverride(ov)}
+                          >
+                            Edit
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+                <h3 className="text-sm font-semibold text-slate-900">Observed (suggested)</h3>
+                <span className="text-[11px] text-slate-500">
+                  {observedEntities.filter((o) => !o.hasOverride).length} to assign
+                </span>
+              </div>
+              <div className="max-h-80 overflow-auto">
+                <ul className="divide-y divide-slate-100 text-xs">
+                  {observedEntities.filter((o) => !o.hasOverride).length === 0 && (
+                    <li className="px-3 py-3 text-slate-500">No unassigned observed entities.</li>
+                  )}
+                  {observedEntities
+                    .filter((o) => !o.hasOverride)
+                    .map((obs) => (
+                      <li key={obs.entityId} className="flex items-center justify-between px-3 py-2">
+                        <div>
+                          <p className="font-mono">{obs.entityId}</p>
+                          <p className="text-[11px] text-slate-500">
+                            {obs.unit || 'sensor'} • {obs.lastCapturedAt ? new Date(obs.lastCapturedAt).toLocaleString('en-GB') : 'recent'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                          onClick={() => startNewOverride(obs.entityId)}
+                        >
+                          Add override
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-lg border border-slate-200 p-4">
+            <h3 className="text-sm font-semibold text-slate-900">
+              {editingOverrideId ? 'Edit override' : 'Add override'}
+            </h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-[11px] text-slate-500">Entity ID</label>
+                <input
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={overrideForm.entityId}
+                  onChange={(e) =>
+                    setOverrideForm((prev) => ({ ...prev, entityId: e.target.value }))
+                  }
+                  disabled={!!editingOverrideId}
+                  placeholder="sensor.power_xxx"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-slate-500">Name</label>
+                <input
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={overrideForm.name}
+                  onChange={(e) =>
+                    setOverrideForm((prev) => ({ ...prev, name: e.target.value }))
+                  }
+                  placeholder="Friendly name"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-slate-500">Area</label>
+                <input
+                  list="available-areas"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={overrideForm.area}
+                  onChange={(e) =>
+                    setOverrideForm((prev) => ({ ...prev, area: e.target.value }))
+                  }
+                  placeholder="Living Room"
+                />
+                <datalist id="available-areas">
+                  {availableAreas.map((area) => (
+                    <option key={area} value={area} />
+                  ))}
+                </datalist>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-slate-500">Label</label>
+                <input
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={overrideForm.label}
+                  onChange={(e) =>
+                    setOverrideForm((prev) => ({ ...prev, label: e.target.value }))
+                  }
+                  placeholder="Blind / Sensor / Socket"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-slate-500">Blind travel (seconds)</label>
+                <input
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={overrideForm.blindTravelSeconds}
+                  onChange={(e) =>
+                    setOverrideForm((prev) => ({ ...prev, blindTravelSeconds: e.target.value }))
+                  }
+                  placeholder="Leave blank unless calibrating blinds"
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void saveOverride()}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-indigo-700"
+              >
+                Save override
+              </button>
+              <button
+                type="button"
+                onClick={() => startNewOverride('')}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Reset form
+              </button>
+            </div>
+          </div>
         </div>
 
         <div

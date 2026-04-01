@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { maskEmailForTenantRoster } from '@/lib/emailMask';
 import { computeSupportApproval } from '@/lib/supportRequests';
+import { getControllableAreasForUser } from '@/lib/controlAreas';
 
 type SupportMeta = {
   kind: 'HOME_ACCESS' | 'USER_REMOTE_ACCESS';
@@ -134,9 +135,7 @@ export async function GET(req: NextRequest) {
       tenantAreas.forEach((a) => baseAreas.add(a));
     } else if (req.kind === 'USER_REMOTE_ACCESS' && req.targetUserId) {
       const target = userById.get(req.targetUserId);
-      if (target && target.role === Role.ADMIN) {
-        tenantAreas.forEach((a) => baseAreas.add(a));
-      } else if (target && target.role === Role.TENANT) {
+      if (target && target.role === Role.TENANT) {
         intersect(target.areas, tenantAreaSet).forEach((a) => baseAreas.add(a));
       }
     }
@@ -174,9 +173,12 @@ export async function GET(req: NextRequest) {
   // Admins and tenants from home
   for (const u of homeUsers) {
     const isSelf = u.id === me.id;
-    const areas =
-      u.role === Role.ADMIN ? tenantAreas : intersect(sanitizeAreas(u.accessRules), tenantAreaSet);
-    if (!isSelf && areas.length === 0) continue;
+    const controllableAreas = getControllableAreasForUser({
+      role: u.role,
+      accessRules: sanitizeAreas(u.accessRules),
+      tenantAreaSet,
+    });
+    if (!isSelf && controllableAreas.length === 0) continue;
 
     const emailMasked = u.role === Role.TENANT && !isSelf;
     const email =
@@ -189,7 +191,7 @@ export async function GET(req: NextRequest) {
       roleLabel: ROLE_LABEL[u.role],
       email,
       emailMasked,
-      areas,
+      areas: controllableAreas,
       support: null,
     });
   }

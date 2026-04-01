@@ -120,12 +120,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (user.role === Role.ADMIN && !user.emailVerifiedAt) {
-      return NextResponse.json({ error: 'Admin email not verified.' }, { status: 401 });
+    if (user.role !== Role.TENANT) {
+      return NextResponse.json(
+        { error: 'Alexa is available to tenant accounts only.' },
+        { status: 403 }
+      );
     }
 
-    const verificationRequired = user.role === Role.ADMIN || user.email2faEnabled === true;
-    if (user.role === Role.TENANT && user.email2faEnabled) {
+    const verificationRequired = user.email2faEnabled === true;
+    if (user.email2faEnabled) {
       if (!user.email || !user.emailVerifiedAt) {
         return NextResponse.json(
           { error: 'Enable 2FA in the Dinodia app first.' },
@@ -169,9 +172,7 @@ export async function POST(req: NextRequest) {
 
     const targetEmail = user.email;
     if (!targetEmail) {
-      const fallbackError =
-        user.role === Role.ADMIN ? 'Admin email not verified.' : 'Enable 2FA in the Dinodia app first.';
-      return NextResponse.json({ error: fallbackError }, { status: 400 });
+      return NextResponse.json({ error: 'Enable 2FA in the Dinodia app first.' }, { status: 400 });
     }
 
     const challenge = await createAuthChallenge({

@@ -18,6 +18,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (authUser.role !== Role.TENANT) {
+    return NextResponse.json(
+      { error: 'Alexa is available to tenant accounts only.' },
+      { status: 403 }
+    );
+  }
+
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== 'object') {
     return NextResponse.json({ error: 'Invalid body' }, { status: 400 });

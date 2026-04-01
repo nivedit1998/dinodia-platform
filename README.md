@@ -1,5 +1,8 @@
 # Dinodia Smart Living
 
+## Status (as of 2026-03-17)
+- ✅ Complete: Primary platform README (local dev, environment, security, deployment, and product notes).
+
 Multi-tenant tablet UI for Home Assistant built with Next.js App Router, Prisma, and Tailwind. Dinodia admins wire up a Home Assistant instance once, then wall-mounted tablets provide premium control dashboards per tenant/area.
 
 ## Stack
