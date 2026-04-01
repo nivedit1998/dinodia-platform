@@ -56,61 +56,74 @@ const dateOnly = (date: Date) => {
 const numberFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
 const costFmt = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 2 });
 
-function MiniBarChart({ points, color = '#0ea5e9' }: { points: { label: string; value: number }[]; color?: string }) {
-  const max = useMemo(() => Math.max(...points.map((p) => p.value), 0), [points]);
-  if (!points.length || max <= 0) {
-    return (
-      <div className="rounded-xl border border-slate-200/70 bg-white/70 px-4 py-8 text-center text-sm text-slate-500">
-        No readings in this range.
-      </div>
-    );
-  }
+type ChartPoint = { label: string; value: number };
+
+function ChartEmpty() {
   return (
-    <div className="flex items-end gap-1 rounded-xl border border-slate-200/70 bg-white/70 px-4 py-6">
-      {points.map((p) => {
-        const heightPct = Math.max(8, (p.value / max) * 100);
-        return (
-          <div key={p.label} className="flex-1">
-            <div
-              className="rounded-md"
-              style={{ height: `${heightPct}%`, background: color }}
-              title={`${p.label}: ${p.value.toFixed(2)}`}
-            />
-          </div>
-        );
-      })}
+    <div className="rounded-2xl border border-slate-200/70 bg-white/70 px-4 py-10 text-center text-sm text-slate-500">
+      No readings in this range.
     </div>
   );
 }
 
-function MiniLineChart({ points, color = '#0ea5e9' }: { points: { label: string; value: number }[]; color?: string }) {
+function normalize(points: ChartPoint[]) {
   const max = Math.max(...points.map((p) => p.value), 0);
-  if (!points.length || max <= 0) {
-    return (
-      <div className="rounded-xl border border-slate-200/70 bg-white/70 px-4 py-8 text-center text-sm text-slate-500">
-        No readings in this range.
-      </div>
-    );
-  }
+  const safeMax = max > 0 ? max : 1;
+  return points.map((p, idx) => ({
+    x: points.length === 1 ? 50 : (idx / (points.length - 1)) * 100,
+    y: 100 - (p.value / safeMax) * 90 - 5, // leave 5% top/bottom padding
+    label: p.label,
+    value: p.value,
+  }));
+}
+
+function MiniLineChart({ points, color = '#0ea5e9' }: { points: ChartPoint[]; color?: string }) {
+  if (!points.length || Math.max(...points.map((p) => p.value), 0) <= 0) return <ChartEmpty />;
+  const norm = normalize(points);
+  const path = norm
+    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
+    .join(' ');
   return (
-    <div className="relative h-48 rounded-xl border border-slate-200/70 bg-white/70 px-4 py-4">
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
-        {points.map((p, idx) => {
-          if (idx === 0) return null;
-          const prev = points[idx - 1];
-          const x1 = ((idx - 1) / Math.max(points.length - 1, 1)) * 100;
-          const x2 = (idx / Math.max(points.length - 1, 1)) * 100;
-          const y1 = 100 - (prev.value / max) * 100;
-          const y2 = 100 - (p.value / max) * 100;
-          return <line key={`${prev.label}-${p.label}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={1.5} />;
-        })}
-        {points.map((p, idx) => {
-          const x = (idx / Math.max(points.length - 1, 1)) * 100;
-          const y = 100 - (p.value / max) * 100;
-          return <circle key={p.label} cx={x} cy={y} r={2} fill={color} />;
+    <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-52 w-full">
+        <defs>
+          <linearGradient id="lineFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.18" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="100" height="100" fill="url(#lineFill)" />
+        <path d={`${path}`} fill="none" stroke={color} strokeWidth={1.8} />
+        {norm.map((p) => (
+          <circle key={p.label} cx={p.x} cy={p.y} r={2.5} fill={color} />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function MiniBarChart({ points, color = '#0ea5e9' }: { points: ChartPoint[]; color?: string }) {
+  if (!points.length || Math.max(...points.map((p) => p.value), 0) <= 0) return <ChartEmpty />;
+  const norm = normalize(points);
+  const barWidth = points.length > 0 ? 90 / points.length : 10;
+  return (
+    <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-52 w-full">
+        {norm.map((p) => {
+          const height = 100 - p.y - 5;
+          return (
+            <rect
+              key={p.label}
+              x={p.x - barWidth / 2}
+              y={p.y}
+              width={barWidth}
+              height={height}
+              rx={2.5}
+              fill={color}
+            />
+          );
         })}
       </svg>
-      <div className="absolute bottom-2 right-3 text-xs text-slate-500">Max {max.toFixed(1)}</div>
     </div>
   );
 }
