@@ -163,7 +163,7 @@ export default function AdminDashboard({ username }: Props) {
     [summary]
   );
 
-  const energyVariant = bucket === 'daily' ? 'bar' : 'line';
+  const energyVariant = 'line';
 
   const coveragePct = useMemo(() => {
     if (!summary) return null;
@@ -467,7 +467,7 @@ export default function AdminDashboard({ username }: Props) {
             valueUnit="kWh"
             variant={energyVariant}
             emptyLabel="No energy readings in this window."
-            formatValue={(v) => numberFmt.format(v)}
+            formatValue={(v) => Number(v).toFixed(2)}
           />
           {summary?.seriesTotalCost?.length ? (
             <div className="mt-2 text-sm text-slate-600">Cost trend mirrors energy using configured £/kWh.</div>

@@ -106,7 +106,7 @@ export function LineAreaChart({
 
   const handlePointer = (evt: PointerEvent<SVGRectElement>) => {
     const rect = evt.currentTarget.getBoundingClientRect();
-    const x = evt.clientX - rect.left - chartPadding.left;
+    const x = evt.clientX - rect.left;
     const dateAtCursor = xScaleTime.invert(Math.max(0, Math.min(innerWidth, x)));
     const b = bisector((d: TrendPoint) => d.date).center;
     const idx = b(prepared, dateAtCursor);
@@ -115,10 +115,8 @@ export function LineAreaChart({
 
   const active = hoverIdx != null ? prepared[hoverIdx] : null;
 
-  const ticksX =
-    variant === 'line'
-      ? xScaleTime.ticks(Math.min(6, Math.max(2, prepared.length)))
-      : prepared.map((p) => p.date);
+  const tickCount = innerWidth < 420 ? 4 : Math.min(6, Math.max(3, prepared.length));
+  const ticksX = variant === 'line' ? xScaleTime.ticks(tickCount) : prepared.map((p) => p.date);
   const ticksY = yScale.ticks(4);
 
   const barWidth = xScaleBand.bandwidth();
