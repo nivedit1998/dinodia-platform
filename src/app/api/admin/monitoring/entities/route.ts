@@ -134,7 +134,7 @@ export async function GET(req: NextRequest) {
     where: {
       ...whereBase,
       unit: 'kWh',
-      numericValue: { not: null },
+      numericValue: { gt: 0 },
       capturedAt: { gte: from, lte: to },
       ...(hasAreaFilter ? { entityId: { in: Array.from(allowedEntityIds) } } : {}),
     },
