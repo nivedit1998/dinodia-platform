@@ -8,7 +8,7 @@ import { logout as performLogout } from '@/lib/logout';
 import { LineAreaChart, TrendPoint } from './charts/LineAreaChart';
 
 type HistoryBucket = 'daily' | 'weekly' | 'monthly';
-type Preset = '7' | '30' | '90' | 'custom';
+type Preset = '7' | '30' | '90' | 'all' | 'custom';
 
 type SummaryPoint = { bucketStart: string; label: string; totalKwhDelta: number };
 type SummaryCostPoint = { bucketStart: string; label: string; estimatedCost: number };
@@ -177,7 +177,9 @@ export default function AdminDashboard({ username }: Props) {
   const buildParams = () => {
     const params = new URLSearchParams();
     params.set('bucket', bucket);
-    if (preset === 'custom') {
+    if (preset === 'all') {
+      params.set('days', 'all');
+    } else if (preset === 'custom') {
       params.set('from', from);
       params.set('to', to);
     } else {
@@ -325,7 +327,7 @@ export default function AdminDashboard({ username }: Props) {
           <div className="flex flex-wrap gap-3">
             <div className="flex items-center gap-2">
               <span className="text-xs uppercase tracking-[0.2em] text-slate-400">Range</span>
-              {(['7', '30', '90'] as Preset[]).map((p) => (
+              {(['7', '30', '90', 'all'] as Preset[]).map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -334,7 +336,7 @@ export default function AdminDashboard({ username }: Props) {
                     preset === p ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  {p}d
+                  {p === 'all' ? 'All time' : `${p}d`}
                 </button>
               ))}
               <button

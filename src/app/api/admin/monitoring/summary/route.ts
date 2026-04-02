@@ -148,14 +148,30 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const bucket = parseBucket(searchParams.get('bucket'));
-  const range = ensureRange(bucket, searchParams);
-  if ('error' in range) {
-    return NextResponse.json({ error: range.error }, { status: 400 });
+  const isAllTime = searchParams.get('days') === 'all';
+
+  const baseRange = ensureRange(bucket, searchParams);
+  if ('error' in baseRange) {
+    return NextResponse.json({ error: baseRange.error }, { status: 400 });
   }
-  const { from, to } = range;
+
   const areasFilter = new Set(parseMulti(searchParams, 'areas'));
   const energyEntityFilter = new Set(parseMulti(searchParams, 'energyEntityIds'));
   const batteryEntityFilter = new Set(parseMulti(searchParams, 'batteryEntityIds'));
+
+  let from = baseRange.from;
+  let to = baseRange.to;
+
+  if (isAllTime) {
+    const oldest = await prisma.monitoringReading.findFirst({
+      where: { haConnectionId },
+      orderBy: { capturedAt: 'asc' },
+      select: { capturedAt: true },
+    });
+    const nowEnd = endOfDayUtc(new Date());
+    from = oldest ? startOfDayUtc(oldest.capturedAt) : nowEnd;
+    to = nowEnd;
+  }
 
   const lastSnapshot = await prisma.monitoringReading.findFirst({
     where: { haConnectionId },
