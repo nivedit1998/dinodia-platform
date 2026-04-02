@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { platformFetch } from '@/lib/platformFetchClient';
 import { logout as performLogout } from '@/lib/logout';
+import { LineAreaChart, TrendPoint } from './charts/LineAreaChart';
 
 type HistoryBucket = 'daily' | 'weekly' | 'monthly';
 type Preset = '7' | '30' | '90' | 'custom';
@@ -55,78 +56,6 @@ const dateOnly = (date: Date) => {
 
 const numberFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
 const costFmt = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 2 });
-
-type ChartPoint = { label: string; value: number };
-
-function ChartEmpty() {
-  return (
-    <div className="rounded-2xl border border-slate-200/70 bg-white/70 px-4 py-10 text-center text-sm text-slate-500">
-      No readings in this range.
-    </div>
-  );
-}
-
-function normalize(points: ChartPoint[]) {
-  const max = Math.max(...points.map((p) => p.value), 0);
-  const safeMax = max > 0 ? max : 1;
-  return points.map((p, idx) => ({
-    x: points.length === 1 ? 50 : (idx / (points.length - 1)) * 100,
-    y: 100 - (p.value / safeMax) * 90 - 5, // leave 5% top/bottom padding
-    label: p.label,
-    value: p.value,
-  }));
-}
-
-function MiniLineChart({ points, color = '#0ea5e9' }: { points: ChartPoint[]; color?: string }) {
-  if (!points.length || Math.max(...points.map((p) => p.value), 0) <= 0) return <ChartEmpty />;
-  const norm = normalize(points);
-  const path = norm
-    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
-    .join(' ');
-  return (
-    <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm">
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-52 w-full">
-        <defs>
-          <linearGradient id="lineFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.18" />
-            <stop offset="100%" stopColor={color} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <rect x="0" y="0" width="100" height="100" fill="url(#lineFill)" />
-        <path d={`${path}`} fill="none" stroke={color} strokeWidth={1.8} />
-        {norm.map((p) => (
-          <circle key={p.label} cx={p.x} cy={p.y} r={2.5} fill={color} />
-        ))}
-      </svg>
-    </div>
-  );
-}
-
-function MiniBarChart({ points, color = '#0ea5e9' }: { points: ChartPoint[]; color?: string }) {
-  if (!points.length || Math.max(...points.map((p) => p.value), 0) <= 0) return <ChartEmpty />;
-  const norm = normalize(points);
-  const barWidth = points.length > 0 ? 90 / points.length : 10;
-  return (
-    <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm">
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-52 w-full">
-        {norm.map((p) => {
-          const height = 100 - p.y - 5;
-          return (
-            <rect
-              key={p.label}
-              x={p.x - barWidth / 2}
-              y={p.y}
-              width={barWidth}
-              height={height}
-              rx={2.5}
-              fill={color}
-            />
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
 
 function MultiSelect({
   label,
@@ -213,6 +142,28 @@ export default function AdminDashboard({ username }: Props) {
     if (!summary || summary.pricePerKwh == null) return null;
     return summary.seriesTotalCost.reduce((sum, p) => sum + (p.estimatedCost || 0), 0);
   }, [summary]);
+
+  const energyTrendPoints: TrendPoint[] = useMemo(
+    () =>
+      (summary?.seriesTotalKwh ?? []).map((p) => ({
+        date: new Date(p.bucketStart),
+        label: p.label,
+        value: p.totalKwhDelta ?? 0,
+      })),
+    [summary]
+  );
+
+  const batteryTrendPoints: TrendPoint[] = useMemo(
+    () =>
+      (summary?.seriesBatteryAvgPercent ?? []).map((p) => ({
+        date: new Date(p.bucketStart),
+        label: p.label,
+        value: p.avgPercent ?? 0,
+      })),
+    [summary]
+  );
+
+  const energyVariant = bucket === 'daily' ? 'bar' : 'line';
 
   const coveragePct = useMemo(() => {
     if (!summary) return null;
@@ -503,34 +454,44 @@ export default function AdminDashboard({ username }: Props) {
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-900">Energy trend</h2>
-            <span className="text-xs text-slate-500">Bucket: {bucket}, points: {summary?.seriesTotalKwh.length ?? 0}</span>
+            <span className="text-xs text-slate-500">
+              Bucket: {bucket}, points: {summary?.seriesTotalKwh.length ?? 0}
+            </span>
           </div>
-          {bucket === 'daily' ? (
-            <MiniBarChart points={(summary?.seriesTotalKwh ?? []).map((p) => ({ label: p.label, value: p.totalKwhDelta }))} />
-          ) : (
-            <MiniLineChart points={(summary?.seriesTotalKwh ?? []).map((p) => ({ label: p.label, value: p.totalKwhDelta }))} />
-          )}
+          <LineAreaChart
+            id="energy-trend"
+            title="Energy"
+            points={energyTrendPoints}
+            color="#0ea5e9"
+            gradientTo="#5ac8fa"
+            valueUnit="kWh"
+            variant={energyVariant}
+            emptyLabel="No energy readings in this window."
+            formatValue={(v) => numberFmt.format(v)}
+          />
           {summary?.seriesTotalCost?.length ? (
-            <div className="mt-2 text-sm text-slate-600">Cost trend uses price per kWh from config; totals mirror energy buckets.</div>
+            <div className="mt-2 text-sm text-slate-600">Cost trend mirrors energy using configured £/kWh.</div>
           ) : null}
         </section>
 
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-900">Battery trend</h2>
-            <span className="text-xs text-slate-500">Bucket: {bucket}, points: {summary?.seriesBatteryAvgPercent.length ?? 0}</span>
+            <span className="text-xs text-slate-500">
+              Bucket: {bucket}, points: {summary?.seriesBatteryAvgPercent.length ?? 0}
+            </span>
           </div>
-          {bucket === 'daily' ? (
-            <MiniBarChart
-              points={(summary?.seriesBatteryAvgPercent ?? []).map((p) => ({ label: p.label, value: p.avgPercent }))}
-              color="#a855f7"
-            />
-          ) : (
-            <MiniLineChart
-              points={(summary?.seriesBatteryAvgPercent ?? []).map((p) => ({ label: p.label, value: p.avgPercent }))}
-              color="#a855f7"
-            />
-          )}
+          <LineAreaChart
+            id="battery-trend"
+            title="Battery"
+            points={batteryTrendPoints}
+            color="#34c759"
+            gradientTo="#a3e635"
+            valueUnit="%"
+            variant={energyVariant}
+            emptyLabel="No battery readings in this window."
+            formatValue={(v) => v.toFixed(0)}
+          />
           <p className="text-xs text-slate-500">Average of latest battery % per entity per bucket.</p>
         </section>
 
