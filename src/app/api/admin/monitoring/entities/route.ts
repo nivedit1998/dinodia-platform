@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
     where: {
       ...whereBase,
       unit: 'kWh',
+      numericValue: { not: null },
     },
     distinct: ['entityId'],
     orderBy: [{ entityId: 'asc' }],
@@ -60,6 +61,7 @@ export async function GET(req: NextRequest) {
       ...whereBase,
       unit: '%',
       entityId: { contains: 'battery', mode: 'insensitive' },
+      numericValue: { not: null },
     },
     distinct: ['entityId'],
     orderBy: [{ entityId: 'asc' }],
