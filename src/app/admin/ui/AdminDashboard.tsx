@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { platformFetch } from '@/lib/platformFetchClient';
@@ -191,6 +191,20 @@ export default function AdminDashboard({ username }: Props) {
     return params.toString();
   };
 
+  const buildSelectorParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (preset === 'all') {
+      params.set('days', 'all');
+    } else if (preset === 'custom') {
+      params.set('from', from);
+      params.set('to', to);
+    } else {
+      params.set('days', preset);
+    }
+    selectedAreas.forEach((a) => params.append('areas', a));
+    return params.toString();
+  }, [preset, from, to, selectedAreas]);
+
   const loadSummary = async () => {
     if (preset === 'custom' && (!from || !to)) {
       setError('Choose both from/to dates for a custom range.');
@@ -220,12 +234,12 @@ export default function AdminDashboard({ username }: Props) {
     }
   };
 
-  const loadSelectors = async () => {
+  const loadSelectors = useCallback(async () => {
     try {
       setSelectorsError(null);
       const [areasRes, entitiesRes] = await Promise.all([
         platformFetch('/api/admin/areas', { cache: 'no-store', credentials: 'include' }),
-        platformFetch('/api/admin/monitoring/entities', { cache: 'no-store', credentials: 'include' }),
+        platformFetch(`/api/admin/monitoring/entities?${buildSelectorParams()}`, { cache: 'no-store', credentials: 'include' }),
       ]);
       const areasData = await areasRes.json().catch(() => ({}));
       const entitiesData = await entitiesRes.json().catch(() => ({}));
@@ -246,13 +260,20 @@ export default function AdminDashboard({ username }: Props) {
           .filter((a): a is string => typeof a === 'string' && a.length > 0)
           .sort((a, b) => a.localeCompare(b))
       );
-      setEnergyEntities(Array.isArray(entitiesData.energyEntities) ? entitiesData.energyEntities : []);
-      setBatteryEntities(Array.isArray(entitiesData.batteryEntities) ? entitiesData.batteryEntities : []);
+      const energyList = Array.isArray(entitiesData.energyEntities) ? entitiesData.energyEntities : [];
+      const batteryList = Array.isArray(entitiesData.batteryEntities) ? entitiesData.batteryEntities : [];
+      setEnergyEntities(energyList);
+      setBatteryEntities(batteryList);
+
+      const energyIds = new Set(energyList.map((e: EntityOption) => e.entityId));
+      const batteryIds = new Set(batteryList.map((e: EntityOption) => e.entityId));
+      setSelectedEnergyEntities((prev) => prev.filter((id) => energyIds.has(id)));
+      setSelectedBatteryEntities((prev) => prev.filter((id) => batteryIds.has(id)));
     } catch (err) {
       console.error('Failed to load selectors', err);
       setSelectorsError((err as Error).message || 'Unable to load filters.');
     }
-  };
+  }, [buildSelectorParams]);
 
   useEffect(() => {
     void loadSummary();
@@ -260,8 +281,9 @@ export default function AdminDashboard({ username }: Props) {
   }, [bucket, preset, from, to, selectedAreas, selectedEnergyEntities, selectedBatteryEntities]);
 
   useEffect(() => {
+    if (preset === 'custom' && (!from || !to)) return;
     void loadSelectors();
-  }, []);
+  }, [preset, from, to, selectedAreas, loadSelectors]);
 
   const lastSnapshotDisplay = summary ? formatDateTime(summary.lastSnapshotAt) : 'Not available';
   const lastFetchedDisplay = lastFetchedAt ? formatDateTime(lastFetchedAt) : 'Never';
