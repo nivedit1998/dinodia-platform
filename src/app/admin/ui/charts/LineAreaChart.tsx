@@ -72,12 +72,9 @@ export function LineAreaChart({
   const yDomain: [number, number] = [0, yMax === 0 ? 1 : yMax * 1.08];
 
   const gradient = getGradientStops(color, gradientFrom, gradientTo);
+  const measuredWidth = width || 640; // fallback while measuring to avoid zero-width render
 
-  if (!prepared.length || width === 0) {
-    return <ChartEmpty label={emptyLabel} />;
-  }
-
-  const innerWidth = Math.max(140, width - chartPadding.left - chartPadding.right);
+  const innerWidth = Math.max(140, measuredWidth - chartPadding.left - chartPadding.right);
   const innerHeight = Math.max(140, height - chartPadding.top - chartPadding.bottom);
 
   const xScaleTime = scaleTime()
@@ -91,7 +88,7 @@ export function LineAreaChart({
   const yScale = scaleLinear().domain(yDomain).range([innerHeight, 0]);
 
   const linePath =
-    variant === 'line'
+    variant === 'line' && prepared.length
       ? line<TrendPoint>()
           .x((d) => xScaleTime(d.date))
           .y((d) => yScale(d.value))
@@ -99,7 +96,7 @@ export function LineAreaChart({
       : null;
 
   const areaPath =
-    variant === 'line'
+    variant === 'line' && prepared.length
       ? area<TrendPoint>()
           .x((d) => xScaleTime(d.date))
           .y0(innerHeight)
@@ -118,7 +115,10 @@ export function LineAreaChart({
 
   const active = hoverIdx != null ? prepared[hoverIdx] : null;
 
-  const ticksX = variant === 'line' ? xScaleTime.ticks(Math.min(6, prepared.length)) : prepared.map((p) => p.date);
+  const ticksX =
+    variant === 'line'
+      ? xScaleTime.ticks(Math.min(6, Math.max(2, prepared.length)))
+      : prepared.map((p) => p.date);
   const ticksY = yScale.ticks(4);
 
   const barWidth = xScaleBand.bandwidth();
@@ -142,7 +142,10 @@ export function LineAreaChart({
         <div className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">Interactive · Hover to inspect</div>
       </div>
 
-      <svg width={width} height={height} className="overflow-visible">
+      {!prepared.length ? (
+        <ChartEmpty label={emptyLabel} />
+      ) : (
+        <svg width={measuredWidth} height={height} className="overflow-visible">
         <defs>
           <linearGradient id={`${id}-area`} x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor={gradient.start} stopOpacity={0.18} />
@@ -264,7 +267,8 @@ export function LineAreaChart({
             onPointerLeave={() => setHoverIdx(null)}
           />
         </g>
-      </svg>
+        </svg>
+      )}
     </div>
   );
 }
