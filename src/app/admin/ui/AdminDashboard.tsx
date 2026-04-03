@@ -312,7 +312,7 @@ export default function AdminDashboard({ username }: Props) {
             </div>
             <div className="min-w-0">
               <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400">Admin analytics</p>
-              <p className="text-base font-semibold text-slate-900">Observe-only dashboard</p>
+              <p className="text-base font-semibold text-slate-900">Homeowner Energy Monitoring Dashboard</p>
             </div>
           </div>
           <div className="flex items-center gap-3">

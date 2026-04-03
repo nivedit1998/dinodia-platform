@@ -24,6 +24,7 @@ type DeviceOverride = {
 };
 type ObservedEntity = {
   entityId: string;
+  name?: string;
   unit?: string | null;
   lastCapturedAt?: string;
   hasOverride?: boolean;
@@ -182,10 +183,11 @@ export default function AdminSettings({ username }: Props) {
   }, [loadOverrides]);
 
   function startNewOverride(entityId = '') {
+    const prettyId = (id: string) => id.replace(/^sensor\./i, '').replace(/_/g, ' ');
     setEditingOverrideId(null);
     setOverrideForm({
       entityId,
-      name: entityId,
+      name: prettyId(entityId),
       area: '',
       label: '',
       blindTravelSeconds: '',
@@ -196,7 +198,7 @@ export default function AdminSettings({ username }: Props) {
     setEditingOverrideId(override.entityId);
     setOverrideForm({
       entityId: override.entityId,
-      name: override.name || override.entityId,
+      name: override.name || override.label || override.entityId,
       area: override.area ?? '',
       label: override.label ?? '',
       blindTravelSeconds:

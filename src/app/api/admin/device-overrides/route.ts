@@ -59,6 +59,7 @@ export async function GET(req: NextRequest) {
     where: deviceWhere,
     orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
     take: limit,
+    select: { entityId: true, name: true, label: true, area: true, blindTravelSeconds: true, updatedAt: true, id: true },
   });
 
   const observedRows = await prisma.monitoringReading.findMany({
@@ -87,8 +88,18 @@ export async function GET(req: NextRequest) {
   }
 
   const deviceSet = new Set(devices.map((d) => d.entityId));
+  const prettyId = (id: string) => id.replace(/^sensor\./i, '').replace(/_/g, ' ');
+  const deviceByEntity = new Map(devices.map((d) => [d.entityId, d]));
+  const displayName = (entityId: string) => {
+    const device = deviceByEntity.get(entityId);
+    const primary = device?.name?.trim();
+    const fallback = device?.label?.trim();
+    return (primary || fallback || prettyId(entityId) || entityId).trim();
+  };
+
   const observedEntities = Array.from(observedByEntity.values()).map((row) => ({
     entityId: row.entityId,
+    name: displayName(row.entityId),
     unit: row.unit,
     lastCapturedAt: row.capturedAt.toISOString(),
     hasOverride: deviceSet.has(row.entityId),
@@ -96,7 +107,10 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    devices,
+    devices: devices.map((d) => ({
+      ...d,
+      name: displayName(d.entityId),
+    })),
     observedEntities,
   });
 }
