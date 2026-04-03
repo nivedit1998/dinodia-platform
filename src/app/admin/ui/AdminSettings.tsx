@@ -22,13 +22,6 @@ type DeviceOverride = {
   label?: string | null;
   blindTravelSeconds?: number | null;
 };
-type ObservedEntity = {
-  entityId: string;
-  name?: string;
-  unit?: string | null;
-  lastCapturedAt?: string;
-  hasOverride?: boolean;
-};
 type OverrideForm = { entityId: string; name: string; area: string; label: string; blindTravelSeconds: string };
 
 const EMPTY_TENANT_FORM: TenantForm = { username: '', password: '', areas: [] };
@@ -81,7 +74,6 @@ export default function AdminSettings({ username }: Props) {
 
   const [overrideSearch, setOverrideSearch] = useState('');
   const [overrides, setOverrides] = useState<DeviceOverride[]>([]);
-  const [observedEntities, setObservedEntities] = useState<ObservedEntity[]>([]);
   const [overridesLoading, setOverridesLoading] = useState(false);
   const [overrideAlert, setOverrideAlert] = useState<StatusMessage>(null);
   const [overrideForm, setOverrideForm] = useState<OverrideForm>({
@@ -168,7 +160,6 @@ export default function AdminSettings({ username }: Props) {
         throw new Error(data.error || 'Failed to load device overrides.');
       }
       setOverrides(Array.isArray(data.devices) ? data.devices : []);
-      setObservedEntities(Array.isArray(data.observedEntities) ? data.observedEntities : []);
     } catch (err) {
       setOverrideAlert({
         type: 'error',
@@ -1085,7 +1076,7 @@ export default function AdminSettings({ username }: Props) {
               {overrideAlert.message}
             </p>
           )}
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="mt-4 grid gap-4">
             <div className="rounded-lg border border-slate-200">
               <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
                 <h3 className="text-sm font-semibold text-slate-900">Existing overrides</h3>
@@ -1133,41 +1124,6 @@ export default function AdminSettings({ username }: Props) {
               </div>
             </div>
 
-            <div className="rounded-lg border border-slate-200">
-              <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
-                <h3 className="text-sm font-semibold text-slate-900">Observed (suggested)</h3>
-                <span className="text-[11px] text-slate-500">
-                  {observedEntities.filter((o) => !o.hasOverride).length} to assign
-                </span>
-              </div>
-              <div className="max-h-80 overflow-auto">
-                <ul className="divide-y divide-slate-100 text-xs">
-                  {observedEntities.filter((o) => !o.hasOverride).length === 0 && (
-                    <li className="px-3 py-3 text-slate-500">No unassigned observed entities.</li>
-                  )}
-                  {observedEntities
-                    .filter((o) => !o.hasOverride)
-                    .map((obs) => (
-                      <li key={obs.entityId} className="flex items-center justify-between px-3 py-2">
-                        <div>
-                          <p className="font-semibold text-slate-900">{cleanDisplay(obs.name || obs.entityId)}</p>
-                          <p className="font-mono text-[11px] text-slate-500">{obs.entityId}</p>
-                          <p className="text-[11px] text-slate-500">
-                            {obs.unit || 'sensor'} • {obs.lastCapturedAt ? new Date(obs.lastCapturedAt).toLocaleString('en-GB') : 'recent'}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
-                          onClick={() => startNewOverride(obs.entityId)}
-                        >
-                          Add override
-                        </button>
-                      </li>
-                    ))}
-                </ul>
-              </div>
-            </div>
           </div>
 
           <div className="mt-4 rounded-lg border border-slate-200 p-4">
