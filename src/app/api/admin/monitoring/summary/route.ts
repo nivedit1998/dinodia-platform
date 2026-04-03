@@ -362,6 +362,7 @@ export async function GET(req: NextRequest) {
           estimatedCost: entry.totalKwhDelta * validPrice,
         }));
 
+  const prettyId = (id: string) => id.replace(/^sensor\./i, '').replace(/_/g, ' ');
   const deviceMeta = await prisma.device.findMany({
     where: { haConnectionId, entityId: { in: Array.from(entityTotals.keys()) } },
     select: { entityId: true, name: true, label: true, area: true },
@@ -369,7 +370,9 @@ export async function GET(req: NextRequest) {
   const deviceByEntity = new Map(deviceMeta.map((d) => [d.entityId, d]));
   const displayName = (entityId: string) => {
     const device = deviceByEntity.get(entityId);
-    return (device?.name?.trim() || device?.label?.trim() || entityId).trim();
+    const primary = device?.name?.trim();
+    const fallbackLabel = device?.label?.trim();
+    return (primary || fallbackLabel || prettyId(entityId) || entityId).trim();
   };
 
   const topEntities = Array.from(entityTotals.entries())
