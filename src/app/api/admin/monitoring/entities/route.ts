@@ -159,12 +159,16 @@ export async function GET(req: NextRequest) {
     select: { entityId: true, capturedAt: true },
   });
 
-  const deviceById = new Map(devices.map((d) => [d.entityId, d]));
+  const deviceById = new Map(
+    devices.map((d) => [d.entityId, d as { entityId: string; name?: string | null; label?: string | null; area?: string | null }])
+  );
 
   const mapRow = (row: { entityId: string; capturedAt: Date }) => {
     const device = deviceById.get(row.entityId);
     const area = device?.area?.trim() || UNASSIGNED;
-    const name = (device?.name || row.entityId || '').trim() || row.entityId;
+    const primary = (device?.name || '').trim();
+    const fallbackLabel = (device?.label || '').trim();
+    const name = primary || fallbackLabel || row.entityId;
     return {
       entityId: row.entityId,
       name,

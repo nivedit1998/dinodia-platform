@@ -345,21 +345,6 @@ export async function GET(req: NextRequest) {
       count: b.count,
     }));
 
-  const batteryLow: Array<{ entityId: string; latestBatteryPercent: number; capturedAt: string }> = [];
-  const seenBattery = new Set<string>();
-  for (const row of batteryRows) {
-    if (seenBattery.has(row.entityId)) continue;
-    seenBattery.add(row.entityId);
-    const numeric = isFiniteNumber(row.numericValue) ? row.numericValue : null;
-    if (numeric !== null && numeric < BATTERY_LOW_THRESHOLD) {
-      batteryLow.push({
-        entityId: row.entityId,
-        latestBatteryPercent: numeric,
-        capturedAt: row.capturedAt.toISOString(),
-      });
-    }
-  }
-
   const seriesTotalKwh = Array.from(bucketTotals.values())
     .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
     .map((entry) => ({
@@ -377,9 +362,20 @@ export async function GET(req: NextRequest) {
           estimatedCost: entry.totalKwhDelta * validPrice,
         }));
 
+  const deviceMeta = await prisma.device.findMany({
+    where: { haConnectionId, entityId: { in: Array.from(entityTotals.keys()) } },
+    select: { entityId: true, name: true, label: true, area: true },
+  });
+  const deviceByEntity = new Map(deviceMeta.map((d) => [d.entityId, d]));
+  const displayName = (entityId: string) => {
+    const device = deviceByEntity.get(entityId);
+    return (device?.name?.trim() || device?.label?.trim() || entityId).trim();
+  };
+
   const topEntities = Array.from(entityTotals.entries())
     .map(([entityId, totalKwhDelta]) => ({
       entityId,
+      name: displayName(entityId),
       totalKwhDelta,
       estimatedCost: validPrice === null ? undefined : totalKwhDelta * validPrice,
       area: areaByEntity.get(entityId) || UNASSIGNED,
@@ -391,6 +387,7 @@ export async function GET(req: NextRequest) {
     const topAreaEntities = Array.from(info.entities.entries())
       .map(([entityId, totalKwhDelta]) => ({
         entityId,
+        name: displayName(entityId),
         totalKwhDelta,
         estimatedCost: validPrice === null ? undefined : totalKwhDelta * validPrice,
       }))
@@ -404,6 +401,22 @@ export async function GET(req: NextRequest) {
       topEntities: topAreaEntities,
     };
   });
+
+  const batteryLow: Array<{ entityId: string; name: string; latestBatteryPercent: number; capturedAt: string }> = [];
+  const seenBattery = new Set<string>();
+  for (const row of batteryRows) {
+    if (seenBattery.has(row.entityId)) continue;
+    seenBattery.add(row.entityId);
+    const numeric = isFiniteNumber(row.numericValue) ? row.numericValue : null;
+    if (numeric !== null && numeric < BATTERY_LOW_THRESHOLD) {
+      batteryLow.push({
+        entityId: row.entityId,
+        name: displayName(row.entityId),
+        latestBatteryPercent: numeric,
+        capturedAt: row.capturedAt.toISOString(),
+      });
+    }
+  }
 
   const unassigned = areaEntries.find((a) => a.area === UNASSIGNED);
   const rankedAreas = areaEntries
