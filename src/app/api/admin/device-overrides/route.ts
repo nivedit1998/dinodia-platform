@@ -94,7 +94,8 @@ export async function GET(req: NextRequest) {
     const device = deviceByEntity.get(entityId);
     const primary = device?.name?.trim();
     const fallback = device?.label?.trim();
-    return (primary || fallback || prettyId(entityId) || entityId).trim();
+    const base = primary || fallback || entityId;
+    return prettyId(base).trim() || entityId;
   };
 
   const observedEntities = Array.from(observedByEntity.values()).map((row) => ({

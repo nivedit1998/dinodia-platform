@@ -372,7 +372,8 @@ export async function GET(req: NextRequest) {
     const device = deviceByEntity.get(entityId);
     const primary = device?.name?.trim();
     const fallbackLabel = device?.label?.trim();
-    return (primary || fallbackLabel || prettyId(entityId) || entityId).trim();
+    const base = primary || fallbackLabel || entityId;
+    return prettyId(base).trim() || entityId;
   };
 
   const topEntities = Array.from(entityTotals.entries())
