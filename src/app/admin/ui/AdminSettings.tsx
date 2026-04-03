@@ -53,6 +53,17 @@ export default function AdminSettings({ username }: Props) {
   const [tenantDeleteLoading, setTenantDeleteLoading] = useState(false);
   const [tenantDeleteError, setTenantDeleteError] = useState<string | null>(null);
   const cleanDisplay = useCallback((value: string) => value.replace(/^sensor\./i, '').replace(/_/g, ' '), []);
+  const stringToColor = useCallback((str: string) => {
+    let hash = 0;
+    const input = str || 'Unassigned';
+    for (let i = 0; i < input.length; i += 1) {
+      hash = input.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash) % 360;
+    const bg = `hsla(${hue}, 60%, 90%, 1)`;
+    const fg = `hsla(${hue}, 55%, 35%, 1)`;
+    return { bg, fg };
+  }, []);
 
   const [passwordForm, setPasswordForm] = useState(EMPTY_PASSWORD_FORM);
   const [passwordAlert, setPasswordAlert] = useState<StatusMessage>(null);
@@ -1100,25 +1111,36 @@ export default function AdminSettings({ username }: Props) {
                         </td>
                       </tr>
                     )}
-                    {overrides.map((ov) => (
-                      <tr key={ov.entityId} className="odd:bg-white even:bg-slate-50/70">
-                        <td className="px-3 py-2">
-                          <div className="font-semibold text-slate-900">{cleanDisplay(ov.name || ov.entityId)}</div>
-                          <div className="font-mono text-[11px] text-slate-500">{ov.entityId}</div>
-                        </td>
-                        <td className="px-3 py-2">{ov.area || 'Unassigned'}</td>
-                        <td className="px-3 py-2">{ov.label || '—'}</td>
-                        <td className="px-3 py-2 text-right">
-                          <button
-                            type="button"
-                            className="text-indigo-600 hover:text-indigo-800"
-                            onClick={() => startEditOverride(ov)}
-                          >
-                            Edit
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {overrides.map((ov) => {
+                      const areaColor = stringToColor(ov.area || 'Unassigned');
+                      return (
+                        <tr key={ov.entityId} className="odd:bg-white even:bg-slate-50/70">
+                          <td className="px-3 py-2">
+                            <div className="font-semibold text-slate-900">{cleanDisplay(ov.name || ov.entityId)}</div>
+                            <div className="font-mono text-[11px] text-slate-500">{ov.entityId}</div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span
+                              className="inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-medium text-slate-900"
+                              style={{ backgroundColor: areaColor.bg, color: areaColor.fg }}
+                            >
+                              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: areaColor.fg }} />
+                              {ov.area || 'Unassigned'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">{ov.label || '—'}</td>
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              className="text-indigo-600 hover:text-indigo-800"
+                              onClick={() => startEditOverride(ov)}
+                            >
+                              Edit
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1156,43 +1178,48 @@ export default function AdminSettings({ username }: Props) {
               </div>
               <div>
                 <label className="mb-1 block text-[11px] text-slate-500">Area</label>
-                <input
-                  list="available-areas"
+                <select
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
                   value={overrideForm.area}
-                  onChange={(e) =>
-                    setOverrideForm((prev) => ({ ...prev, area: e.target.value }))
-                  }
-                  placeholder="Living Room"
-                />
-                <datalist id="available-areas">
+                  onChange={(e) => setOverrideForm((prev) => ({ ...prev, area: e.target.value }))}
+                >
+                  <option value="">Select area</option>
                   {availableAreas.map((area) => (
-                    <option key={area} value={area} />
+                    <option key={area} value={area}>
+                      {area}
+                    </option>
                   ))}
-                </datalist>
+                </select>
               </div>
               <div>
                 <label className="mb-1 block text-[11px] text-slate-500">Label</label>
-                <input
+                <select
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
                   value={overrideForm.label}
-                  onChange={(e) =>
-                    setOverrideForm((prev) => ({ ...prev, label: e.target.value }))
-                  }
-                  placeholder="Blind / Sensor / Socket"
-                />
+                  onChange={(e) => setOverrideForm((prev) => ({ ...prev, label: e.target.value }))}
+                >
+                  {['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Doorbell', 'Home Security', 'TV', 'Speaker'].map(
+                    (label) => (
+                      <option key={label} value={label}>
+                        {label}
+                      </option>
+                    )
+                  )}
+                </select>
               </div>
-              <div>
-                <label className="mb-1 block text-[11px] text-slate-500">Blind travel (seconds)</label>
-                <input
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={overrideForm.blindTravelSeconds}
-                  onChange={(e) =>
-                    setOverrideForm((prev) => ({ ...prev, blindTravelSeconds: e.target.value }))
-                  }
-                  placeholder="Leave blank unless calibrating blinds"
-                />
-              </div>
+              {overrideForm.label === 'Blind' && (
+                <div>
+                  <label className="mb-1 block text-[11px] text-slate-500">Blind travel (seconds)</label>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={overrideForm.blindTravelSeconds}
+                    onChange={(e) =>
+                      setOverrideForm((prev) => ({ ...prev, blindTravelSeconds: e.target.value }))
+                    }
+                    placeholder="Leave blank unless calibrating blinds"
+                  />
+                </div>
+              )}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <button

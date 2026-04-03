@@ -90,6 +90,20 @@ export async function GET(req: NextRequest) {
   const deviceSet = new Set(devices.map((d) => d.entityId));
   const prettyId = (id: string) => id.replace(/^sensor\./i, '').replace(/_/g, ' ');
   const deviceByEntity = new Map(devices.map((d) => [d.entityId, d]));
+  const inferLabel = (entityId: string, existing?: string | null) => {
+    if (existing && existing.trim()) return existing.trim();
+    const id = entityId.toLowerCase();
+    if (id.includes('blind')) return 'Blind';
+    if (id.includes('motion')) return 'Motion Sensor';
+    if (id.includes('spotify')) return 'Spotify';
+    if (id.includes('boiler')) return 'Boiler';
+    if (id.includes('doorbell')) return 'Doorbell';
+    if (id.includes('security')) return 'Home Security';
+    if (id.includes('tv')) return 'TV';
+    if (id.includes('speaker')) return 'Speaker';
+    if (id.includes('light') || id.includes('lamp')) return 'Light';
+    return null;
+  };
   const displayName = (entityId: string) => {
     const device = deviceByEntity.get(entityId);
     const primary = device?.name?.trim();
@@ -101,6 +115,7 @@ export async function GET(req: NextRequest) {
   const observedEntities = Array.from(observedByEntity.values()).map((row) => ({
     entityId: row.entityId,
     name: displayName(row.entityId),
+    label: inferLabel(row.entityId, deviceByEntity.get(row.entityId)?.label),
     unit: row.unit,
     lastCapturedAt: row.capturedAt.toISOString(),
     hasOverride: deviceSet.has(row.entityId),
@@ -111,6 +126,7 @@ export async function GET(req: NextRequest) {
     devices: devices.map((d) => ({
       ...d,
       name: displayName(d.entityId),
+      label: inferLabel(d.entityId, d.label),
     })),
     observedEntities,
   });
