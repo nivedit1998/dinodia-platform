@@ -12,9 +12,9 @@ type Preset = '7' | '30' | '90' | 'all' | 'custom';
 
 type SummaryPoint = { bucketStart: string; label: string; totalKwhDelta: number };
 type SummaryCostPoint = { bucketStart: string; label: string; estimatedCost: number };
-type SummaryEntity = { entityId: string; totalKwhDelta: number; estimatedCost?: number; area?: string | null };
+type SummaryEntity = { entityId: string; name?: string; totalKwhDelta: number; estimatedCost?: number; area?: string | null };
 type SummaryArea = { area: string; totalKwhDelta: number; estimatedCost?: number; topEntities: SummaryEntity[] };
-type BatteryRow = { entityId: string; latestBatteryPercent: number; capturedAt: string };
+type BatteryRow = { entityId: string; name?: string; latestBatteryPercent: number; capturedAt: string };
 type BatteryPoint = { bucketStart: string; label: string; avgPercent: number; count: number };
 type EntityOption = { entityId: string; name: string; area: string; lastCapturedAt: string };
 
@@ -57,6 +57,8 @@ const dateOnly = (date: Date) => {
 const numberFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
 const costFmt = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 2 });
 
+type SelectOption = { id: string; label: string; hint?: string };
+
 function MultiSelect({
   label,
   options,
@@ -65,7 +67,7 @@ function MultiSelect({
   placeholder,
 }: {
   label: string;
-  options: string[];
+  options: SelectOption[];
   selected: string[];
   onChange: (next: string[]) => void;
   placeholder?: string;
@@ -81,26 +83,38 @@ function MultiSelect({
     <div className="min-w-[220px] rounded-xl border border-slate-200 bg-white/80 p-3 shadow-sm">
       <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">{label}</p>
       <div className="mt-2 flex flex-wrap gap-2">
-        {selected.map((s) => (
+        {selected.map((s) => {
+          const match = options.find((o) => o.id === s);
+          const chipLabel = match?.label || s;
+          const chipHint = match?.hint || s;
+          return (
           <button
             key={s}
             type="button"
             onClick={() => toggle(s)}
             className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
           >
-            <span>{s}</span>
-            <span>×</span>
+            <span className="font-semibold">{chipLabel}</span>
+            <span className="text-white/70">({chipHint})</span>
+            <span className="font-semibold">×</span>
           </button>
-        ))}
+          );
+        })}
         {selected.length === 0 && <span className="text-xs text-slate-500">{placeholder || 'All'}</span>}
       </div>
       <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-slate-100 bg-white">
-        {options.map((opt) => (
-          <label key={opt} className="flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
-            <input type="checkbox" className="h-4 w-4" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
-            <span className="truncate">{opt}</span>
-          </label>
-        ))}
+        {options.map((opt) => {
+          const isSelected = selected.includes(opt.id);
+          return (
+            <label key={opt.id} className="flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+              <input type="checkbox" className="h-4 w-4" checked={isSelected} onChange={() => toggle(opt.id)} />
+              <div className="truncate">
+                <div className="font-medium text-slate-900">{opt.label}</div>
+                {opt.hint && <div className="text-[11px] font-mono text-slate-500">{opt.hint}</div>}
+              </div>
+            </label>
+          );
+        })}
       </div>
     </div>
   );
@@ -431,17 +445,23 @@ export default function AdminDashboard({ username }: Props) {
         </section>
 
         <section className="grid gap-4 lg:grid-cols-3">
-          <MultiSelect label="Areas" options={areas} selected={selectedAreas} onChange={setSelectedAreas} placeholder="All areas" />
+          <MultiSelect
+            label="Areas"
+            options={areas.map((a) => ({ id: a, label: a, hint: a }))}
+            selected={selectedAreas}
+            onChange={setSelectedAreas}
+            placeholder="All areas"
+          />
           <MultiSelect
             label="Energy entities"
-            options={energyEntities.map((e) => e.entityId)}
+            options={energyEntities.map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
             selected={selectedEnergyEntities}
             onChange={setSelectedEnergyEntities}
             placeholder="All energy entities"
           />
           <MultiSelect
             label="Battery entities"
-            options={batteryEntities.map((e) => e.entityId)}
+            options={batteryEntities.map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
             selected={selectedBatteryEntities}
             onChange={setSelectedBatteryEntities}
             placeholder="All battery entities"
@@ -538,7 +558,10 @@ export default function AdminDashboard({ username }: Props) {
                 <tbody>
                   {(summary?.topEntities ?? []).map((row) => (
                     <tr key={row.entityId} className="odd:bg-white even:bg-slate-50/60">
-                      <td className="px-3 py-2 font-mono text-xs">{row.entityId}</td>
+                      <td className="px-3 py-2">
+                        <div className="font-semibold text-slate-900">{row.name || row.entityId}</div>
+                        <div className="font-mono text-[11px] text-slate-500">{row.entityId}</div>
+                      </td>
                       <td className="px-3 py-2">{row.area ?? 'Unassigned'}</td>
                       <td className="px-3 py-2 text-right">{row.totalKwhDelta.toFixed(2)}</td>
                       <td className="px-3 py-2 text-right">{row.estimatedCost != null ? costFmt.format(row.estimatedCost) : '—'}</td>
