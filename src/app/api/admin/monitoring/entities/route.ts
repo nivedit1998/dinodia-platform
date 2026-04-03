@@ -163,12 +163,14 @@ export async function GET(req: NextRequest) {
     devices.map((d) => [d.entityId, d as { entityId: string; name?: string | null; label?: string | null; area?: string | null }])
   );
 
+  const prettyId = (id: string) => id.replace(/^sensor\./i, '').replace(/_/g, ' ');
+
   const mapRow = (row: { entityId: string; capturedAt: Date }) => {
     const device = deviceById.get(row.entityId);
     const area = device?.area?.trim() || UNASSIGNED;
     const primary = (device?.name || '').trim();
     const fallbackLabel = (device?.label || '').trim();
-    const name = primary || fallbackLabel || row.entityId;
+    const name = primary || fallbackLabel || prettyId(row.entityId);
     return {
       entityId: row.entityId,
       name,
