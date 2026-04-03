@@ -59,6 +59,7 @@ export default function AdminSettings({ username }: Props) {
   const [tenantToDelete, setTenantToDelete] = useState<TenantInfo | null>(null);
   const [tenantDeleteLoading, setTenantDeleteLoading] = useState(false);
   const [tenantDeleteError, setTenantDeleteError] = useState<string | null>(null);
+  const cleanDisplay = useCallback((value: string) => value.replace(/^sensor\./i, '').replace(/_/g, ' '), []);
 
   const [passwordForm, setPasswordForm] = useState(EMPTY_PASSWORD_FORM);
   const [passwordAlert, setPasswordAlert] = useState<StatusMessage>(null);
@@ -183,11 +184,10 @@ export default function AdminSettings({ username }: Props) {
   }, [loadOverrides]);
 
   function startNewOverride(entityId = '') {
-    const prettyId = (id: string) => id.replace(/^sensor\./i, '').replace(/_/g, ' ');
     setEditingOverrideId(null);
     setOverrideForm({
       entityId,
-      name: prettyId(entityId),
+      name: cleanDisplay(entityId),
       area: '',
       label: '',
       blindTravelSeconds: '',
@@ -198,7 +198,7 @@ export default function AdminSettings({ username }: Props) {
     setEditingOverrideId(override.entityId);
     setOverrideForm({
       entityId: override.entityId,
-      name: override.name || override.label || override.entityId,
+      name: override.name || override.label || cleanDisplay(override.entityId),
       area: override.area ?? '',
       label: override.label ?? '',
       blindTravelSeconds:
@@ -1096,7 +1096,6 @@ export default function AdminSettings({ username }: Props) {
                   <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-3 py-2 text-left">Entity</th>
-                      <th className="px-3 py-2 text-left">Name</th>
                       <th className="px-3 py-2 text-left">Area</th>
                       <th className="px-3 py-2 text-left">Label</th>
                       <th className="px-3 py-2 text-right">Actions</th>
@@ -1112,8 +1111,10 @@ export default function AdminSettings({ username }: Props) {
                     )}
                     {overrides.map((ov) => (
                       <tr key={ov.entityId} className="odd:bg-white even:bg-slate-50/70">
-                        <td className="px-3 py-2 font-mono">{ov.entityId}</td>
-                        <td className="px-3 py-2">{ov.name}</td>
+                        <td className="px-3 py-2">
+                          <div className="font-semibold text-slate-900">{cleanDisplay(ov.name || ov.entityId)}</div>
+                          <div className="font-mono text-[11px] text-slate-500">{ov.entityId}</div>
+                        </td>
                         <td className="px-3 py-2">{ov.area || 'Unassigned'}</td>
                         <td className="px-3 py-2">{ov.label || '—'}</td>
                         <td className="px-3 py-2 text-right">
@@ -1149,7 +1150,8 @@ export default function AdminSettings({ username }: Props) {
                     .map((obs) => (
                       <li key={obs.entityId} className="flex items-center justify-between px-3 py-2">
                         <div>
-                          <p className="font-mono">{obs.entityId}</p>
+                          <p className="font-semibold text-slate-900">{cleanDisplay(obs.name || obs.entityId)}</p>
+                          <p className="font-mono text-[11px] text-slate-500">{obs.entityId}</p>
                           <p className="text-[11px] text-slate-500">
                             {obs.unit || 'sensor'} • {obs.lastCapturedAt ? new Date(obs.lastCapturedAt).toLocaleString('en-GB') : 'recent'}
                           </p>
