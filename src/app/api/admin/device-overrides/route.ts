@@ -111,8 +111,17 @@ export async function GET(req: NextRequest) {
   const deviceSet = new Set(overrides.map((d) => d.entityId));
   const prettyId = (id: string) => id.replace(/^sensor\./i, '').replace(/_/g, ' ');
   const deviceByEntity = new Map(overrides.map((d) => [d.entityId, d]));
+  const cleanLabel = (value?: string | null) => {
+    const trimmed = value?.trim();
+    if (!trimmed) return null;
+    const lower = trimmed.toLowerCase();
+    if (lower === 'sensor' || lower === '-') return null;
+    return trimmed;
+  };
+
   const inferLabel = (entityId: string, existing?: string | null) => {
-    if (existing && existing.trim()) return existing.trim();
+    const cleaned = cleanLabel(existing);
+    if (cleaned) return cleaned;
     const id = entityId.toLowerCase();
     if (id.includes('blind')) return 'Blind';
     if (id.includes('motion')) return 'Motion Sensor';
@@ -158,10 +167,10 @@ export async function GET(req: NextRequest) {
     const name = (override?.name ?? d.name ?? prettyId(d.entityId)).trim();
     const area = (override?.area ?? d.area ?? d.areaName ?? '').trim() || null;
     const rawLabel =
-      override?.label?.trim() ||
-      (Array.isArray(d.labels) ? d.labels.find((l) => l && l.toString().trim())?.toString() : undefined) ||
-      d.label?.toString().trim() ||
-      d.labelCategory?.toString().trim() ||
+      cleanLabel(override?.label) ||
+      cleanLabel((Array.isArray(d.labels) ? d.labels.find((l) => l && l.toString().trim())?.toString() : undefined)) ||
+      cleanLabel(d.label?.toString()) ||
+      cleanLabel(d.labelCategory?.toString()) ||
       null;
     const label = inferLabel(d.entityId, rawLabel);
     mergedMap.set(d.entityId, {
