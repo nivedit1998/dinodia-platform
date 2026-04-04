@@ -4,6 +4,7 @@ import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getUserWithHaConnection } from '@/lib/haConnection';
 import { prisma } from '@/lib/prisma';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
+import { getDeviceGroupingId } from '@/lib/deviceIdentity';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_LOOKBACK_DAYS = 90;
@@ -64,17 +65,7 @@ export async function GET(req: NextRequest) {
 
   const overrideMap = new Map(overrides.map((d) => [d.entityId, d]));
 
-  let haDevices: Array<{
-    entityId: string;
-    name?: string | null;
-    area?: string | null;
-    areaName?: string | null;
-    label?: string | null;
-    labels?: string[] | null;
-    labelCategory?: string | null;
-    deviceId?: string | null;
-    blindTravelSeconds?: number | null;
-  }> = [];
+  let haDevices: Array<ReturnType<typeof getDevicesForHaConnection>[number]> = [];
   try {
     haDevices = await getDevicesForHaConnection(haConnectionId, { cacheTtlMs: 2000 });
   } catch (err) {
@@ -160,6 +151,10 @@ export async function GET(req: NextRequest) {
     blindTravelSeconds: number | null;
     deviceId?: string | null;
     hasOverride: boolean;
+    labelCategory?: string | null;
+    labels?: string[] | null;
+    state?: string | null;
+    areaName?: string | null;
   }>();
 
   haDevices.forEach((d) => {
@@ -182,6 +177,10 @@ export async function GET(req: NextRequest) {
         override?.blindTravelSeconds ?? (typeof d.blindTravelSeconds === 'number' ? d.blindTravelSeconds : null),
       deviceId: d.deviceId ?? null,
       hasOverride: Boolean(override),
+      labelCategory: d.labelCategory ?? null,
+      labels: Array.isArray(d.labels) ? d.labels : null,
+      state: d.state ?? null,
+      areaName: d.areaName ?? null,
     });
   });
 
@@ -214,12 +213,15 @@ export async function GET(req: NextRequest) {
   const filteredDevices = applySearch(mergedList).slice(0, limit);
 
   const linkedSensorsByDevice = new Map<string, typeof mergedList>();
-  const parentKey = (entityId: string) => {
-    const objectId = entityId.split('.')[1] || entityId;
-    return objectId.replace(/_(power|energy|battery|voltage|current|status)$/i, '');
-  };
   filteredDevices.forEach((dev) => {
-    const key = parentKey(dev.entityId);
+    const key = getDeviceGroupingId({
+      entityId: dev.entityId,
+      deviceId: dev.deviceId ?? null,
+      name: dev.name,
+      areaName: dev.area ?? dev.areaName ?? null,
+      area: dev.area ?? dev.areaName ?? null,
+    });
+    if (!key) return;
     if (!linkedSensorsByDevice.has(key)) linkedSensorsByDevice.set(key, [] as typeof mergedList);
     linkedSensorsByDevice.get(key)!.push(dev);
   });
@@ -227,8 +229,16 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     devices: filteredDevices.map((d) => {
-      const key = parentKey(d.entityId);
-      const linked = linkedSensorsByDevice.get(key)?.filter((ls) => ls.entityId !== d.entityId) ?? [];
+      const key = getDeviceGroupingId({
+        entityId: d.entityId,
+        deviceId: d.deviceId ?? null,
+        name: d.name,
+        areaName: d.area ?? d.areaName ?? null,
+        area: d.area ?? d.areaName ?? null,
+      });
+      const linked = key
+        ? (linkedSensorsByDevice.get(key)?.filter((ls) => ls.entityId !== d.entityId) ?? [])
+        : [];
       return {
         entityId: d.entityId,
         name: d.name,
