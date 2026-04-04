@@ -187,7 +187,6 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
   }, [refreshRemoteStatus]);
 
   const loadOverrides = useCallback(async () => {
-    setOverridesLoading(true);
     setOverrideAlert(null);
     try {
       const params = new URLSearchParams();
@@ -206,8 +205,6 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
         type: 'error',
         message: err instanceof Error ? err.message : 'Failed to load device overrides.',
       });
-    } finally {
-      setOverridesLoading(false);
     }
   }, []);
 
