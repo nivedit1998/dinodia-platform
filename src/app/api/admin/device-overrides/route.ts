@@ -7,6 +7,7 @@ import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { getDeviceGroupingId } from '@/lib/deviceIdentity';
 import { getGroupLabel } from '@/lib/deviceLabels';
 import { isSensorEntity } from '@/lib/deviceSensors';
+import { getTileEligibleDevicesForTenantDashboard } from '@/lib/deviceCapabilities';
 import type { UIDevice } from '@/types/device';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -251,6 +252,12 @@ export async function GET(req: NextRequest) {
 
   const filteredDevices = applySearch(mergedList).filter((d) => isAssigned(d.area ?? d.areaName));
 
+  // Build tile-eligibility set using tenant dashboard rules
+  const uidDevices = filteredDevices.map((d) => toUIDevice(d));
+  const tileEligibleSet = new Set(
+    getTileEligibleDevicesForTenantDashboard(uidDevices).map((d) => d.entityId)
+  );
+
   // Group by device grouping id to mirror tenant dashboard and pick a single primary per group
   const groups = new Map<string, MergedDevice[]>();
   filteredDevices.forEach((dev) => {
@@ -264,14 +271,23 @@ export async function GET(req: NextRequest) {
   const linkedSensorsByPrimary = new Map<string, MergedDevice[]>();
 
   groups.forEach((devices) => {
-    const sorted = devices.slice().sort((a, b) => a.name.localeCompare(b.name) || a.entityId.localeCompare(b.entityId));
+    // Only consider members that are tile-eligible
+    const eligibleMembers = devices.filter((d) => tileEligibleSet.has(d.entityId));
+    if (eligibleMembers.length === 0) return;
+
+    const sorted = eligibleMembers
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name) || a.entityId.localeCompare(b.entityId));
+
     const nonSensors = sorted.filter((d) => !isSensorEntity(toUIDevice(d)));
     const primary =
       nonSensors.find((d) => d.hasOverride) ||
       nonSensors[0] ||
       sorted[0];
     primaries.push(primary);
-    const linked = devices.filter((d) => d.entityId !== primary.entityId && isSensorEntity(toUIDevice(d)));
+    const linked = devices.filter(
+      (d) => d.entityId !== primary.entityId && isSensorEntity(toUIDevice(d))
+    );
     linkedSensorsByPrimary.set(primary.entityId, linked);
   });
 
