@@ -121,6 +121,22 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
   const areaMenuRef = useRef<HTMLDivElement | null>(null);
   const labelMenuRef = useRef<HTMLDivElement | null>(null);
 
+  const visibleOverrides = useMemo(() => {
+    return overrides.filter((ov) => {
+      const lblRaw = ov.label?.trim();
+      const lbl = lblRaw ? lblRaw.toLowerCase() : '';
+      if (!lbl || lbl === '-') return false;
+      if (!allowedLabels.has(lbl)) return false;
+      const areaVal = (ov.area ?? '').trim().toLowerCase();
+      if (!areaVal || areaVal === 'unassigned') return false;
+      if (filterAreas.length && !filterAreas.includes(ov.area || '')) return false;
+      if (filterLabels.length && !filterLabels.map((l) => l.toLowerCase()).includes(lbl)) return false;
+      return true;
+    });
+  }, [overrides, allowedLabels, filterAreas, filterLabels]);
+
+  const hiddenCount = overrides.length - visibleOverrides.length;
+
   useEffect(() => {
     function handleClickOutside(evt: MouseEvent) {
       const target = evt.target as Node;
@@ -1246,22 +1262,17 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                 <h3 className="text-sm font-semibold text-slate-900">Devices and Sensors</h3>
                 <p className="text-[11px] text-slate-500">Tap a card to edit.</p>
               </div>
-              <span className="text-[11px] text-slate-500">{overrides.length} items</span>
+              <div className="text-right text-[11px] text-slate-500">
+                <div>{visibleOverrides.length} items</div>
+                {hiddenCount > 0 && (
+                  <div className="text-[10px] text-amber-700">
+                    {hiddenCount} hidden (filtered by label/area)
+                  </div>
+                )}
+              </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {overrides
-                .filter((ov) => {
-                  const lblRaw = ov.label?.trim();
-                  const lbl = lblRaw ? lblRaw.toLowerCase() : '';
-                  if (!lbl || lbl === '-') return false;
-                  if (!allowedLabels.has(lbl)) return false;
-                  const areaVal = (ov.area ?? '').trim().toLowerCase();
-                  if (!areaVal || areaVal === 'unassigned') return false;
-                  if (filterAreas.length && !filterAreas.includes(ov.area || '')) return false;
-                  if (filterLabels.length && !filterLabels.map((l) => l.toLowerCase()).includes(lbl)) return false;
-                  return true;
-                })
-                .map((ov) => {
+              {visibleOverrides.map((ov) => {
                   const areaColor = stringToColor(ov.area || 'Unassigned');
                   return (
                     <div
@@ -1314,6 +1325,21 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                 })}
               {overrides.length === 0 && (
                 <div className="text-sm text-slate-500">No overrides yet.</div>
+              )}
+              {overrides.length > 0 && visibleOverrides.length === 0 && (
+                <div className="col-span-full flex flex-col items-center gap-2 rounded-xl border border-slate-200/70 bg-slate-50 p-4 text-sm text-slate-600">
+                  <span>No devices match your filters.</span>
+                  <button
+                    type="button"
+                    className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-700"
+                    onClick={() => {
+                      setFilterAreas([]);
+                      setFilterLabels([]);
+                    }}
+                  >
+                    Clear filters
+                  </button>
+                </div>
               )}
             </div>
           </div>
