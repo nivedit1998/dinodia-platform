@@ -620,86 +620,96 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     }
   }
 
-  return (
-    <div className="w-full max-w-4xl bg-white rounded-2xl shadow-lg p-4 sm:p-6 flex flex-col gap-5 sm:gap-6">
-      <header className="flex flex-col gap-3 border-b pb-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3 sm:items-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 shadow-sm">
-            <Image
-              src="/brand/logo-mark.png"
-              alt="Dinodia"
-              width={40}
-              height={40}
-              priority
-            />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold leading-snug">Homeowner Settings</h1>
-            <p className="text-xs text-slate-500">
-              Logged in as <span className="font-medium">{username}</span>
-            </p>
-          </div>
-        </div>
-        <div className="relative" ref={menuRef}>
-          <button
-            type="button"
-            aria-label="Menu"
-            onClick={() => setMenuOpen((v) => !v)}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-sm hover:bg-white"
-          >
-            <span className="sr-only">Menu</span>
-            <span className="flex flex-col gap-1">
-              <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
-              <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
-              <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
-            </span>
-          </button>
-          {menuOpen && (
-            <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
-              <Link
-                href="/admin/dashboard"
-                className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
-                onClick={() => setMenuOpen(false)}
-              >
-                Homeowner Dashboard
-              </Link>
-              <Link
-                href="/admin/settings"
-                className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
-                onClick={() => setMenuOpen(false)}
-              >
-                Homeowner Settings
-              </Link>
-              <Link
-                href="/admin/manage-devices"
-                className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
-                onClick={() => setMenuOpen(false)}
-              >
-                Manage Home Devices
-              </Link>
-              <Link
-                href="/admin/manage-users"
-                className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
-                onClick={() => setMenuOpen(false)}
-              >
-                Manage Home Users
-              </Link>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
-                onClick={() => {
-                  setMenuOpen(false);
-                  void handleLogout();
-                }}
-              >
-                Logout
-              </button>
-            </div>
-          )}
-        </div>
-      </header>
+  const pageTitle =
+    mode === 'devices'
+      ? 'Manage Home Devices'
+      : mode === 'users'
+        ? 'Manage Home Users'
+        : 'Homeowner Settings';
 
-      <section className="grid gap-5 text-sm lg:grid-cols-2">
+  return (
+    <div className="min-h-screen bg-[#f5f5f7] text-slate-900">
+      <div className="mx-auto flex max-w-5xl flex-col gap-6 px-3 pb-16 pt-8 sm:px-4 lg:pt-12">
+        <header className="sticky top-4 z-30 flex flex-col gap-3 rounded-2xl border border-white/60 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between sm:rounded-full sm:px-6 sm:py-2.5">
+          <div className="flex items-start gap-3 sm:items-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/60 bg-white shadow-sm">
+              <Image
+                src="/brand/logo-mark.png"
+                alt="Dinodia"
+                width={40}
+                height={40}
+                priority
+              />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400">Admin</p>
+              <p className="text-base font-semibold text-slate-900">{pageTitle}</p>
+              <p className="text-[11px] text-slate-500">
+                Signed in as <span className="font-medium">{username}</span>
+              </p>
+            </div>
+          </div>
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              aria-label="Menu"
+              onClick={() => setMenuOpen((v) => !v)}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-sm hover:bg-white"
+            >
+              <span className="sr-only">Menu</span>
+              <span className="flex flex-col gap-1">
+                <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
+                <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
+                <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
+              </span>
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
+                <Link
+                  href="/admin/dashboard"
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Homeowner Dashboard
+                </Link>
+                <Link
+                  href="/admin/settings"
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Homeowner Settings
+                </Link>
+                <Link
+                  href="/admin/manage-devices"
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Manage Home Devices
+                </Link>
+                <Link
+                  href="/admin/manage-users"
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Manage Home Users
+                </Link>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    void handleLogout();
+                  }}
+                >
+                  Logout
+                </button>
+              </div>
+            )}
+          </div>
+        </header>
+
+        <section className="rounded-3xl border border-slate-200/70 bg-white/90 p-5 shadow-sm backdrop-blur lg:p-6">
+          <div className="grid gap-5 text-sm lg:grid-cols-2">
         {showProfile && (
           <div className="border border-slate-200 rounded-xl p-4 lg:col-span-2">
             <h2 className="font-semibold mb-4">Profile</h2>
@@ -1330,48 +1340,49 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
         )}
 
         {showDeregister && (
-        <div
-          className={`border border-slate-200 rounded-xl p-4 lg:col-span-2 ${
-            deregisterLocked ? 'bg-slate-50 opacity-70 pointer-events-none' : ''
-          }`}
-        >
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="font-semibold">Deregister Property</h2>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Issue a one-time claim code for the next homeowner.
-              </p>
+          <div
+            className={`border border-slate-200 rounded-xl p-4 lg:col-span-2 ${
+              deregisterLocked ? 'bg-slate-50 opacity-70 pointer-events-none' : ''
+            }`}
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-semibold">Deregister Property</h2>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Issue a one-time claim code for the next homeowner.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openSellingModal}
+                disabled={sellingLoading || deregisterLocked}
+                className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {sellingClaimCode ? 'View claim code' : 'Deregister Property'}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={openSellingModal}
-              disabled={sellingLoading || deregisterLocked}
-              className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {sellingClaimCode ? 'View claim code' : 'Deregister Property'}
-            </button>
+            {deregisterLocked && (
+              <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                Remote access must be enabled for you to deregister your smart home from this
+                website. To deregister your smart home without paying for remote access you
+                will have to use your iOS/Android phone or the Dinodia Kiosk.
+              </p>
+            )}
+            <p className="mt-3 text-xs text-slate-600">
+              Choose if everyone is leaving or if tenants stay. We’ll guide you through issuing the
+              claim code and sign you out once you confirm.
+            </p>
+            {sellingClaimCode && (
+              <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+                A claim code has already been generated for this home. Share it with the incoming
+                homeowner before you finish.
+              </p>
+            )}
           </div>
-          {deregisterLocked && (
-            <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-              Remote access must be enabled for you to deregister your smart home from this
-              website. To deregister your smart home without paying for remote access you
-              will have to use your iOS/Android phone or the Dinodia Kiosk.
-            </p>
-          )}
-          <p className="mt-3 text-xs text-slate-600">
-            Choose if everyone is leaving or if tenants stay. We’ll guide you through issuing the
-            claim code and sign you out once you confirm.
-          </p>
-          {sellingClaimCode && (
-            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
-              A claim code has already been generated for this home. Share it with the incoming
-              homeowner before you finish.
-            </p>
-          )}
-        </div>
         )}
 
-      </section>
+          </div>
+        </section>
 
       {tenantToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
@@ -1557,6 +1568,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
