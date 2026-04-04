@@ -5,6 +5,7 @@ import { getUserWithHaConnection } from '@/lib/haConnection';
 import { prisma } from '@/lib/prisma';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { getDeviceGroupingId } from '@/lib/deviceIdentity';
+import type { UIDevice } from '@/types/device';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_LOOKBACK_DAYS = 90;
