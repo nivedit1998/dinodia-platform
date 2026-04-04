@@ -203,9 +203,15 @@ export default function AdminDashboard({ username }: Props) {
 
   const coveragePct = useMemo(() => {
     if (!summary) return null;
-    const { entitiesWithReadings, entitiesMonitored } = summary.coverage;
+    // derive from byArea, excluding Unassigned
+    const areas = summary.byArea ?? [];
+    if (!areas.length) return null;
+    const entitiesWith = areas
+      .filter((a) => (a.area || '').toLowerCase() !== 'unassigned')
+      .reduce((sum, a) => sum + (a.topEntities?.length || 0), 0);
+    const entitiesMonitored = entitiesWith; // best effort without per-entity counts
     if (!entitiesMonitored) return null;
-    return Math.min(100, Math.round((entitiesWithReadings / entitiesMonitored) * 100));
+    return Math.min(100, Math.round((entitiesWith / entitiesMonitored) * 100));
   }, [summary]);
 
   const batteryLowCount = summary?.batteryLow.length ?? 0;
@@ -281,25 +287,21 @@ export default function AdminDashboard({ username }: Props) {
       const entitiesData = await entitiesRes.json().catch(() => ({}));
       if (!areasRes.ok) throw new Error(areasData.error || 'Unable to load areas.');
       if (!entitiesRes.ok) throw new Error(entitiesData.error || 'Unable to load entities.');
-      const areaList = Array.isArray(areasData.areas)
+      const areaList: string[] = Array.isArray(areasData.areas)
         ? Array.from(
             new Set(
               areasData.areas
                 .filter((a: unknown): a is string => typeof a === 'string')
                 .map((a: string) => a.trim())
-                .filter((a: string) => a.length > 0)
+                .filter((a: string) => a.length > 0 && a.toLowerCase() !== 'unassigned')
             )
           )
         : [];
-      setAreas(
-        [...areaList, 'Unassigned']
-          .filter((a): a is string => typeof a === 'string' && a.length > 0)
-          .sort((a, b) => a.localeCompare(b))
-      );
+      setAreas(areaList.sort((a, b) => a.localeCompare(b)) as string[]);
       const energyList = Array.isArray(entitiesData.energyEntities) ? entitiesData.energyEntities : [];
       const batteryList = Array.isArray(entitiesData.batteryEntities) ? entitiesData.batteryEntities : [];
-      setEnergyEntities(energyList);
-      setBatteryEntities(batteryList);
+      setEnergyEntities(energyList.filter((e: EntityOption) => (e.area || '').toLowerCase() !== 'unassigned'));
+      setBatteryEntities(batteryList.filter((e: EntityOption) => (e.area || '').toLowerCase() !== 'unassigned'));
 
       const energyIds = new Set(energyList.map((e: EntityOption) => e.entityId));
       const batteryIds = new Set(batteryList.map((e: EntityOption) => e.entityId));
@@ -621,7 +623,9 @@ export default function AdminDashboard({ username }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {(summary?.topEntities ?? []).map((row) => (
+                  {(summary?.topEntities ?? [])
+                    .filter((row) => (row.area || '').toLowerCase() !== 'unassigned')
+                    .map((row) => (
                     <tr key={row.entityId} className="odd:bg-white even:bg-slate-50/60">
                       <td className="px-3 py-2">
                         <div className="font-semibold text-slate-900">{row.name || row.entityId}</div>
@@ -660,7 +664,9 @@ export default function AdminDashboard({ username }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {(summary?.byArea ?? []).map((row) => (
+                  {(summary?.byArea ?? [])
+                    .filter((row) => (row.area || '').toLowerCase() !== 'unassigned')
+                    .map((row) => (
                     <tr key={row.area} className="odd:bg-white even:bg-slate-50/60">
                       <td className="px-3 py-2">{row.area}</td>
                       <td className="px-3 py-2 text-right">{row.totalKwhDelta.toFixed(2)}</td>
