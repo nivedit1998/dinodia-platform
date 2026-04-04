@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { logout as performLogout } from '@/lib/logout';
 import { platformFetch } from '@/lib/platformFetchClient';
 
