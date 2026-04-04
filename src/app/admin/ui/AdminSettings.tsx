@@ -93,6 +93,10 @@ export default function AdminSettings({ username }: Props) {
   const [overrideSearch, setOverrideSearch] = useState('');
   const [overrides, setOverrides] = useState<DeviceOverride[]>([]);
   const [overridesLoading, setOverridesLoading] = useState(false);
+  const allowedLabels = useMemo(
+    () => new Set(['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Doorbell', 'Home Security', 'TV', 'Speaker']),
+    []
+  );
   const [overrideAlert, setOverrideAlert] = useState<StatusMessage>(null);
   const [overrideForm, setOverrideForm] = useState<OverrideForm>({
     entityId: '',
@@ -1118,7 +1122,9 @@ export default function AdminSettings({ username }: Props) {
                         </td>
                       </tr>
                     )}
-                    {overrides.map((ov) => {
+                    {overrides
+                      .filter((ov) => !ov.label || allowedLabels.has(ov.label))
+                      .map((ov) => {
                       const areaColor = stringToColor(ov.area || 'Unassigned');
                       return (
                         <tr key={ov.entityId} className="odd:bg-white even:bg-slate-50/70">
