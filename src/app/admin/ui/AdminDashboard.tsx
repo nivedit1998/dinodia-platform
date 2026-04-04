@@ -126,7 +126,7 @@ export default function AdminDashboard({ username }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bucket, setBucket] = useState<HistoryBucket>('daily');
-  const [preset, setPreset] = useState<Preset>('30');
+  const [preset, setPreset] = useState<Preset>('all');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
@@ -523,17 +523,25 @@ export default function AdminDashboard({ username }: Props) {
               Bucket: {bucket}, points: {summary?.seriesTotalKwh.length ?? 0}
             </span>
           </div>
-          <LineAreaChart
-            id="energy-trend"
-            title="Energy"
-            points={energyTrendPoints}
-            color="#0ea5e9"
-            gradientTo="#5ac8fa"
-            valueUnit="kWh"
-            variant={energyVariant}
-            emptyLabel="No energy readings in this window."
-            formatValue={(v) => Number(v).toFixed(2)}
-          />
+          <div className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+            <div
+              className="min-w-[900px]"
+              style={{ minWidth: `${Math.max(900, energyTrendPoints.length * 32)}px` }}
+            >
+              <LineAreaChart
+                id="energy-trend"
+                title="Energy"
+                points={energyTrendPoints}
+                color="#0ea5e9"
+                gradientTo="#5ac8fa"
+                valueUnit="kWh"
+                variant={energyVariant}
+                emptyLabel="No energy readings in this window."
+                formatValue={(v) => Number(v).toFixed(2)}
+                forcedWidth={Math.max(900, energyTrendPoints.length * 32)}
+              />
+            </div>
+          </div>
           {summary?.seriesTotalCost?.length ? (
             <div className="mt-2 text-sm text-slate-600">Cost trend mirrors energy using configured £/kWh.</div>
           ) : null}
@@ -546,17 +554,25 @@ export default function AdminDashboard({ username }: Props) {
               Bucket: {bucket}, points: {summary?.seriesBatteryAvgPercent.length ?? 0}
             </span>
           </div>
-          <LineAreaChart
-            id="battery-trend"
-            title="Battery"
-            points={batteryTrendPoints}
-            color="#34c759"
-            gradientTo="#a3e635"
-            valueUnit="%"
-            variant={energyVariant}
-            emptyLabel="No battery readings in this window."
-            formatValue={(v) => v.toFixed(0)}
-          />
+          <div className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+            <div
+              className="min-w-[900px]"
+              style={{ minWidth: `${Math.max(900, batteryTrendPoints.length * 32)}px` }}
+            >
+              <LineAreaChart
+                id="battery-trend"
+                title="Battery"
+                points={batteryTrendPoints}
+                color="#34c759"
+                gradientTo="#a3e635"
+                valueUnit="%"
+                variant={energyVariant}
+                emptyLabel="No battery readings in this window."
+                formatValue={(v) => v.toFixed(0)}
+                forcedWidth={Math.max(900, batteryTrendPoints.length * 32)}
+              />
+            </div>
+          </div>
           <p className="text-xs text-slate-500">Average of latest battery % per entity per bucket.</p>
         </section>
 

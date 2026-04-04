@@ -20,6 +20,7 @@ export type LineAreaChartProps = {
   emptyLabel?: string;
   formatValue?: (value: number) => string;
   variant?: 'line' | 'bar';
+  forcedWidth?: number;
 };
 
 const defaultFormat = (v: number) => (Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2));
@@ -48,20 +49,21 @@ export function LineAreaChart({
   emptyLabel,
   formatValue = defaultFormat,
   variant = 'line',
+  forcedWidth,
 }: LineAreaChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return undefined;
+    if (!containerRef.current || forcedWidth) return undefined;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (entry) setWidth(entry.contentRect.width);
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [forcedWidth]);
 
   const prepared = useMemo(() => points.filter((p) => Number.isFinite(p.value) && !Number.isNaN(p.value)), [points]);
 
@@ -72,7 +74,7 @@ export function LineAreaChart({
   const yDomain: [number, number] = [0, yMax === 0 ? 1 : yMax * 1.08];
 
   const gradient = getGradientStops(color, gradientFrom, gradientTo);
-  const measuredWidth = width || 640; // fallback while measuring to avoid zero-width render
+  const measuredWidth = forcedWidth || width || 640; // fallback while measuring to avoid zero-width render
 
   const innerWidth = Math.max(140, measuredWidth - chartPadding.left - chartPadding.right);
   const innerHeight = Math.max(140, height - chartPadding.top - chartPadding.bottom);
