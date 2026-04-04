@@ -121,13 +121,28 @@ export async function GET(req: NextRequest) {
     hasOverride: deviceSet.has(row.entityId),
   }));
 
+  const linkedSensorsByDevice = new Map<string, typeof observedEntities>();
+  observedEntities.forEach((obs) => {
+    const base = obs.entityId.split('.')[1] || obs.entityId;
+    const parentId = base.replace(/_(power|energy|battery|voltage|current|status)$/i, '');
+    if (!linkedSensorsByDevice.has(parentId)) linkedSensorsByDevice.set(parentId, [] as typeof observedEntities);
+    linkedSensorsByDevice.get(parentId)!.push(obs);
+  });
+
   return NextResponse.json({
     ok: true,
-    devices: devices.map((d) => ({
-      ...d,
-      name: displayName(d.entityId),
-      label: inferLabel(d.entityId, d.label),
-    })),
+    devices: devices.map((d) => {
+      const cleanedName = displayName(d.entityId);
+      const derivedLabel = inferLabel(d.entityId, d.label);
+      const objectId = d.entityId.split('.')[1] || d.entityId;
+      const linked = linkedSensorsByDevice.get(objectId) ?? [];
+      return {
+        ...d,
+        name: cleanedName,
+        label: derivedLabel,
+        linkedSensors: linked,
+      };
+    }),
     observedEntities,
   });
 }

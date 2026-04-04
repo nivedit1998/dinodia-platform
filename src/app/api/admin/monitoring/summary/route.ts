@@ -11,6 +11,21 @@ const BATTERY_LOW_THRESHOLD = 25;
 const UNASSIGNED = 'Unassigned';
 const MAX_FILTER_ENTITIES = 2000;
 
+const inferLabel = (entityId: string, existing?: string | null) => {
+  if (existing && existing.trim()) return existing.trim();
+  const id = entityId.toLowerCase();
+  if (id.includes('blind')) return 'Blind';
+  if (id.includes('motion')) return 'Motion Sensor';
+  if (id.includes('spotify')) return 'Spotify';
+  if (id.includes('boiler')) return 'Boiler';
+  if (id.includes('doorbell')) return 'Doorbell';
+  if (id.includes('security')) return 'Home Security';
+  if (id.includes('tv')) return 'TV';
+  if (id.includes('speaker')) return 'Speaker';
+  if (id.includes('light') || id.includes('lamp')) return 'Light';
+  return null;
+};
+
 type BucketInfo = { key: string; bucketStart: Date; label: string };
 
 const formatDateUtc = (date: Date) => {
@@ -372,7 +387,8 @@ export async function GET(req: NextRequest) {
     const device = deviceByEntity.get(entityId);
     const primary = device?.name?.trim();
     const fallbackLabel = device?.label?.trim();
-    const base = primary || fallbackLabel || entityId;
+    const inferred = inferLabel(entityId, device?.label);
+    const base = primary || fallbackLabel || inferred || entityId;
     return prettyId(base).trim() || entityId;
   };
 
@@ -380,6 +396,7 @@ export async function GET(req: NextRequest) {
     .map(([entityId, totalKwhDelta]) => ({
       entityId,
       name: displayName(entityId),
+      label: inferLabel(entityId, deviceByEntity.get(entityId)?.label),
       totalKwhDelta,
       estimatedCost: validPrice === null ? undefined : totalKwhDelta * validPrice,
       area: areaByEntity.get(entityId) || UNASSIGNED,
@@ -392,6 +409,7 @@ export async function GET(req: NextRequest) {
       .map(([entityId, totalKwhDelta]) => ({
         entityId,
         name: displayName(entityId),
+        label: inferLabel(entityId, deviceByEntity.get(entityId)?.label),
         totalKwhDelta,
         estimatedCost: validPrice === null ? undefined : totalKwhDelta * validPrice,
       }))
@@ -406,7 +424,7 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  const batteryLow: Array<{ entityId: string; name: string; latestBatteryPercent: number; capturedAt: string }> = [];
+  const batteryLow: Array<{ entityId: string; name: string; label: string | null; latestBatteryPercent: number; capturedAt: string }> = [];
   const seenBattery = new Set<string>();
   for (const row of batteryRows) {
     if (seenBattery.has(row.entityId)) continue;
@@ -416,6 +434,7 @@ export async function GET(req: NextRequest) {
       batteryLow.push({
         entityId: row.entityId,
         name: displayName(row.entityId),
+        label: inferLabel(row.entityId, deviceByEntity.get(row.entityId)?.label),
         latestBatteryPercent: numeric,
         capturedAt: row.capturedAt.toISOString(),
       });

@@ -20,6 +20,13 @@ type DeviceOverride = {
   name: string;
   area?: string | null;
   label?: string | null;
+  linkedSensors?: {
+    entityId: string;
+    name: string;
+    label?: string | null;
+    unit?: string | null;
+    lastCapturedAt?: string;
+  }[];
   blindTravelSeconds?: number | null;
 };
 type OverrideForm = { entityId: string; name: string; area: string; label: string; blindTravelSeconds: string };
@@ -1118,6 +1125,25 @@ export default function AdminSettings({ username }: Props) {
                           <td className="px-3 py-2">
                             <div className="font-semibold text-slate-900">{cleanDisplay(ov.name || ov.entityId)}</div>
                             <div className="font-mono text-[11px] text-slate-500">{ov.entityId}</div>
+                            {Array.isArray(ov.linkedSensors) && ov.linkedSensors.length > 0 && (
+                              <div className="mt-1 space-y-1 rounded-lg border border-slate-100 bg-slate-50/70 p-2">
+                                <p className="text-[11px] uppercase tracking-[0.15em] text-slate-400">Linked sensors</p>
+                                <ul className="space-y-1 text-[12px] text-slate-700">
+                                  {ov.linkedSensors.slice(0, 5).map((ls) => (
+                                    <li key={ls.entityId} className="flex items-center justify-between gap-2">
+                                      <div>
+                                        <div className="font-medium text-slate-900">{cleanDisplay(ls.name || ls.entityId)}</div>
+                                        <div className="font-mono text-[10px] text-slate-500">{ls.entityId}</div>
+                                      </div>
+                                      <span className="text-[11px] text-slate-500">{ls.unit || ''}</span>
+                                    </li>
+                                  ))}
+                                  {ov.linkedSensors.length > 5 && (
+                                    <li className="text-[11px] text-slate-500">+{ov.linkedSensors.length - 5} more</li>
+                                  )}
+                                </ul>
+                              </div>
+                            )}
                           </td>
                           <td className="px-3 py-2">
                             <span
