@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { platformFetch } from '@/lib/platformFetchClient';
@@ -138,6 +138,8 @@ export default function AdminDashboard({ username }: Props) {
   const [selectedEnergyEntities, setSelectedEnergyEntities] = useState<string[]>([]);
   const [selectedBatteryEntities, setSelectedBatteryEntities] = useState<string[]>([]);
   const [selectorsError, setSelectorsError] = useState<string | null>(null);
+  const energyScrollRef = useRef<HTMLDivElement | null>(null);
+  const batteryScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (preset !== 'custom') return;
@@ -176,6 +178,22 @@ export default function AdminDashboard({ username }: Props) {
       })),
     [summary]
   );
+
+  useEffect(() => {
+    const el = energyScrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollLeft = el.scrollWidth;
+    });
+  }, [energyTrendPoints, bucket]);
+
+  useEffect(() => {
+    const el = batteryScrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollLeft = el.scrollWidth;
+    });
+  }, [batteryTrendPoints, bucket]);
 
   const energyVariant = 'line';
 
@@ -523,7 +541,10 @@ export default function AdminDashboard({ username }: Props) {
               Bucket: {bucket}, points: {summary?.seriesTotalKwh.length ?? 0}
             </span>
           </div>
-          <div className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+          <div
+            ref={energyScrollRef}
+            className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm"
+          >
             <div
               className="min-w-[900px]"
               style={{ minWidth: `${Math.max(900, energyTrendPoints.length * 32)}px` }}
@@ -554,7 +575,10 @@ export default function AdminDashboard({ username }: Props) {
               Bucket: {bucket}, points: {summary?.seriesBatteryAvgPercent.length ?? 0}
             </span>
           </div>
-          <div className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+          <div
+            ref={batteryScrollRef}
+            className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm"
+          >
             <div
               className="min-w-[900px]"
               style={{ minWidth: `${Math.max(900, batteryTrendPoints.length * 32)}px` }}
