@@ -1154,91 +1154,80 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
             </p>
           )}
           <div className="mt-4 grid gap-4">
-            <div className="rounded-lg border border-slate-200">
-              <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+            <div className="flex items-center justify-between pb-3">
+              <div>
                 <h3 className="text-sm font-semibold text-slate-900">Existing overrides</h3>
-                <span className="text-[11px] text-slate-500">{overrides.length} items</span>
+                <p className="text-[11px] text-slate-500">Tap a card to edit.</p>
               </div>
-              <div className="max-h-80 overflow-auto">
-                <table className="w-full text-xs text-slate-700">
-                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Entity</th>
-                      <th className="px-3 py-2 text-left">Area</th>
-                      <th className="px-3 py-2 text-left">Label</th>
-                      <th className="px-3 py-2 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {overrides.length === 0 && (
-                      <tr>
-                        <td colSpan={5} className="px-3 py-3 text-center text-slate-500">
-                          No overrides yet.
-                        </td>
-                      </tr>
-                    )}
-                    {overrides
-                      .filter((ov) => {
-                        const lbl = ov.label?.trim();
-                        if (!lbl || lbl === '-') return false;
-                        if (!allowedLabels.has(lbl)) return false;
-                        const areaVal = (ov.area ?? '').trim().toLowerCase();
-                        if (!areaVal || areaVal === 'unassigned') return false;
-                        return true;
-                      })
-                      .map((ov) => {
-                      const areaColor = stringToColor(ov.area || 'Unassigned');
-                      return (
-                        <tr key={ov.entityId} className="odd:bg-white even:bg-slate-50/70">
-                          <td className="px-3 py-2">
-                            <div className="font-semibold text-slate-900">{cleanDisplay(ov.name || ov.entityId)}</div>
-                            <div className="font-mono text-[11px] text-slate-500">{ov.entityId}</div>
-                            {Array.isArray(ov.linkedSensors) && ov.linkedSensors.length > 0 && (
-                              <div className="mt-1 space-y-1 rounded-lg border border-slate-100 bg-slate-50/70 p-2">
-                                <p className="text-[11px] uppercase tracking-[0.15em] text-slate-400">Linked sensors</p>
-                                <ul className="space-y-1 text-[12px] text-slate-700">
-                                  {ov.linkedSensors.slice(0, 5).map((ls) => (
-                                    <li key={ls.entityId} className="flex items-center justify-between gap-2">
-                                      <div>
-                                        <div className="font-medium text-slate-900">{cleanDisplay(ls.name || ls.entityId)}</div>
-                                        <div className="font-mono text-[10px] text-slate-500">{ls.entityId}</div>
-                                      </div>
-                                      <span className="text-[11px] text-slate-500">{ls.unit || ''}</span>
-                                    </li>
-                                  ))}
-                                  {ov.linkedSensors.length > 5 && (
-                                    <li className="text-[11px] text-slate-500">+{ov.linkedSensors.length - 5} more</li>
-                                  )}
-                                </ul>
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            <span
-                              className="inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-medium text-slate-900"
-                              style={{ backgroundColor: areaColor.bg, color: areaColor.fg }}
-                            >
-                              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: areaColor.fg }} />
-                              {ov.area || 'Unassigned'}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2">{ov.label || '—'}</td>
-                          <td className="px-3 py-2 text-right">
-                            <button
-                              type="button"
-                              className="text-indigo-600 hover:text-indigo-800"
-                              onClick={() => startEditOverride(ov)}
-                            >
-                              Edit
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <span className="text-[11px] text-slate-500">{overrides.length} items</span>
             </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {overrides
+                .filter((ov) => {
+                  const lbl = ov.label?.trim();
+                  if (!lbl || lbl === '-') return false;
+                  if (!allowedLabels.has(lbl)) return false;
+                  const areaVal = (ov.area ?? '').trim().toLowerCase();
+                  if (!areaVal || areaVal === 'unassigned') return false;
+                  return true;
+                })
+                .map((ov) => {
+                  const areaColor = stringToColor(ov.area || 'Unassigned');
+                  return (
+                    <div
+                      key={ov.entityId}
+                      className="flex h-full flex-col rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm hover:border-slate-300 hover:shadow-md transition"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-900 truncate">{cleanDisplay(ov.name || ov.entityId)}</p>
+                          <p className="font-mono text-[11px] text-slate-500 truncate">{ov.entityId}</p>
+                        </div>
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-indigo-700 hover:border-indigo-300 hover:bg-indigo-50"
+                          onClick={() => startEditOverride(ov)}
+                        >
+                          Edit
+                        </button>
+                      </div>
+
+                      {Array.isArray(ov.linkedSensors) && ov.linkedSensors.length > 0 && (
+                        <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50/70 p-2">
+                          <p className="text-[11px] uppercase tracking-[0.15em] text-slate-400">Linked sensors</p>
+                          <div className="mt-1 max-h-24 overflow-y-auto space-y-1 pr-1">
+                            {ov.linkedSensors.map((ls) => (
+                              <div key={ls.entityId} className="flex items-center justify-between gap-2 text-[12px] text-slate-700">
+                                <div className="min-w-0">
+                                  <div className="truncate font-medium text-slate-900">{cleanDisplay(ls.name || ls.entityId)}</div>
+                                  <div className="truncate font-mono text-[10px] text-slate-500">{ls.entityId}</div>
+                                </div>
+                                <span className="text-[11px] text-slate-500">{ls.unit || ''}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="mt-auto flex items-center justify-between pt-3">
+                        <span
+                          className="inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-medium text-slate-900"
+                          style={{ backgroundColor: areaColor.bg, color: areaColor.fg }}
+                        >
+                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: areaColor.fg }} />
+                          {ov.area || 'Unassigned'}
+                        </span>
+                        <span className="text-xs font-semibold text-slate-700">{ov.label}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              {overrides.length === 0 && (
+                <div className="text-sm text-slate-500">No overrides yet.</div>
+              )}
+            </div>
+          </div>
 
           </div>
 
