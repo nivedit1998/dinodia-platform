@@ -151,37 +151,37 @@ export default function AdminDashboard({ username }: Props) {
   }, [preset, from, to]);
 
   const totalKwh = useMemo(() => {
-    const filtered = (summary?.seriesTotalKwh ?? []).filter(
-      (p) => (p.area || '').toLowerCase() !== 'unassigned'
-    );
-    return filtered.reduce((sum, p) => sum + (p.totalKwhDelta || 0), 0);
+    if (summary?.byArea?.length) {
+      return summary.byArea
+        .filter((a) => (a.area || '').toLowerCase() !== 'unassigned')
+        .reduce((sum, a) => sum + (a.totalKwhDelta || 0), 0);
+    }
+    return (summary?.seriesTotalKwh ?? []).reduce((sum, p) => sum + (p.totalKwhDelta || 0), 0);
   }, [summary]);
   const totalCost = useMemo(() => {
     if (!summary || summary.pricePerKwh == null) return null;
     return summary.seriesTotalCost.reduce((sum, p) => sum + (p.estimatedCost || 0), 0);
   }, [summary]);
 
-  const energyTrendPoints: TrendPoint[] = useMemo(() => {
-    const filtered = (summary?.seriesTotalKwh ?? []).filter(
-      (p) => (p.area || '').toLowerCase() !== 'unassigned'
-    );
-    return filtered.map((p) => ({
-      date: new Date(p.bucketStart),
-      label: p.label,
-      value: p.totalKwhDelta ?? 0,
-    }));
-  }, [summary]);
+  const energyTrendPoints: TrendPoint[] = useMemo(
+    () =>
+      (summary?.seriesTotalKwh ?? []).map((p) => ({
+        date: new Date(p.bucketStart),
+        label: p.label,
+        value: p.totalKwhDelta ?? 0,
+      })),
+    [summary]
+  );
 
-  const batteryTrendPoints: TrendPoint[] = useMemo(() => {
-    const filtered = (summary?.seriesBatteryAvgPercent ?? []).filter(
-      (p) => (p.area || '').toLowerCase() !== 'unassigned'
-    );
-    return filtered.map((p) => ({
-      date: new Date(p.bucketStart),
-      label: p.label,
-      value: p.avgPercent ?? 0,
-    }));
-  }, [summary]);
+  const batteryTrendPoints: TrendPoint[] = useMemo(
+    () =>
+      (summary?.seriesBatteryAvgPercent ?? []).map((p) => ({
+        date: new Date(p.bucketStart),
+        label: p.label,
+        value: p.avgPercent ?? 0,
+      })),
+    [summary]
+  );
 
   useEffect(() => {
     const el = energyScrollRef.current;
