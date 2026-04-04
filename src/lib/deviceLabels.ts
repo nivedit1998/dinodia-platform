@@ -12,11 +12,16 @@ export function normalizeLabel(label?: string | null) {
 export function getPrimaryLabel(device: Pick<UIDevice, 'label' | 'labels' | 'labelCategory'>) {
   const overrideLabel = normalizeLabel(device.label);
   if (overrideLabel) return overrideLabel;
-  const first =
-    Array.isArray(device.labels) && device.labels.length > 0
-      ? normalizeLabel(device.labels[0])
-      : '';
+
+  const labelsArray = Array.isArray(device.labels) ? device.labels.map((l) => normalizeLabel(l)) : [];
+  // Prefer the first label that maps to a known group
+  const known = labelsArray.find((lbl) => lbl && LABEL_ORDER_LOWER.includes(lbl.toLowerCase()));
+  if (known) return known;
+
+  // Fallback to first non-empty label
+  const first = labelsArray.find((lbl) => lbl);
   if (first) return first;
+
   return normalizeLabel(device.labelCategory) || OTHER_LABEL;
 }
 
