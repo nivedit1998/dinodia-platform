@@ -65,7 +65,8 @@ export async function GET(req: NextRequest) {
 
   const overrideMap = new Map(overrides.map((d) => [d.entityId, d]));
 
-  let haDevices: Array<ReturnType<typeof getDevicesForHaConnection>[number]> = [];
+  type HaDevice = Awaited<ReturnType<typeof getDevicesForHaConnection>>[number];
+  let haDevices: HaDevice[] = [];
   try {
     haDevices = await getDevicesForHaConnection(haConnectionId, { cacheTtlMs: 2000 });
   } catch (err) {
