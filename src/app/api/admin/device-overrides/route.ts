@@ -218,6 +218,11 @@ export async function GET(req: NextRequest) {
 
   const mergedList: MergedDevice[] = Array.from(mergedMap.values()).sort((a, b) => a.name.localeCompare(b.name));
 
+  const isAssigned = (area: string | null | undefined) => {
+    if (!area) return false;
+    return area.trim().toLowerCase() !== 'unassigned';
+  };
+
   const applySearch = (list: typeof mergedList) => {
     if (!q) return list;
     const needle = q.toLowerCase();
@@ -229,7 +234,9 @@ export async function GET(req: NextRequest) {
     );
   };
 
-  const filteredDevices = applySearch(mergedList).slice(0, limit);
+  const filteredDevices = applySearch(mergedList)
+    .filter((d) => isAssigned(d.area ?? d.areaName))
+    .slice(0, limit);
 
   const linkedSensorsByDevice = new Map<string, MergedDevice[]>();
   filteredDevices.forEach((dev) => {

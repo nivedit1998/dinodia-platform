@@ -1126,7 +1126,10 @@ export default function AdminSettings({ username }: Props) {
                       .filter((ov) => {
                         const lbl = ov.label?.trim();
                         if (!lbl || lbl === '-') return false;
-                        return allowedLabels.has(lbl);
+                        if (!allowedLabels.has(lbl)) return false;
+                        const areaVal = (ov.area ?? '').trim().toLowerCase();
+                        if (!areaVal || areaVal === 'unassigned') return false;
+                        return true;
                       })
                       .map((ov) => {
                       const areaColor = stringToColor(ov.area || 'Unassigned');
