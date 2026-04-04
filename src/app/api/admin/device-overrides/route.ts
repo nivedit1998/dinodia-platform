@@ -143,8 +143,7 @@ export async function GET(req: NextRequest) {
     hasOverride: deviceSet.has(row.entityId),
   }));
 
-  // Build unified device list: HA devices + override-only rows
-  const mergedMap = new Map<string, {
+  type MergedDevice = {
     entityId: string;
     name: string;
     area: string | null;
@@ -156,7 +155,25 @@ export async function GET(req: NextRequest) {
     labels?: string[] | null;
     state?: string | null;
     areaName?: string | null;
-  }>();
+  };
+
+  const toUIDevice = (d: MergedDevice): UIDevice => ({
+    entityId: d.entityId,
+    deviceId: d.deviceId ?? null,
+    name: d.name,
+    state: d.state ?? '',
+    area: d.area ?? d.areaName ?? null,
+    areaName: d.area ?? d.areaName ?? null,
+    labels: d.labels ?? [],
+    label: d.label ?? null,
+    labelCategory: d.labelCategory ?? null,
+    domain: '',
+    attributes: {},
+    blindTravelSeconds: d.blindTravelSeconds ?? null,
+  });
+
+  // Build unified device list: HA devices + override-only rows
+  const mergedMap = new Map<string, MergedDevice>();
 
   haDevices.forEach((d) => {
     const override = overrideMap.get(d.entityId);
@@ -198,7 +215,7 @@ export async function GET(req: NextRequest) {
     });
   });
 
-  const mergedList = Array.from(mergedMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  const mergedList: MergedDevice[] = Array.from(mergedMap.values()).sort((a, b) => a.name.localeCompare(b.name));
 
   const applySearch = (list: typeof mergedList) => {
     if (!q) return list;
@@ -213,30 +230,18 @@ export async function GET(req: NextRequest) {
 
   const filteredDevices = applySearch(mergedList).slice(0, limit);
 
-  const linkedSensorsByDevice = new Map<string, typeof mergedList>();
+  const linkedSensorsByDevice = new Map<string, MergedDevice[]>();
   filteredDevices.forEach((dev) => {
-    const key = getDeviceGroupingId({
-      entityId: dev.entityId,
-      deviceId: dev.deviceId ?? null,
-      name: dev.name,
-      areaName: dev.area ?? dev.areaName ?? null,
-      area: dev.area ?? dev.areaName ?? null,
-    });
+    const key = getDeviceGroupingId(toUIDevice(dev));
     if (!key) return;
-    if (!linkedSensorsByDevice.has(key)) linkedSensorsByDevice.set(key, [] as typeof mergedList);
+    if (!linkedSensorsByDevice.has(key)) linkedSensorsByDevice.set(key, [] as MergedDevice[]);
     linkedSensorsByDevice.get(key)!.push(dev);
   });
 
   return NextResponse.json({
     ok: true,
     devices: filteredDevices.map((d) => {
-      const key = getDeviceGroupingId({
-        entityId: d.entityId,
-        deviceId: d.deviceId ?? null,
-        name: d.name,
-        areaName: d.area ?? d.areaName ?? null,
-        area: d.area ?? d.areaName ?? null,
-      });
+      const key = getDeviceGroupingId(toUIDevice(d));
       const linked = key
         ? (linkedSensorsByDevice.get(key)?.filter((ls) => ls.entityId !== d.entityId) ?? [])
         : [];
