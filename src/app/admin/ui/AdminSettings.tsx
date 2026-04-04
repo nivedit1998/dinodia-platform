@@ -94,7 +94,7 @@ export default function AdminSettings({ username }: Props) {
   const [overrides, setOverrides] = useState<DeviceOverride[]>([]);
   const [overridesLoading, setOverridesLoading] = useState(false);
   const allowedLabels = useMemo(
-    () => new Set(['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Doorbell', 'Home Security', 'TV', 'Speaker']),
+    () => new Set(['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Doorbell', 'Home Security', 'TV', 'Speaker', 'Sockets']),
     []
   );
   const [overrideAlert, setOverrideAlert] = useState<StatusMessage>(null);
@@ -1237,7 +1237,7 @@ export default function AdminSettings({ username }: Props) {
                   value={overrideForm.label}
                   onChange={(e) => setOverrideForm((prev) => ({ ...prev, label: e.target.value }))}
                 >
-                  {['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Doorbell', 'Home Security', 'TV', 'Speaker'].map(
+                  {['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Doorbell', 'Home Security', 'TV', 'Speaker', 'Sockets'].map(
                     (label) => (
                       <option key={label} value={label}>
                         {label}

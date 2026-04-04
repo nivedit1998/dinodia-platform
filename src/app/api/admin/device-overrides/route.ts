@@ -216,14 +216,14 @@ export async function GET(req: NextRequest) {
     });
   });
 
-  const mergedList: MergedDevice[] = Array.from(mergedMap.values()).sort((a, b) => a.name.localeCompare(b.name));
-
   const isAssigned = (area: string | null | undefined) => {
     if (!area) return false;
     return area.trim().toLowerCase() !== 'unassigned';
   };
 
-  const applySearch = (list: typeof mergedList) => {
+  const mergedList: MergedDevice[] = Array.from(mergedMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+  const applySearch = (list: MergedDevice[]) => {
     if (!q) return list;
     const needle = q.toLowerCase();
     return list.filter((item) =>
@@ -234,25 +234,37 @@ export async function GET(req: NextRequest) {
     );
   };
 
-  const filteredDevices = applySearch(mergedList)
-    .filter((d) => isAssigned(d.area ?? d.areaName))
-    .slice(0, limit);
+  const filteredDevices = applySearch(mergedList).filter((d) => isAssigned(d.area ?? d.areaName));
 
-  const linkedSensorsByDevice = new Map<string, MergedDevice[]>();
+  // Group by device grouping id to mirror tenant dashboard and pick a single primary per group
+  const groups = new Map<string, MergedDevice[]>();
   filteredDevices.forEach((dev) => {
     const key = getDeviceGroupingId(toUIDevice(dev));
     if (!key) return;
-    if (!linkedSensorsByDevice.has(key)) linkedSensorsByDevice.set(key, [] as MergedDevice[]);
-    linkedSensorsByDevice.get(key)!.push(dev);
+    if (!groups.has(key)) groups.set(key, [] as MergedDevice[]);
+    groups.get(key)!.push(dev);
   });
+
+  const primaries: MergedDevice[] = [];
+  const linkedSensorsByPrimary = new Map<string, MergedDevice[]>();
+
+  groups.forEach((devices) => {
+    // Choose primary: prefer non-sensor (hasOverride or label not ending with sensor-ish), then by name
+    const sorted = devices.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const primary =
+      sorted.find((d) => d.label && !d.label.toLowerCase().includes('sensor')) ||
+      sorted[0];
+    primaries.push(primary);
+    const linked = devices.filter((d) => d.entityId !== primary.entityId);
+    linkedSensorsByPrimary.set(primary.entityId, linked);
+  });
+
+  const limitedPrimaries = primaries.sort((a, b) => a.name.localeCompare(b.name)).slice(0, limit);
 
   return NextResponse.json({
     ok: true,
-    devices: filteredDevices.map((d) => {
-      const key = getDeviceGroupingId(toUIDevice(d));
-      const linked = key
-        ? (linkedSensorsByDevice.get(key)?.filter((ls) => ls.entityId !== d.entityId) ?? [])
-        : [];
+    devices: limitedPrimaries.map((d) => {
+      const linked = linkedSensorsByPrimary.get(d.entityId) ?? [];
       return {
         entityId: d.entityId,
         name: d.name,
