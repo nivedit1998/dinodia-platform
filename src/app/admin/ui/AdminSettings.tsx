@@ -112,6 +112,8 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     blindTravelSeconds: '',
   });
   const [editingOverrideId, setEditingOverrideId] = useState<string | null>(null);
+  const [filterAreas, setFilterAreas] = useState<string[]>([]);
+  const [filterLabels, setFilterLabels] = useState<string[]>([]);
 
   function updateTenantField(key: TenantStringField, value: string) {
     setTenantForm((prev) => ({ ...prev, [key]: value }));
@@ -177,7 +179,6 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     setOverrideAlert(null);
     try {
       const params = new URLSearchParams();
-      if (overrideSearch.trim()) params.set('q', overrideSearch.trim());
       params.set('days', '90');
       const res = await platformFetch(
         `/api/admin/device-overrides${params.toString() ? `?${params.toString()}` : ''}`,
@@ -1121,27 +1122,47 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
 
         {showOverrideSection && (
           <div className="border border-slate-200 rounded-xl p-4 lg:col-span-2">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="font-semibold">Manage Devices in your Home</h2>
+            <div className="flex flex-col items-center justify-center gap-3 pb-2 text-sm">
+              <h2 className="text-base font-semibold text-slate-900">Existing overrides</h2>
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 shadow-sm">
+                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Area</span>
+                  <select
+                    multiple
+                    className="min-w-[180px] rounded-full border border-slate-200 bg-white px-3 py-1 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={filterAreas}
+                    onChange={(e) => {
+                      const options = Array.from(e.target.selectedOptions).map((o) => o.value);
+                      setFilterAreas(options);
+                    }}
+                  >
+                    {availableAreas.map((area) => (
+                      <option key={area} value={area}>
+                        {area}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 shadow-sm">
+                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Label</span>
+                  <select
+                    multiple
+                    className="min-w-[180px] rounded-full border border-slate-200 bg-white px-3 py-1 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={filterLabels}
+                    onChange={(e) => {
+                      const options = Array.from(e.target.selectedOptions).map((o) => o.value);
+                      setFilterLabels(options);
+                    }}
+                  >
+                    {Array.from(allowedLabels).map((label) => (
+                      <option key={label} value={label}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                className="w-full min-w-[220px] rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="Search entity id or name"
-                value={overrideSearch}
-                onChange={(e) => setOverrideSearch(e.target.value)}
-              />
-              <button
-                type="button"
-                onClick={() => void loadOverrides()}
-                disabled={overridesLoading}
-                className="inline-flex items-center justify-center rounded-full border border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                {overridesLoading ? 'Refreshing…' : 'Refresh'}
-              </button>
             </div>
-          </div>
           {overrideAlert && (
             <p
               className={`mt-3 rounded-lg px-3 py-2 text-xs ${
@@ -1170,6 +1191,8 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                   if (!allowedLabels.has(lbl)) return false;
                   const areaVal = (ov.area ?? '').trim().toLowerCase();
                   if (!areaVal || areaVal === 'unassigned') return false;
+                  if (filterAreas.length && !filterAreas.includes(ov.area || '')) return false;
+                  if (filterLabels.length && !filterLabels.includes(lbl)) return false;
                   return true;
                 })
                 .map((ov) => {
