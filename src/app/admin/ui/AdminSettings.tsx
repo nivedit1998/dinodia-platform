@@ -47,8 +47,8 @@ const TENANT_LOCKED_MESSAGE =
 
 export default function AdminSettings({ username, mode = 'full' }: Props) {
   const showProfile = mode === 'full';
-  const showTenantSections = mode !== 'devices';
-  const showOverrideSection = mode !== 'users';
+  const showTenantSections = mode === 'users';
+  const showOverrideSection = mode === 'devices';
   const showDeregister = mode === 'full';
   const [tenantForm, setTenantForm] = useState<TenantForm>(EMPTY_TENANT_FORM);
   const [tenantMsg, setTenantMsg] = useState<string | null>(null);
