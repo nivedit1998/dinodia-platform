@@ -1123,7 +1123,11 @@ export default function AdminSettings({ username }: Props) {
                       </tr>
                     )}
                     {overrides
-                      .filter((ov) => !ov.label || allowedLabels.has(ov.label))
+                      .filter((ov) => {
+                        const lbl = ov.label?.trim();
+                        if (!lbl || lbl === '-') return false;
+                        return allowedLabels.has(lbl);
+                      })
                       .map((ov) => {
                       const areaColor = stringToColor(ov.area || 'Unassigned');
                       return (
