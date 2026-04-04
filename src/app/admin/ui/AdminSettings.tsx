@@ -1132,7 +1132,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
         {showOverrideSection && (
           <div className="border border-slate-200 rounded-xl p-4 lg:col-span-2">
             <div className="flex flex-col items-center justify-center gap-3 pb-2 text-sm">
-              <h2 className="text-base font-semibold text-slate-900">Existing overrides</h2>
+              <h2 className="text-base font-semibold text-slate-900">Your Home Devices</h2>
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <div className="relative" ref={areaMenuRef}>
                   <button
@@ -1239,7 +1239,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
           <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
             <div className="flex items-center justify-between pb-3">
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">Existing overrides</h3>
+                <h3 className="text-sm font-semibold text-slate-900">Devices and Sensors</h3>
                 <p className="text-[11px] text-slate-500">Tap a card to edit.</p>
               </div>
               <span className="text-[11px] text-slate-500">{overrides.length} items</span>
@@ -1317,7 +1317,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
 
           {editingOverrideId && (
             <div className="mt-4 rounded-lg border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-900">Edit override</h3>
+              <h3 className="text-sm font-semibold text-slate-900">Edit Device Settings</h3>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-[11px] text-slate-500">Entity ID</label>
@@ -1393,7 +1393,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                   onClick={() => void saveOverride()}
                   className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-indigo-700"
                 >
-                  Save override
+                  Save device settings
                 </button>
                 <button
                   type="button"
@@ -1407,7 +1407,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
           )}
           {!editingOverrideId && (
             <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50/80 p-4 text-xs text-slate-600">
-              Select an override to edit from the table above.
+              Select a device to edit settings for.
             </div>
           )}
         </div>
