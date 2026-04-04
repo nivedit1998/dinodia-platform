@@ -3,6 +3,7 @@ import { Role } from '@prisma/client';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getUserWithHaConnection } from '@/lib/haConnection';
 import { prisma } from '@/lib/prisma';
+import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_LOOKBACK_DAYS = 90;
@@ -55,12 +56,32 @@ export async function GET(req: NextRequest) {
       : {}),
   };
 
-  const devices = await prisma.device.findMany({
+  const overrides = await prisma.device.findMany({
     where: deviceWhere,
     orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
-    take: limit,
     select: { entityId: true, name: true, label: true, area: true, blindTravelSeconds: true, updatedAt: true, id: true },
   });
+
+  const overrideMap = new Map(overrides.map((d) => [d.entityId, d]));
+
+  let haDevices: Array<{
+    entityId: string;
+    name?: string | null;
+    area?: string | null;
+    areaName?: string | null;
+    label?: string | null;
+    labels?: string[] | null;
+    labelCategory?: string | null;
+    deviceId?: string | null;
+    blindTravelSeconds?: number | null;
+  }> = [];
+  try {
+    haDevices = await getDevicesForHaConnection(haConnectionId, { cacheTtlMs: 2000 });
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('HA device fetch failed, falling back to overrides only', err);
+    }
+  }
 
   const observedRows = await prisma.monitoringReading.findMany({
     where: {
@@ -87,9 +108,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const deviceSet = new Set(devices.map((d) => d.entityId));
+  const deviceSet = new Set(overrides.map((d) => d.entityId));
   const prettyId = (id: string) => id.replace(/^sensor\./i, '').replace(/_/g, ' ');
-  const deviceByEntity = new Map(devices.map((d) => [d.entityId, d]));
+  const deviceByEntity = new Map(overrides.map((d) => [d.entityId, d]));
   const inferLabel = (entityId: string, existing?: string | null) => {
     if (existing && existing.trim()) return existing.trim();
     const id = entityId.toLowerCase();
@@ -121,26 +142,98 @@ export async function GET(req: NextRequest) {
     hasOverride: deviceSet.has(row.entityId),
   }));
 
-  const linkedSensorsByDevice = new Map<string, typeof observedEntities>();
-  observedEntities.forEach((obs) => {
-    const base = obs.entityId.split('.')[1] || obs.entityId;
-    const parentId = base.replace(/_(power|energy|battery|voltage|current|status)$/i, '');
-    if (!linkedSensorsByDevice.has(parentId)) linkedSensorsByDevice.set(parentId, [] as typeof observedEntities);
-    linkedSensorsByDevice.get(parentId)!.push(obs);
+  // Build unified device list: HA devices + override-only rows
+  const mergedMap = new Map<string, {
+    entityId: string;
+    name: string;
+    area: string | null;
+    label: string | null;
+    blindTravelSeconds: number | null;
+    deviceId?: string | null;
+    hasOverride: boolean;
+  }>();
+
+  haDevices.forEach((d) => {
+    const override = overrideMap.get(d.entityId);
+    const name = (override?.name ?? d.name ?? prettyId(d.entityId)).trim();
+    const area = (override?.area ?? d.area ?? d.areaName ?? '').trim() || null;
+    const rawLabel =
+      override?.label?.trim() ||
+      (Array.isArray(d.labels) ? d.labels.find((l) => l && l.toString().trim())?.toString() : undefined) ||
+      d.label?.toString().trim() ||
+      d.labelCategory?.toString().trim() ||
+      null;
+    const label = inferLabel(d.entityId, rawLabel);
+    mergedMap.set(d.entityId, {
+      entityId: d.entityId,
+      name: name || prettyId(d.entityId),
+      area,
+      label,
+      blindTravelSeconds:
+        override?.blindTravelSeconds ?? (typeof d.blindTravelSeconds === 'number' ? d.blindTravelSeconds : null),
+      deviceId: d.deviceId ?? null,
+      hasOverride: Boolean(override),
+    });
+  });
+
+  overrides.forEach((ov) => {
+    if (mergedMap.has(ov.entityId)) return;
+    mergedMap.set(ov.entityId, {
+      entityId: ov.entityId,
+      name: (ov.name || prettyId(ov.entityId)).trim(),
+      area: ov.area?.trim() || null,
+      label: inferLabel(ov.entityId, ov.label),
+      blindTravelSeconds: typeof ov.blindTravelSeconds === 'number' ? ov.blindTravelSeconds : null,
+      deviceId: null,
+      hasOverride: true,
+    });
+  });
+
+  const mergedList = Array.from(mergedMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+  const applySearch = (list: typeof mergedList) => {
+    if (!q) return list;
+    const needle = q.toLowerCase();
+    return list.filter((item) =>
+      item.entityId.toLowerCase().includes(needle) ||
+      (item.name ?? '').toLowerCase().includes(needle) ||
+      (item.area ?? '').toLowerCase().includes(needle) ||
+      (item.label ?? '').toLowerCase().includes(needle)
+    );
+  };
+
+  const filteredDevices = applySearch(mergedList).slice(0, limit);
+
+  const linkedSensorsByDevice = new Map<string, typeof mergedList>();
+  const parentKey = (entityId: string) => {
+    const objectId = entityId.split('.')[1] || entityId;
+    return objectId.replace(/_(power|energy|battery|voltage|current|status)$/i, '');
+  };
+  filteredDevices.forEach((dev) => {
+    const key = parentKey(dev.entityId);
+    if (!linkedSensorsByDevice.has(key)) linkedSensorsByDevice.set(key, [] as typeof mergedList);
+    linkedSensorsByDevice.get(key)!.push(dev);
   });
 
   return NextResponse.json({
     ok: true,
-    devices: devices.map((d) => {
-      const cleanedName = displayName(d.entityId);
-      const derivedLabel = inferLabel(d.entityId, d.label);
-      const objectId = d.entityId.split('.')[1] || d.entityId;
-      const linked = linkedSensorsByDevice.get(objectId) ?? [];
+    devices: filteredDevices.map((d) => {
+      const key = parentKey(d.entityId);
+      const linked = linkedSensorsByDevice.get(key)?.filter((ls) => ls.entityId !== d.entityId) ?? [];
       return {
-        ...d,
-        name: cleanedName,
-        label: derivedLabel,
-        linkedSensors: linked,
+        entityId: d.entityId,
+        name: d.name,
+        area: d.area,
+        label: d.label,
+        blindTravelSeconds: d.blindTravelSeconds,
+        hasOverride: d.hasOverride,
+        linkedSensors: linked.map((ls) => ({
+          entityId: ls.entityId,
+          name: ls.name,
+          label: ls.label,
+          unit: undefined,
+          lastCapturedAt: undefined,
+        })),
       };
     }),
     observedEntities,
