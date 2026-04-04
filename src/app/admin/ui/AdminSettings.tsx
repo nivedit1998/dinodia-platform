@@ -1,12 +1,14 @@
 'use client';
 
 import Image from 'next/image';
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { logout as performLogout } from '@/lib/logout';
 import { platformFetch } from '@/lib/platformFetchClient';
 
 type Props = {
   username: string;
+  mode?: 'full' | 'devices' | 'users';
 };
 
 type StatusMessage = { type: 'success' | 'error'; message: string } | null;
@@ -43,14 +45,18 @@ const KIOSK_URL = 'https://dinodiasmartliving.com/kiosk';
 const TENANT_LOCKED_MESSAGE =
   'Remote access must be enabled before adding tenants from this portal. To add tenants without paying for remote access you will have to use your iOS/Android phone or the Dinodia Kiosk.';
 
-export default function AdminSettings({ username }: Props) {
+export default function AdminSettings({ username, mode = 'full' }: Props) {
+  const showProfile = mode === 'full';
+  const showTenantSections = mode !== 'devices';
+  const showOverrideSection = mode !== 'users';
+  const showDeregister = mode === 'full';
   const [tenantForm, setTenantForm] = useState<TenantForm>(EMPTY_TENANT_FORM);
   const [tenantMsg, setTenantMsg] = useState<string | null>(null);
   const [tenantLoading, setTenantLoading] = useState(false);
   const [availableAreas, setAvailableAreas] = useState<string[]>([]);
   const [newAreaInput, setNewAreaInput] = useState('');
-  const [viewTenantsOpen, setViewTenantsOpen] = useState(false);
-  const [addTenantOpen, setAddTenantOpen] = useState(false);
+  const [viewTenantsOpen, setViewTenantsOpen] = useState(mode === 'users');
+  const [addTenantOpen, setAddTenantOpen] = useState(mode === 'users');
   const [tenants, setTenants] = useState<TenantInfo[]>([]);
   const [tenantsLoading, setTenantsLoading] = useState(false);
   const [tenantsError, setTenantsError] = useState<string | null>(null);
@@ -648,13 +654,41 @@ export default function AdminSettings({ username }: Props) {
               <span className="block h-0.5 w-5 rounded-full bg-slate-500" />
             </span>
           </button>
-              {menuOpen && (
-                <div className="absolute right-0 mt-2 w-48 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
-                    onClick={() => {
-                      setMenuOpen(false);
+          {menuOpen && (
+            <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-100 bg-white/95 p-1 text-sm text-slate-700 shadow-lg backdrop-blur">
+              <Link
+                href="/admin/dashboard"
+                className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                onClick={() => setMenuOpen(false)}
+              >
+                Homeowner Dashboard
+              </Link>
+              <Link
+                href="/admin/settings"
+                className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                onClick={() => setMenuOpen(false)}
+              >
+                Homeowner Settings
+              </Link>
+              <Link
+                href="/admin/manage-devices"
+                className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                onClick={() => setMenuOpen(false)}
+              >
+                Manage Home Devices
+              </Link>
+              <Link
+                href="/admin/manage-users"
+                className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                onClick={() => setMenuOpen(false)}
+              >
+                Manage Home Users
+              </Link>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                onClick={() => {
+                  setMenuOpen(false);
                   void handleLogout();
                 }}
               >
@@ -666,9 +700,10 @@ export default function AdminSettings({ username }: Props) {
       </header>
 
       <section className="grid gap-5 text-sm lg:grid-cols-2">
-        <div className="border border-slate-200 rounded-xl p-4 lg:col-span-2">
-          <h2 className="font-semibold mb-4">Profile</h2>
-          <div className="space-y-6">
+        {showProfile && (
+          <div className="border border-slate-200 rounded-xl p-4 lg:col-span-2">
+            <h2 className="font-semibold mb-4">Profile</h2>
+            <div className="space-y-6">
             <div className="rounded-xl border border-slate-200/60">
               <button
                 type="button"
@@ -801,272 +836,286 @@ export default function AdminSettings({ username }: Props) {
             </div>
           </div>
         </div>
+        )}
 
-        <div className="border border-slate-200 rounded-xl lg:col-span-2">
-          <button
-            type="button"
-            className="w-full flex items-center justify-between px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500"
-            onClick={() => setViewTenantsOpen((prev) => !prev)}
-          >
-            <span>Home setup – view tenants</span>
-            <span className="text-[11px] font-normal text-slate-400">
-              {viewTenantsOpen ? 'Hide' : 'Show'}
-            </span>
-          </button>
-          {tenantLocked && (
-            <p className="mx-4 mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-              {TENANT_LOCKED_MESSAGE}
-            </p>
-          )}
-          {viewTenantsOpen && (
-            <div
-              className={`px-4 pb-4 pt-1 border-t border-slate-100 ${
-                tenantLocked ? 'pointer-events-none opacity-60' : ''
-              }`}
-            >
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-xs text-slate-600">
-                  View tenants in this home and manage their areas or delete accounts.
+        {showTenantSections && (
+          <>
+            <div className="border border-slate-200 rounded-xl lg:col-span-2">
+              <button
+                type="button"
+                className="w-full flex items-center justify-between px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500"
+                onClick={() => setViewTenantsOpen((prev) => !prev)}
+              >
+                <span>Home setup – view tenants</span>
+                <span className="text-[11px] font-normal text-slate-400">
+                  {viewTenantsOpen ? 'Hide' : 'Show'}
+                </span>
+              </button>
+              {tenantLocked && (
+                <p className="mx-4 mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                  {TENANT_LOCKED_MESSAGE}
                 </p>
-                <button
-                  type="button"
-                  onClick={() => void fetchTenants()}
-                  disabled={tenantsLoading || tenantLocked}
-                  className="inline-flex items-center justify-center rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              )}
+              {viewTenantsOpen && (
+                <div
+                  className={`px-4 pb-4 pt-1 border-t border-slate-100 ${
+                    tenantLocked ? 'pointer-events-none opacity-60' : ''
+                  }`}
                 >
-                  {tenantsLoading ? 'Refreshing…' : 'Refresh'}
-                </button>
-              </div>
-              {tenantsError && (
-                <p className="mt-2 text-xs text-red-600">{tenantsError}</p>
-              )}
-              {tenantsLoading ? (
-                <p className="mt-3 text-xs text-slate-600">Loading tenants…</p>
-              ) : tenants.length === 0 ? (
-                <p className="mt-3 text-xs text-slate-600">No tenants yet.</p>
-              ) : (
-                <div className="mt-3 space-y-3">
-                  {tenants.map((tenant) => {
-                    const tenantState = tenantActions[tenant.id] ?? {
-                      saving: false,
-                      error: null,
-                    };
-                    const selectedArea = tenantAreaInputs[tenant.id] ?? '';
-                    return (
-                      <div
-                        key={tenant.id}
-                        className="rounded-lg border border-slate-200 p-3"
-                      >
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">
-                              {tenant.username}
-                            </p>
-                            <div className="mt-1 flex flex-wrap gap-2">
-                              {tenant.areas.length > 0 ? (
-                                tenant.areas.map((area) => (
-                                  <span
-                                    key={area}
-                                    className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-700"
-                                  >
-                                    <span>{area}</span>
-                                    <button
-                                      type="button"
-                                      className="text-slate-500 hover:text-slate-700"
-                                      onClick={() => handleRemoveTenantArea(tenant.id, area)}
-                                      aria-label={`Remove ${area}`}
-                                      disabled={tenantLocked || tenantState.saving}
-                                    >
-                                      ×
-                                    </button>
-                                  </span>
-                                ))
-                              ) : (
-                                <span className="text-[11px] text-slate-500">
-                                  No areas assigned.
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <select
-                              className="w-full min-w-[200px] border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                              value={selectedArea}
-                              onChange={(e) =>
-                                setTenantAreaInputs((prev) => ({
-                                  ...prev,
-                                  [tenant.id]: e.target.value,
-                                }))
-                              }
-                              disabled={
-                                tenantLocked || tenantState.saving || availableAreas.length === 0
-                              }
-                            >
-                              <option value="">
-                                {availableAreas.length > 0
-                                  ? 'Select an area'
-                                  : 'No areas available'}
-                              </option>
-                              {availableAreas.map((area) => (
-                                <option key={area} value={area}>
-                                  {area}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() => handleAddTenantArea(tenant.id)}
-                              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
-                              aria-label="Add area"
-                              disabled={
-                                tenantLocked || tenantState.saving || !selectedArea.trim()
-                              }
-                            >
-                              <span className="text-lg leading-none">+</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openTenantDelete(tenant)}
-                              className="inline-flex items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"
-                              disabled={tenantLocked || tenantState.saving}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                        {tenantState.error && (
-                          <p className="mt-2 text-xs text-red-600">{tenantState.error}</p>
-                        )}
-                        {tenantState.saving && !tenantLocked && (
-                          <p className="mt-2 text-[11px] text-slate-500">Saving changes…</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="border border-slate-200 rounded-xl lg:col-span-2">
-          <button
-            type="button"
-            className="w-full flex items-center justify-between px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500"
-            onClick={() => setAddTenantOpen((prev) => !prev)}
-          >
-            <span>Home setup – add tenant</span>
-            <span className="text-[11px] font-normal text-slate-400">
-              {addTenantOpen ? 'Hide' : 'Show'}
-            </span>
-          </button>
-          {tenantLocked && (
-            <p className="mx-4 mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-              {TENANT_LOCKED_MESSAGE}
-            </p>
-          )}
-          {addTenantOpen && (
-            <div
-              className={`px-4 pb-4 pt-1 border-t border-slate-100 ${
-                tenantLocked ? 'pointer-events-none opacity-60' : ''
-              }`}
-            >
-              <form onSubmit={handleTenantSubmit} className="mt-3 space-y-3">
-                <div>
-                  <label className="block mb-1 text-xs">Tenant username</label>
-                  <input
-                    className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={tenantForm.username}
-                    onChange={(e) => updateTenantField('username', e.target.value)}
-                    required
-                    disabled={tenantLocked}
-                  />
-                </div>
-                <div>
-                  <label className="block mb-1 text-xs">Tenant password</label>
-                  <input
-                    type="password"
-                    className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={tenantForm.password}
-                    onChange={(e) => updateTenantField('password', e.target.value)}
-                    required
-                    minLength={8}
-                    disabled={tenantLocked}
-                  />
-                </div>
-                <div>
-                  <label className="block mb-1 text-xs">Associated areas</label>
-                  <div className="flex items-center gap-2">
-                    <select
-                      className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={newAreaInput}
-                      onChange={(e) => setNewAreaInput(e.target.value)}
-                      disabled={tenantLocked || availableAreas.length === 0}
-                    >
-                      <option value="">
-                        {availableAreas.length > 0 ? 'Select an area' : 'No areas available'}
-                      </option>
-                      {availableAreas.map((area) => (
-                        <option key={area} value={area}>
-                          {area}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs text-slate-600">
+                      View tenants in this home and manage their areas or delete accounts.
+                    </p>
                     <button
                       type="button"
-                      onClick={() => addArea()}
-                      className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
-                      aria-label="Add area"
-                      disabled={tenantLocked || !newAreaInput}
+                      onClick={() => void fetchTenants()}
+                      disabled={tenantsLoading || tenantLocked}
+                      className="inline-flex items-center justify-center rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                     >
-                      <span className="text-lg leading-none">+</span>
+                      {tenantsLoading ? 'Refreshing…' : 'Refresh'}
                     </button>
                   </div>
-                  {tenantForm.areas.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {tenantForm.areas.map((area) => (
-                        <span
-                          key={area}
-                          className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-700"
-                        >
-                          <span>{area}</span>
-                          <button
-                            type="button"
-                            className="text-slate-500 hover:text-slate-700"
-                            onClick={() => removeArea(area)}
-                            aria-label={`Remove ${area}`}
+                  {tenantsError && (
+                    <p className="mt-2 text-xs text-red-600">{tenantsError}</p>
+                  )}
+                  {tenantsLoading ? (
+                    <p className="mt-3 text-xs text-slate-600">Loading tenants…</p>
+                  ) : tenants.length === 0 ? (
+                    <p className="mt-3 text-xs text-slate-600">No tenants yet.</p>
+                  ) : (
+                    <div className="mt-3 space-y-3">
+                      {tenants.map((tenant) => {
+                        const tenantState = tenantActions[tenant.id] ?? {
+                          saving: false,
+                          error: null,
+                        };
+                        const selectedArea = tenantAreaInputs[tenant.id] ?? '';
+                        return (
+                          <div
+                            key={tenant.id}
+                            className="rounded-lg border border-slate-200 p-3"
                           >
-                            ×
-                          </button>
-                        </span>
-                      ))}
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">
+                                  {tenant.username}
+                                </p>
+                                <div className="mt-1 flex flex-wrap gap-2">
+                                  {tenant.areas.length > 0 ? (
+                                    tenant.areas.map((area) => (
+                                      <span
+                                        key={area}
+                                        className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-700"
+                                      >
+                                        <span>{area}</span>
+                                        <button
+                                          type="button"
+                                          className="text-slate-500 hover:text-slate-700"
+                                          onClick={() => handleRemoveTenantArea(tenant.id, area)}
+                                          aria-label={`Remove ${area}`}
+                                          disabled={tenantLocked || tenantState.saving}
+                                        >
+                                          ×
+                                        </button>
+                                      </span>
+                                    ))
+                                  ) : (
+                                    <span className="text-[11px] text-slate-500">
+                                      No areas assigned.
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <select
+                                  className="w-full min-w-[200px] border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                                  value={selectedArea}
+                                  onChange={(e) =>
+                                    setTenantAreaInputs((prev) => ({
+                                      ...prev,
+                                      [tenant.id]: e.target.value,
+                                    }))
+                                  }
+                                  disabled={
+                                    tenantLocked ||
+                                    tenantState.saving ||
+                                    availableAreas.length === 0
+                                  }
+                                >
+                                  <option value="">
+                                    {availableAreas.length > 0
+                                      ? 'Select an area'
+                                      : 'No areas available'}
+                                  </option>
+                                  {availableAreas.map((area) => (
+                                    <option key={area} value={area}>
+                                      {area}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddTenantArea(tenant.id)}
+                                  className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                                  aria-label="Add area"
+                                  disabled={
+                                    tenantLocked ||
+                                    tenantState.saving ||
+                                    !selectedArea.trim()
+                                  }
+                                >
+                                  <span className="text-lg leading-none">+</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openTenantDelete(tenant)}
+                                  className="inline-flex items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"
+                                  disabled={tenantLocked || tenantState.saving}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                            {tenantState.error && (
+                              <p className="mt-2 text-xs text-red-600">{tenantState.error}</p>
+                            )}
+                            {tenantState.saving && !tenantLocked && (
+                              <p className="mt-2 text-[11px] text-slate-500">
+                                Saving changes…
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    Choose one or more rooms to give access to.
-                  </p>
                 </div>
-                <button
-                  type="submit"
-                  disabled={tenantLoading || tenantLocked}
-                  className="mt-1 bg-indigo-600 text-white rounded-lg py-2 px-4 text-xs font-medium hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  {tenantLoading ? 'Adding…' : 'Add tenant'}
-                </button>
-              </form>
-              {tenantMsg && (
-                <p className="mt-2 text-xs text-slate-600">{tenantMsg}</p>
               )}
             </div>
-          )}
-        </div>
 
-        <div className="border border-slate-200 rounded-xl p-4 lg:col-span-2">
+            <div className="border border-slate-200 rounded-xl lg:col-span-2">
+              <button
+                type="button"
+                className="w-full flex items-center justify-between px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500"
+                onClick={() => setAddTenantOpen((prev) => !prev)}
+              >
+                <span>Home setup – add tenant</span>
+                <span className="text-[11px] font-normal text-slate-400">
+                  {addTenantOpen ? 'Hide' : 'Show'}
+                </span>
+              </button>
+              {tenantLocked && (
+                <p className="mx-4 mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                  {TENANT_LOCKED_MESSAGE}
+                </p>
+              )}
+              {addTenantOpen && (
+                <div
+                  className={`px-4 pb-4 pt-1 border-t border-slate-100 ${
+                    tenantLocked ? 'pointer-events-none opacity-60' : ''
+                  }`}
+                >
+                  <form onSubmit={handleTenantSubmit} className="mt-3 space-y-3">
+                    <div>
+                      <label className="block mb-1 text-xs">Tenant username</label>
+                      <input
+                        className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                        value={tenantForm.username}
+                        onChange={(e) => updateTenantField('username', e.target.value)}
+                        required
+                        disabled={tenantLocked}
+                      />
+                    </div>
+                    <div>
+                      <label className="block mb-1 text-xs">Tenant password</label>
+                      <input
+                        type="password"
+                        className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                        value={tenantForm.password}
+                        onChange={(e) => updateTenantField('password', e.target.value)}
+                        required
+                        minLength={8}
+                        disabled={tenantLocked}
+                      />
+                    </div>
+                    <div>
+                      <label className="block mb-1 text-xs">Associated areas</label>
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                          value={newAreaInput}
+                          onChange={(e) => setNewAreaInput(e.target.value)}
+                          disabled={tenantLocked || availableAreas.length === 0}
+                        >
+                          <option value="">
+                            {availableAreas.length > 0
+                              ? 'Select an area'
+                              : 'No areas available'}
+                          </option>
+                          {availableAreas.map((area) => (
+                            <option key={area} value={area}>
+                              {area}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => addArea()}
+                          className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                          aria-label="Add area"
+                          disabled={tenantLocked || !newAreaInput}
+                        >
+                          <span className="text-lg leading-none">+</span>
+                        </button>
+                      </div>
+                      {tenantForm.areas.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {tenantForm.areas.map((area) => (
+                            <span
+                              key={area}
+                              className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-700"
+                            >
+                              <span>{area}</span>
+                              <button
+                                type="button"
+                                className="text-slate-500 hover:text-slate-700"
+                                onClick={() => removeArea(area)}
+                                aria-label={`Remove ${area}`}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Choose one or more rooms to give access to.
+                      </p>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={tenantLoading || tenantLocked}
+                      className="mt-1 bg-indigo-600 text-white rounded-lg py-2 px-4 text-xs font-medium hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {tenantLoading ? 'Adding…' : 'Add tenant'}
+                    </button>
+                  </form>
+                  {tenantMsg && (
+                    <p className="mt-2 text-xs text-slate-600">{tenantMsg}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {showOverrideSection && (
+          <div className="border border-slate-200 rounded-xl p-4 lg:col-span-2">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="font-semibold">Device metadata (overrides)</h2>
+              <h2 className="font-semibold">Manage Devices in your Home</h2>
               <p className="text-[11px] text-slate-500 mt-1">
-                Assign names/areas/labels for sensor entities without calling Home Assistant. Suggestions come
+                Assign names, areas, and labels for sensor entities without calling Home Assistant. Suggestions come
                 from observed monitoring data.
               </p>
             </div>
@@ -1278,7 +1327,9 @@ export default function AdminSettings({ username }: Props) {
             </div>
           </div>
         </div>
+        )}
 
+        {showDeregister && (
         <div
           className={`border border-slate-200 rounded-xl p-4 lg:col-span-2 ${
             deregisterLocked ? 'bg-slate-50 opacity-70 pointer-events-none' : ''
@@ -1318,6 +1369,7 @@ export default function AdminSettings({ username }: Props) {
             </p>
           )}
         </div>
+        )}
 
       </section>
 
