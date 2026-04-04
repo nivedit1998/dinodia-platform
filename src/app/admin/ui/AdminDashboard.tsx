@@ -201,18 +201,7 @@ export default function AdminDashboard({ username }: Props) {
 
   const energyVariant = 'line';
 
-  const coveragePct = useMemo(() => {
-    if (!summary) return null;
-    // derive from byArea, excluding Unassigned
-    const areas = summary.byArea ?? [];
-    if (!areas.length) return null;
-    const entitiesWith = areas
-      .filter((a) => (a.area || '').toLowerCase() !== 'unassigned')
-      .reduce((sum, a) => sum + (a.topEntities?.length || 0), 0);
-    const entitiesMonitored = entitiesWith; // best effort without per-entity counts
-    if (!entitiesMonitored) return null;
-    return Math.min(100, Math.round((entitiesWith / entitiesMonitored) * 100));
-  }, [summary]);
+  // Coverage removed from UI; metric no longer used
 
   const batteryLowCount = summary?.batteryLow.length ?? 0;
 
@@ -530,13 +519,6 @@ export default function AdminDashboard({ username }: Props) {
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Low battery</p>
             <p className="text-2xl font-semibold text-slate-900">{batteryLowCount}</p>
             <p className="text-xs text-slate-500">Below 25%</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Coverage</p>
-            <p className="text-2xl font-semibold text-slate-900">{coveragePct != null ? `${coveragePct}%` : '—'}</p>
-            <p className="text-xs text-slate-500">
-              {summary ? `${summary.coverage.entitiesWithReadings} / ${summary.coverage.entitiesMonitored || '—'} entities` : 'No data'}
-            </p>
           </div>
         </section>
 
