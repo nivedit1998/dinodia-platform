@@ -5,6 +5,8 @@ import { getUserWithHaConnection } from '@/lib/haConnection';
 import { prisma } from '@/lib/prisma';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { getDeviceGroupingId } from '@/lib/deviceIdentity';
+import { getGroupLabel } from '@/lib/deviceLabels';
+import { isSensorEntity } from '@/lib/deviceSensors';
 import type { UIDevice } from '@/types/device';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -156,6 +158,8 @@ export async function GET(req: NextRequest) {
     labels?: string[] | null;
     state?: string | null;
     areaName?: string | null;
+    domain?: string | null;
+    attributes?: Record<string, unknown> | null;
   };
 
   const toUIDevice = (d: MergedDevice): UIDevice => ({
@@ -168,8 +172,8 @@ export async function GET(req: NextRequest) {
     labels: d.labels ?? [],
     label: d.label ?? null,
     labelCategory: d.labelCategory ?? null,
-    domain: '',
-    attributes: {},
+    domain: d.domain ?? '',
+    attributes: d.attributes ?? {},
     blindTravelSeconds: d.blindTravelSeconds ?? null,
   });
 
@@ -186,12 +190,16 @@ export async function GET(req: NextRequest) {
       cleanLabel(d.label?.toString()) ||
       cleanLabel(d.labelCategory?.toString()) ||
       null;
-    const label = inferLabel(d.entityId, rawLabel);
+    const groupLabel = getGroupLabel({
+      label: rawLabel ?? null,
+      labels: Array.isArray(d.labels) ? d.labels : [],
+      labelCategory: d.labelCategory ?? null,
+    });
     mergedMap.set(d.entityId, {
       entityId: d.entityId,
       name: name || prettyId(d.entityId),
       area,
-      label,
+      label: groupLabel,
       blindTravelSeconds:
         override?.blindTravelSeconds ?? (typeof d.blindTravelSeconds === 'number' ? d.blindTravelSeconds : null),
       deviceId: d.deviceId ?? null,
@@ -200,16 +208,23 @@ export async function GET(req: NextRequest) {
       labels: Array.isArray(d.labels) ? d.labels : null,
       state: d.state ?? null,
       areaName: d.areaName ?? null,
+      domain: d.domain ?? null,
+      attributes: d.attributes ?? null,
     });
   });
 
   overrides.forEach((ov) => {
     if (mergedMap.has(ov.entityId)) return;
+    const groupLabel = getGroupLabel({
+      label: cleanLabel(ov.label) ?? null,
+      labels: [],
+      labelCategory: cleanLabel(ov.label) ?? null,
+    });
     mergedMap.set(ov.entityId, {
       entityId: ov.entityId,
       name: (ov.name || prettyId(ov.entityId)).trim(),
       area: ov.area?.trim() || null,
-      label: inferLabel(ov.entityId, ov.label),
+      label: groupLabel,
       blindTravelSeconds: typeof ov.blindTravelSeconds === 'number' ? ov.blindTravelSeconds : null,
       deviceId: null,
       hasOverride: true,
@@ -249,13 +264,14 @@ export async function GET(req: NextRequest) {
   const linkedSensorsByPrimary = new Map<string, MergedDevice[]>();
 
   groups.forEach((devices) => {
-    // Choose primary: prefer non-sensor (hasOverride or label not ending with sensor-ish), then by name
-    const sorted = devices.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const sorted = devices.slice().sort((a, b) => a.name.localeCompare(b.name) || a.entityId.localeCompare(b.entityId));
+    const nonSensors = sorted.filter((d) => !isSensorEntity(toUIDevice(d)));
     const primary =
-      sorted.find((d) => d.label && !d.label.toLowerCase().includes('sensor')) ||
+      nonSensors.find((d) => d.hasOverride) ||
+      nonSensors[0] ||
       sorted[0];
     primaries.push(primary);
-    const linked = devices.filter((d) => d.entityId !== primary.entityId);
+    const linked = devices.filter((d) => d.entityId !== primary.entityId && isSensorEntity(toUIDevice(d)));
     linkedSensorsByPrimary.set(primary.entityId, linked);
   });
 
