@@ -97,9 +97,13 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
   const [claimCopyStatus, setClaimCopyStatus] = useState<string | null>(null);
 
   const [overrides, setOverrides] = useState<DeviceOverride[]>([]);
-  const allowedLabels = useMemo(
-    () => new Set(['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Doorbell', 'Home Security', 'TV', 'Speaker', 'Sockets']),
+  const allowedLabelOptions = useMemo(
+    () => ['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Doorbell', 'Home Security', 'TV', 'Speaker', 'Sockets'],
     []
+  );
+  const allowedLabels = useMemo(
+    () => new Set(allowedLabelOptions.map((l) => l.toLowerCase())),
+    [allowedLabelOptions]
   );
   const [overrideAlert, setOverrideAlert] = useState<StatusMessage>(null);
   const [overrideForm, setOverrideForm] = useState<OverrideForm>({
@@ -1203,7 +1207,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                         </button>
                       </div>
                       <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
-                        {Array.from(allowedLabels).map((label) => (
+                        {allowedLabelOptions.map((label) => (
                           <label key={label} className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-slate-50">
                             <input
                               type="checkbox"
@@ -1247,13 +1251,14 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {overrides
                 .filter((ov) => {
-                  const lbl = ov.label?.trim();
+                  const lblRaw = ov.label?.trim();
+                  const lbl = lblRaw ? lblRaw.toLowerCase() : '';
                   if (!lbl || lbl === '-') return false;
                   if (!allowedLabels.has(lbl)) return false;
                   const areaVal = (ov.area ?? '').trim().toLowerCase();
                   if (!areaVal || areaVal === 'unassigned') return false;
                   if (filterAreas.length && !filterAreas.includes(ov.area || '')) return false;
-                  if (filterLabels.length && !filterLabels.includes(lbl)) return false;
+                  if (filterLabels.length && !filterLabels.map((l) => l.toLowerCase()).includes(lbl)) return false;
                   return true;
                 })
                 .map((ov) => {
