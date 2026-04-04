@@ -96,9 +96,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
   const [sellingClaimCode, setSellingClaimCode] = useState<string | null>(null);
   const [claimCopyStatus, setClaimCopyStatus] = useState<string | null>(null);
 
-  const [overrideSearch, setOverrideSearch] = useState('');
   const [overrides, setOverrides] = useState<DeviceOverride[]>([]);
-  const [overridesLoading, setOverridesLoading] = useState(false);
   const allowedLabels = useMemo(
     () => new Set(['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Doorbell', 'Home Security', 'TV', 'Speaker', 'Sockets']),
     []
@@ -114,6 +112,20 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
   const [editingOverrideId, setEditingOverrideId] = useState<string | null>(null);
   const [filterAreas, setFilterAreas] = useState<string[]>([]);
   const [filterLabels, setFilterLabels] = useState<string[]>([]);
+  const [areaMenuOpen, setAreaMenuOpen] = useState(false);
+  const [labelMenuOpen, setLabelMenuOpen] = useState(false);
+  const areaMenuRef = useRef<HTMLDivElement | null>(null);
+  const labelMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function handleClickOutside(evt: MouseEvent) {
+      const target = evt.target as Node;
+      if (areaMenuRef.current && !areaMenuRef.current.contains(target)) setAreaMenuOpen(false);
+      if (labelMenuRef.current && !labelMenuRef.current.contains(target)) setLabelMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   function updateTenantField(key: TenantStringField, value: string) {
     setTenantForm((prev) => ({ ...prev, [key]: value }));
@@ -197,7 +209,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     } finally {
       setOverridesLoading(false);
     }
-  }, [overrideSearch]);
+  }, []);
 
   useEffect(() => {
     void loadOverrides();
@@ -1125,41 +1137,93 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
             <div className="flex flex-col items-center justify-center gap-3 pb-2 text-sm">
               <h2 className="text-base font-semibold text-slate-900">Existing overrides</h2>
               <div className="flex flex-wrap items-center justify-center gap-3">
-                <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 shadow-sm">
-                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Area</span>
-                  <select
-                    multiple
-                    className="min-w-[180px] rounded-full border border-slate-200 bg-white px-3 py-1 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={filterAreas}
-                    onChange={(e) => {
-                      const options = Array.from(e.target.selectedOptions).map((o) => o.value);
-                      setFilterAreas(options);
-                    }}
+                <div className="relative" ref={areaMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setAreaMenuOpen((v) => !v)}
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:border-slate-300"
                   >
-                    {availableAreas.map((area) => (
-                      <option key={area} value={area}>
-                        {area}
-                      </option>
-                    ))}
-                  </select>
+                    <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Area</span>
+                    <span className="text-slate-800">
+                      {filterAreas.length === 0 ? 'All' : `${filterAreas.length} selected`}
+                    </span>
+                    <span className="text-slate-400">▾</span>
+                  </button>
+                  {areaMenuOpen && (
+                    <div className="absolute left-1/2 z-20 mt-2 w-56 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-lg backdrop-blur">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Areas</span>
+                        <button
+                          type="button"
+                          className="text-[11px] text-indigo-600 hover:text-indigo-800"
+                          onClick={() => setFilterAreas([])}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
+                        {availableAreas.map((area) => (
+                          <label key={area} className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-slate-50">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              checked={filterAreas.includes(area)}
+                              onChange={(e) => {
+                                setFilterAreas((prev) =>
+                                  e.target.checked ? [...prev, area] : prev.filter((a) => a !== area)
+                                );
+                              }}
+                            />
+                            <span className="truncate">{area}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 shadow-sm">
-                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Label</span>
-                  <select
-                    multiple
-                    className="min-w-[180px] rounded-full border border-slate-200 bg-white px-3 py-1 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={filterLabels}
-                    onChange={(e) => {
-                      const options = Array.from(e.target.selectedOptions).map((o) => o.value);
-                      setFilterLabels(options);
-                    }}
+                <div className="relative" ref={labelMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setLabelMenuOpen((v) => !v)}
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:border-slate-300"
                   >
-                    {Array.from(allowedLabels).map((label) => (
-                      <option key={label} value={label}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
+                    <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Label</span>
+                    <span className="text-slate-800">
+                      {filterLabels.length === 0 ? 'All' : `${filterLabels.length} selected`}
+                    </span>
+                    <span className="text-slate-400">▾</span>
+                  </button>
+                  {labelMenuOpen && (
+                    <div className="absolute left-1/2 z-20 mt-2 w-56 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-lg backdrop-blur">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Labels</span>
+                        <button
+                          type="button"
+                          className="text-[11px] text-indigo-600 hover:text-indigo-800"
+                          onClick={() => setFilterLabels([])}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
+                        {Array.from(allowedLabels).map((label) => (
+                          <label key={label} className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-slate-50">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              checked={filterLabels.includes(label)}
+                              onChange={(e) => {
+                                setFilterLabels((prev) =>
+                                  e.target.checked ? [...prev, label] : prev.filter((l) => l !== label)
+                                );
+                              }}
+                            />
+                            <span className="truncate">{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
