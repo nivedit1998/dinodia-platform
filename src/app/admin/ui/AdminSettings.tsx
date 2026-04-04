@@ -1121,16 +1121,12 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
 
         {showOverrideSection && (
           <div className="border border-slate-200 rounded-xl p-4 lg:col-span-2">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="font-semibold">Manage Devices in your Home</h2>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Assign names, areas, and labels for sensor entities without calling Home Assistant. Suggestions come
-                from observed monitoring data.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-semibold">Manage Devices in your Home</h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
                 className="w-full min-w-[220px] rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
                 placeholder="Search entity id or name"
                 value={overrideSearch}
@@ -1246,96 +1242,101 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
 
           </div>
 
-          <div className="mt-4 rounded-lg border border-slate-200 p-4">
-            <h3 className="text-sm font-semibold text-slate-900">
-              {editingOverrideId ? 'Edit override' : 'Add override'}
-            </h3>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-[11px] text-slate-500">Entity ID</label>
-                <input
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={overrideForm.entityId}
-                  onChange={(e) =>
-                    setOverrideForm((prev) => ({ ...prev, entityId: e.target.value }))
-                  }
-                  disabled={!!editingOverrideId}
-                  placeholder="sensor.power_xxx"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] text-slate-500">Name</label>
-                <input
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={overrideForm.name}
-                  onChange={(e) =>
-                    setOverrideForm((prev) => ({ ...prev, name: e.target.value }))
-                  }
-                  placeholder="Friendly name"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] text-slate-500">Area</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={overrideForm.area}
-                  onChange={(e) => setOverrideForm((prev) => ({ ...prev, area: e.target.value }))}
-                >
-                  <option value="">Select area</option>
-                  {availableAreas.map((area) => (
-                    <option key={area} value={area}>
-                      {area}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] text-slate-500">Label</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={overrideForm.label}
-                  onChange={(e) => setOverrideForm((prev) => ({ ...prev, label: e.target.value }))}
-                >
-                  {['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Doorbell', 'Home Security', 'TV', 'Speaker', 'Sockets'].map(
-                    (label) => (
-                      <option key={label} value={label}>
-                        {label}
-                      </option>
-                    )
-                  )}
-                </select>
-              </div>
-              {overrideForm.label === 'Blind' && (
+          {editingOverrideId && (
+            <div className="mt-4 rounded-lg border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-slate-900">Edit override</h3>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-[11px] text-slate-500">Blind travel (seconds)</label>
+                  <label className="mb-1 block text-[11px] text-slate-500">Entity ID</label>
                   <input
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={overrideForm.blindTravelSeconds}
+                    value={overrideForm.entityId}
                     onChange={(e) =>
-                      setOverrideForm((prev) => ({ ...prev, blindTravelSeconds: e.target.value }))
+                      setOverrideForm((prev) => ({ ...prev, entityId: e.target.value }))
                     }
-                    placeholder="Leave blank unless calibrating blinds"
+                    disabled
+                    placeholder="sensor.power_xxx"
                   />
                 </div>
-              )}
+                <div>
+                  <label className="mb-1 block text-[11px] text-slate-500">Name</label>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={overrideForm.name}
+                    onChange={(e) =>
+                      setOverrideForm((prev) => ({ ...prev, name: e.target.value }))
+                    }
+                    placeholder="Friendly name"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] text-slate-500">Area</label>
+                  <select
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={overrideForm.area}
+                    onChange={(e) => setOverrideForm((prev) => ({ ...prev, area: e.target.value }))}
+                  >
+                    <option value="">Select area</option>
+                    {availableAreas.map((area) => (
+                      <option key={area} value={area}>
+                        {area}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] text-slate-500">Label</label>
+                  <select
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={overrideForm.label}
+                    onChange={(e) => setOverrideForm((prev) => ({ ...prev, label: e.target.value }))}
+                  >
+                    {['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Doorbell', 'Home Security', 'TV', 'Speaker', 'Sockets'].map(
+                      (label) => (
+                        <option key={label} value={label}>
+                          {label}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </div>
+                {overrideForm.label === 'Blind' && (
+                  <div>
+                    <label className="mb-1 block text-[11px] text-slate-500">Blind travel (seconds)</label>
+                    <input
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={overrideForm.blindTravelSeconds}
+                      onChange={(e) =>
+                        setOverrideForm((prev) => ({ ...prev, blindTravelSeconds: e.target.value }))
+                      }
+                      placeholder="Leave blank unless calibrating blinds"
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void saveOverride()}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-indigo-700"
+                >
+                  Save override
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingOverrideId(null)}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => void saveOverride()}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-indigo-700"
-              >
-                Save override
-              </button>
-              <button
-                type="button"
-                onClick={() => startNewOverride('')}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Reset form
-              </button>
+          )}
+          {!editingOverrideId && (
+            <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50/80 p-4 text-xs text-slate-600">
+              Select an override to edit from the table above.
             </div>
-          </div>
+          )}
         </div>
         )}
 
