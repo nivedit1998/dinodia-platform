@@ -361,21 +361,21 @@ export default function AdminDashboard({ username }: Props) {
                     className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
                     onClick={() => setMenuOpen(false)}
                   >
-                    Homeowner Settings
+                    Account Settings
                   </Link>
                   <Link
                     href="/admin/manage-devices"
                     className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
                     onClick={() => setMenuOpen(false)}
                   >
-                    Manage Home Devices
+                    Home Devices
                   </Link>
                   <Link
                     href="/admin/manage-users"
                     className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
                     onClick={() => setMenuOpen(false)}
                   >
-                    Manage Home Users
+                    User Management
                   </Link>
                   <button
                     type="button"

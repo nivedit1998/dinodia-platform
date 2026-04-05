@@ -652,10 +652,10 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
 
   const pageTitle =
     mode === 'devices'
-      ? 'Manage Home Devices'
+      ? 'Home Devices'
       : mode === 'users'
-        ? 'Manage Home Users'
-        : 'Homeowner Settings';
+        ? 'User Management'
+        : 'Account Settings';
 
   return (
     <div className="min-h-screen bg-[#f5f5f7] text-slate-900">
@@ -707,21 +707,21 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                   className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
                   onClick={() => setMenuOpen(false)}
                 >
-                  Homeowner Settings
+                  Account Settings
                 </Link>
                 <Link
                   href="/admin/manage-devices"
                   className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
                   onClick={() => setMenuOpen(false)}
                 >
-                  Manage Home Devices
+                  Home Devices
                 </Link>
                 <Link
                   href="/admin/manage-users"
                   className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
                   onClick={() => setMenuOpen(false)}
                 >
-                  Manage Home Users
+                  User Management
                 </Link>
                 <button
                   type="button"
