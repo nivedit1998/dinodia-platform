@@ -128,7 +128,7 @@ function MultiSelect({
 
 export default function AdminDashboard({ username }: Props) {
   void username; // Provided by page for consistency; not required in observe-only UI.
-  const [summary, setSummary] = useState<SummaryResponse | null>(null);
+  const [summaryAll, setSummaryAll] = useState<SummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bucket, setBucket] = useState<HistoryBucket>('daily');
@@ -145,7 +145,7 @@ export default function AdminDashboard({ username }: Props) {
   const [selectedEnergyEntities, setSelectedEnergyEntities] = useState<string[]>([]);
   const [selectedBatteryEntities, setSelectedBatteryEntities] = useState<string[]>([]);
   const [selectedBoilerEntities, setSelectedBoilerEntities] = useState<string[]>([]);
-  const [boilerAreaSeries, setBoilerAreaSeries] = useState<Array<{ area: string; points: BoilerHistoryPoint[] }>>([]);
+  const [boilerAreaSeriesAll, setBoilerAreaSeriesAll] = useState<Array<{ area: string; points: BoilerHistoryPoint[] }>>([]);
   const [boilerLoading, setBoilerLoading] = useState(false);
   const [boilerError, setBoilerError] = useState<string | null>(null);
   const [selectorsError, setSelectorsError] = useState<string | null>(null);
@@ -162,18 +162,63 @@ export default function AdminDashboard({ username }: Props) {
     setTo(dateOnly(today));
   }, [preset, from, to]);
 
+  const energyEntityAreaMap = useMemo(() => new Map(energyEntities.map((e) => [e.entityId, e.area])), [energyEntities]);
+  const batteryEntityAreaMap = useMemo(() => new Map(batteryEntities.map((e) => [e.entityId, e.area])), [batteryEntities]);
+  const boilerEntityAreaMap = useMemo(() => new Map(boilerEntities.map((e) => [e.entityId, e.area])), [boilerEntities]);
+
+  const summary = useMemo(() => {
+    if (!summaryAll) return null;
+    const hasAreaFilter = selectedAreas.length > 0;
+    const areaSet = new Set(selectedAreas);
+    const energySet = new Set(selectedEnergyEntities);
+    const batterySet = new Set(selectedBatteryEntities);
+
+    const matchesArea = (area?: string | null) => !hasAreaFilter || (area ? areaSet.has(area) : false);
+    const matchesEnergyEntity = (entityId: string, area?: string | null) => {
+      if (selectedEnergyEntities.length > 0 && !energySet.has(entityId)) return false;
+      if (!hasAreaFilter) return true;
+      const resolvedArea = area ?? energyEntityAreaMap.get(entityId);
+      return resolvedArea ? areaSet.has(resolvedArea) : false;
+    };
+    const matchesBatteryEntity = (entityId: string) => {
+      if (selectedBatteryEntities.length > 0 && !batterySet.has(entityId)) return false;
+      if (!hasAreaFilter) return true;
+      const resolvedArea = batteryEntityAreaMap.get(entityId);
+      return resolvedArea ? areaSet.has(resolvedArea) : false;
+    };
+
+    return {
+      ...summaryAll,
+      seriesKwhByArea: summaryAll.seriesKwhByArea.filter((series) => matchesArea(series.area)),
+      seriesBatteryByEntity: summaryAll.seriesBatteryByEntity.filter((series) => matchesBatteryEntity(series.entityId)),
+      topEntities: summaryAll.topEntities.filter((row) => matchesEnergyEntity(row.entityId, row.area)),
+      byArea: summaryAll.byArea
+        .filter((row) => matchesArea(row.area))
+        .map((row) => ({
+          ...row,
+          topEntities: row.topEntities.filter((entity) => matchesEnergyEntity(entity.entityId, row.area)),
+        })),
+      batteryLow: summaryAll.batteryLow.filter((row) => matchesBatteryEntity(row.entityId)),
+    };
+  }, [
+    summaryAll,
+    selectedAreas,
+    selectedEnergyEntities,
+    selectedBatteryEntities,
+    energyEntityAreaMap,
+    batteryEntityAreaMap,
+  ]);
+
   const totalKwh = useMemo(() => {
-    if (summary?.byArea?.length) {
-      return summary.byArea
-        .filter((a) => (a.area || '').toLowerCase() !== 'unassigned')
-        .reduce((sum, a) => sum + (a.totalKwhDelta || 0), 0);
-    }
-    return (summary?.seriesTotalKwh ?? []).reduce((sum, p) => sum + (p.totalKwhDelta || 0), 0);
+    if (!summary) return 0;
+    return summary.seriesKwhByArea
+      .filter((series) => (series.area || '').toLowerCase() !== 'unassigned')
+      .reduce((sum, series) => sum + series.points.reduce((areaSum, point) => areaSum + (point.totalKwhDelta || 0), 0), 0);
   }, [summary]);
   const totalCost = useMemo(() => {
     if (!summary || summary.pricePerKwh == null) return null;
-    return summary.seriesTotalCost.reduce((sum, p) => sum + (p.estimatedCost || 0), 0);
-  }, [summary]);
+    return totalKwh * summary.pricePerKwh;
+  }, [summary, totalKwh]);
 
   const energySeriesByArea: MultiSeriesTrend[] = useMemo(
     () =>
@@ -204,9 +249,25 @@ export default function AdminDashboard({ username }: Props) {
     [summary]
   );
 
+  const boilerAreaSeriesFiltered = useMemo(() => {
+    const hasAreaFilter = selectedAreas.length > 0;
+    const areaSet = new Set(selectedAreas);
+    const boilerAreas = selectedBoilerEntities
+      .map((id) => boilerEntityAreaMap.get(id))
+      .filter((area): area is string => typeof area === 'string' && area.length > 0);
+    const boilerAreaSet = new Set(boilerAreas);
+    const hasBoilerEntityFilter = boilerAreaSet.size > 0;
+
+    return boilerAreaSeriesAll.filter((series) => {
+      if (hasAreaFilter && !areaSet.has(series.area)) return false;
+      if (hasBoilerEntityFilter && !boilerAreaSet.has(series.area)) return false;
+      return true;
+    });
+  }, [boilerAreaSeriesAll, selectedAreas, selectedBoilerEntities, boilerEntityAreaMap]);
+
   const boilerSeriesByArea: MultiSeriesTrend[] = useMemo(
     () =>
-      boilerAreaSeries.map((series) => ({
+      boilerAreaSeriesFiltered.map((series) => ({
         id: series.area,
         label: series.area,
         points: series.points.map((p) => ({
@@ -215,7 +276,7 @@ export default function AdminDashboard({ username }: Props) {
           value: p.value,
         })),
       })),
-    [boilerAreaSeries]
+    [boilerAreaSeriesFiltered]
   );
 
   const energyPointCount = useMemo(
@@ -259,64 +320,31 @@ export default function AdminDashboard({ username }: Props) {
 
   const batteryLowCount = summary?.batteryLow.length ?? 0;
 
-  const buildParams = useCallback(() => {
+  const buildSummaryParams = useCallback(() => {
     const params = new URLSearchParams();
     params.set('bucket', bucket);
-    if (preset === 'all') {
-      params.set('days', 'all');
-    } else if (preset === 'custom') {
-      params.set('from', from);
-      params.set('to', to);
-    } else {
-      params.set('days', preset);
-    }
-    selectedAreas.forEach((a) => params.append('areas', a));
-    selectedEnergyEntities.forEach((e) => params.append('energyEntityIds', e));
-    selectedBatteryEntities.forEach((e) => params.append('batteryEntityIds', e));
+    params.set('days', 'all');
     return params.toString();
-  }, [bucket, preset, from, to, selectedAreas, selectedEnergyEntities, selectedBatteryEntities]);
+  }, [bucket]);
 
   const buildSelectorParams = useCallback(() => {
     const params = new URLSearchParams();
-    if (preset === 'all') {
-      params.set('days', 'all');
-    } else if (preset === 'custom') {
-      params.set('from', from);
-      params.set('to', to);
-    } else {
-      params.set('days', preset);
-    }
-    selectedAreas.forEach((a) => params.append('areas', a));
+    params.set('days', 'all');
     return params.toString();
-  }, [preset, from, to, selectedAreas]);
+  }, []);
 
   const buildBoilerParams = useCallback(() => {
     const params = new URLSearchParams();
-    if (preset === 'all') {
-      params.set('days', 'all');
-    } else if (preset === 'custom') {
-      params.set('from', from);
-      params.set('to', to);
-    } else {
-      params.set('days', preset);
-    }
-    selectedAreas.forEach((a) => params.append('areas', a));
+    params.set('days', 'all');
     params.set('groupBy', 'area');
-    if (selectedBoilerEntities.length > 0) {
-      selectedBoilerEntities.forEach((id) => params.append('entityIds', id));
-    }
     return params.toString();
-  }, [preset, from, to, selectedAreas, selectedBoilerEntities]);
+  }, []);
 
   const loadSummary = async (paramsOverride?: string) => {
-    if (preset === 'custom' && (!from || !to)) {
-      setError('Choose both from/to dates for a custom range.');
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
-      const params = paramsOverride ?? buildParams();
+      const params = paramsOverride ?? buildSummaryParams();
       const res = await platformFetch(`/api/admin/monitoring/summary?${params}`, {
         cache: 'no-store',
         credentials: 'include',
@@ -327,12 +355,12 @@ export default function AdminDashboard({ username }: Props) {
           data && typeof data.error === 'string' && data.error.length > 0 ? data.error : 'Unable to load analytics right now.';
         throw new Error(message);
       }
-      setSummary(data);
+      setSummaryAll(data);
       setLastFetchedAt(new Date().toISOString());
     } catch (err) {
       console.error('Failed to load summary', err);
       setError((err as Error).message || 'Unable to load analytics right now.');
-      setSummary(null);
+      setSummaryAll(null);
     } finally {
       setLoading(false);
     }
@@ -386,10 +414,6 @@ export default function AdminDashboard({ username }: Props) {
   }, [buildSelectorParams]);
 
   const loadBoilerHistory = useCallback(async (paramsOverride?: string) => {
-    if (preset === 'custom' && (!from || !to)) {
-      setBoilerError('Choose both from/to dates for a custom range.');
-      return;
-    }
     setBoilerLoading(true);
     setBoilerError(null);
     try {
@@ -404,37 +428,29 @@ export default function AdminDashboard({ username }: Props) {
           data && typeof data.error === 'string' && data.error.length > 0 ? data.error : 'Unable to load boiler trend.';
         throw new Error(message);
       }
-      setBoilerAreaSeries(Array.isArray(data.seriesByArea) ? data.seriesByArea : []);
+      setBoilerAreaSeriesAll(Array.isArray(data.seriesByArea) ? data.seriesByArea : []);
     } catch (err) {
       console.error('Failed to load boiler trend', err);
       setBoilerError((err as Error).message || 'Unable to load boiler trend.');
-      setBoilerAreaSeries([]);
+      setBoilerAreaSeriesAll([]);
     } finally {
       setBoilerLoading(false);
     }
-  }, [buildBoilerParams, preset, from, to]);
-
-  const summaryParams = useMemo(() => buildParams(), [buildParams]);
-
-  const boilerParams = useMemo(() => buildBoilerParams(), [buildBoilerParams]);
+  }, [buildBoilerParams]);
 
   useEffect(() => {
-    void loadSummary(summaryParams);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [summaryParams]);
-
-  useEffect(() => {
-    if (preset === 'custom' && (!from || !to)) return;
+    void loadSummary();
     void loadSelectors();
-  }, [preset, from, to, selectedAreas, loadSelectors]);
+    void loadBoilerHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  useEffect(() => {
-    if (preset === 'custom' && (!from || !to)) return;
-    void loadBoilerHistory(boilerParams);
-  }, [boilerParams, loadBoilerHistory, preset, from, to]);
-
-  const lastSnapshotDisplay = summary ? formatDateTime(summary.lastSnapshotAt) : 'Not available';
+  const lastSnapshotDisplay = summaryAll ? formatDateTime(summaryAll.lastSnapshotAt) : 'Not available';
   const lastFetchedDisplay = lastFetchedAt ? formatDateTime(lastFetchedAt) : 'Never';
+  const handleRefresh = () => {
+    void loadSummary();
+    void loadBoilerHistory();
+  };
 
   return (
     <div className="min-h-screen bg-[#f5f5f7] text-slate-900">
@@ -577,7 +593,7 @@ export default function AdminDashboard({ username }: Props) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => loadSummary()}
+                onClick={handleRefresh}
                 disabled={loading}
                 className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
               >
