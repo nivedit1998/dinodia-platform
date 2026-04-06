@@ -132,6 +132,19 @@ function addBucketTotal(map: Map<string, BucketTotal>, info: BucketInfo, delta: 
   }
 }
 
+function addAreaBucketTotal(
+  map: Map<string, Map<string, BucketTotal>>,
+  area: string,
+  info: BucketInfo,
+  delta: number
+) {
+  const bucketMap = map.get(area) ?? new Map<string, BucketTotal>();
+  addBucketTotal(bucketMap, info, delta);
+  if (!map.has(area)) {
+    map.set(area, bucketMap);
+  }
+}
+
 function parseMulti(searchParams: URLSearchParams, key: string): string[] {
   const direct = searchParams.getAll(key);
   const bracketed = searchParams.getAll(`${key}[]`);
@@ -244,6 +257,7 @@ export async function GET(req: NextRequest) {
   }
 
   const bucketTotals = new Map<string, BucketTotal>();
+  const areaBucketTotals = new Map<string, Map<string, BucketTotal>>();
   const entityTotals = new Map<string, number>();
   const areaTotals = new Map<string, { total: number; entities: Map<string, number> }>();
 
@@ -255,6 +269,7 @@ export async function GET(req: NextRequest) {
     let prev = baselineValue;
     const hasBaseline = prev !== null;
     let totalDelta = 0;
+    const area = areaByEntity.get(entityId) || UNASSIGNED;
 
     for (const reading of readings) {
       const numeric = isFiniteNumber(reading.numericValue) ? reading.numericValue : null;
@@ -273,12 +288,14 @@ export async function GET(req: NextRequest) {
       totalDelta += delta;
       const info = getBucketInfoUtc(bucket, reading.capturedAt);
       addBucketTotal(bucketTotals, info, delta);
+      if (area !== UNASSIGNED) {
+        addAreaBucketTotal(areaBucketTotals, area, info, delta);
+      }
     }
 
     if (totalDelta === 0) return;
 
     entityTotals.set(entityId, (entityTotals.get(entityId) ?? 0) + totalDelta);
-    const area = areaByEntity.get(entityId) || UNASSIGNED;
     const existingArea = areaTotals.get(area) ?? { total: 0, entities: new Map<string, number>() };
     existingArea.total += totalDelta;
     existingArea.entities.set(entityId, (existingArea.entities.get(entityId) ?? 0) + totalDelta);
@@ -360,6 +377,32 @@ export async function GET(req: NextRequest) {
       count: b.count,
     }));
 
+  const batteryByEntity = new Map<
+    string,
+    Map<string, { sum: number; count: number; bucketStart: Date; label: string }>
+  >();
+  for (const entry of Object.values(batteryLatestByDay)) {
+    const area = areaByEntity.get(entry.entityId) || UNASSIGNED;
+    if (area === UNASSIGNED) continue;
+    const info = getBucketInfoUtc(bucket, entry.bucketStart);
+    const entityMap = batteryByEntity.get(entry.entityId) ?? new Map();
+    const existing = entityMap.get(info.key);
+    if (!existing) {
+      entityMap.set(info.key, {
+        sum: entry.value,
+        count: 1,
+        bucketStart: info.bucketStart,
+        label: info.label,
+      });
+    } else {
+      existing.sum += entry.value;
+      existing.count += 1;
+    }
+    if (!batteryByEntity.has(entry.entityId)) {
+      batteryByEntity.set(entry.entityId, entityMap);
+    }
+  }
+
   const seriesTotalKwh = Array.from(bucketTotals.values())
     .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
     .map((entry) => ({
@@ -367,6 +410,20 @@ export async function GET(req: NextRequest) {
       label: entry.label,
       totalKwhDelta: entry.totalKwhDelta,
     }));
+
+  const seriesKwhByArea = Array.from(areaBucketTotals.entries())
+    .filter(([area]) => area !== UNASSIGNED)
+    .map(([area, buckets]) => ({
+      area,
+      points: Array.from(buckets.values())
+        .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
+        .map((entry) => ({
+          bucketStart: entry.bucketStart.toISOString(),
+          label: entry.label,
+          totalKwhDelta: entry.totalKwhDelta,
+        })),
+    }))
+    .sort((a, b) => a.area.localeCompare(b.area));
 
   const seriesTotalCost =
     validPrice === null
@@ -378,8 +435,12 @@ export async function GET(req: NextRequest) {
         }));
 
   const prettyId = (id: string) => id.replace(/^sensor\./i, '').replace(/_/g, ' ');
+  const metaEntityIds = new Set<string>([
+    ...entityTotals.keys(),
+    ...batteryRows.map((row) => row.entityId),
+  ]);
   const deviceMeta = await prisma.device.findMany({
-    where: { haConnectionId, entityId: { in: Array.from(entityTotals.keys()) } },
+    where: { haConnectionId, entityId: { in: Array.from(metaEntityIds) } },
     select: { entityId: true, name: true, label: true, area: true },
   });
   const deviceByEntity = new Map(deviceMeta.map((d) => [d.entityId, d]));
@@ -441,6 +502,20 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const seriesBatteryByEntity = Array.from(batteryByEntity.entries())
+    .map(([entityId, buckets]) => ({
+      entityId,
+      name: displayName(entityId),
+      points: Array.from(buckets.values())
+        .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
+        .map((entry) => ({
+          bucketStart: entry.bucketStart.toISOString(),
+          label: entry.label,
+          avgPercent: entry.sum / entry.count,
+        })),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   const unassigned = areaEntries.find((a) => a.area === UNASSIGNED);
   const rankedAreas = areaEntries
     .filter((a) => a.area !== UNASSIGNED)
@@ -477,10 +552,12 @@ export async function GET(req: NextRequest) {
       entitiesMonitored: monitoredEntities.length,
     },
     seriesTotalKwh,
+    seriesKwhByArea,
     seriesTotalCost,
     topEntities,
     byArea: cappedAreas,
     seriesBatteryAvgPercent,
+    seriesBatteryByEntity,
     batteryLow,
   });
 }

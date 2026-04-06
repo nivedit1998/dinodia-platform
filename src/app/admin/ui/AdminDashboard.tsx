@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { platformFetch } from '@/lib/platformFetchClient';
 import { logout as performLogout } from '@/lib/logout';
-import { LineAreaChart, TrendPoint } from './charts/LineAreaChart';
+import { MultiLineChart, MultiSeriesTrend } from './charts/LineAreaChart';
 
 type HistoryBucket = 'daily' | 'weekly' | 'monthly';
 type Preset = '7' | '30' | '90' | 'all' | 'custom';
@@ -16,6 +16,8 @@ type SummaryEntity = { entityId: string; name?: string; totalKwhDelta: number; e
 type SummaryArea = { area: string; totalKwhDelta: number; estimatedCost?: number; topEntities: SummaryEntity[] };
 type BatteryRow = { entityId: string; name?: string; latestBatteryPercent: number; capturedAt: string };
 type BatteryPoint = { bucketStart: string; label: string; avgPercent: number; count: number };
+type SummaryAreaSeries = { area: string; points: SummaryPoint[] };
+type BatteryEntitySeries = { entityId: string; name?: string; points: Array<{ bucketStart: string; label: string; avgPercent: number }> };
 type EntityOption = { entityId: string; name: string; area: string; lastCapturedAt: string };
 type BoilerHistoryPoint = { bucketStart: string; label: string; value: number };
 
@@ -27,13 +29,15 @@ type SummaryResponse = {
   pricePerKwh: number | null;
   coverage: { entitiesWithReadings: number; entitiesMonitored: number };
   seriesTotalKwh: SummaryPoint[];
+  seriesKwhByArea: SummaryAreaSeries[];
   seriesTotalCost: SummaryCostPoint[];
   seriesBatteryAvgPercent: BatteryPoint[];
+  seriesBatteryByEntity: BatteryEntitySeries[];
   topEntities: SummaryEntity[];
   byArea: SummaryArea[];
   batteryLow: BatteryRow[];
 };
-type BoilerHistoryResponse = { ok: boolean; unit: string; points: BoilerHistoryPoint[]; error?: string };
+type BoilerHistoryResponse = { ok: boolean; unit: string; points: BoilerHistoryPoint[]; seriesByArea?: Array<{ area: string; points: BoilerHistoryPoint[] }>; error?: string };
 
 type Props = { username?: string };
 
@@ -141,7 +145,7 @@ export default function AdminDashboard({ username }: Props) {
   const [selectedEnergyEntities, setSelectedEnergyEntities] = useState<string[]>([]);
   const [selectedBatteryEntities, setSelectedBatteryEntities] = useState<string[]>([]);
   const [selectedBoilerEntities, setSelectedBoilerEntities] = useState<string[]>([]);
-  const [boilerHistory, setBoilerHistory] = useState<BoilerHistoryPoint[]>([]);
+  const [boilerAreaSeries, setBoilerAreaSeries] = useState<Array<{ area: string; points: BoilerHistoryPoint[] }>>([]);
   const [boilerLoading, setBoilerLoading] = useState(false);
   const [boilerError, setBoilerError] = useState<string | null>(null);
   const [selectorsError, setSelectorsError] = useState<string | null>(null);
@@ -171,34 +175,60 @@ export default function AdminDashboard({ username }: Props) {
     return summary.seriesTotalCost.reduce((sum, p) => sum + (p.estimatedCost || 0), 0);
   }, [summary]);
 
-  const energyTrendPoints: TrendPoint[] = useMemo(
+  const energySeriesByArea: MultiSeriesTrend[] = useMemo(
     () =>
-      (summary?.seriesTotalKwh ?? []).map((p) => ({
-        date: new Date(p.bucketStart),
-        label: p.label,
-        value: p.totalKwhDelta ?? 0,
+      (summary?.seriesKwhByArea ?? []).map((series) => ({
+        id: series.area,
+        label: series.area,
+        points: series.points.map((p) => ({
+          date: new Date(p.bucketStart),
+          label: p.label,
+          value: p.totalKwhDelta ?? 0,
+        })),
       })),
     [summary]
   );
 
-  const batteryTrendPoints: TrendPoint[] = useMemo(
+  const batterySeriesByEntity: MultiSeriesTrend[] = useMemo(
     () =>
-      (summary?.seriesBatteryAvgPercent ?? []).map((p) => ({
-        date: new Date(p.bucketStart),
-        label: p.label,
-        value: p.avgPercent ?? 0,
+      (summary?.seriesBatteryByEntity ?? []).map((series) => ({
+        id: series.entityId,
+        label: series.name || series.entityId,
+        hint: series.entityId,
+        points: series.points.map((p) => ({
+          date: new Date(p.bucketStart),
+          label: p.label,
+          value: p.avgPercent ?? 0,
+        })),
       })),
     [summary]
   );
 
-  const boilerTrendPoints: TrendPoint[] = useMemo(
+  const boilerSeriesByArea: MultiSeriesTrend[] = useMemo(
     () =>
-      boilerHistory.map((p) => ({
-        date: new Date(p.bucketStart),
-        label: p.label,
-        value: p.value,
+      boilerAreaSeries.map((series) => ({
+        id: series.area,
+        label: series.area,
+        points: series.points.map((p) => ({
+          date: new Date(p.bucketStart),
+          label: p.label,
+          value: p.value,
+        })),
       })),
-    [boilerHistory]
+    [boilerAreaSeries]
+  );
+
+  const energyPointCount = useMemo(
+    () => Math.max(0, ...energySeriesByArea.map((s) => s.points.length)),
+    [energySeriesByArea]
+  );
+  const batteryPointCount = useMemo(
+    () => Math.max(0, ...batterySeriesByEntity.map((s) => s.points.length)),
+    [batterySeriesByEntity]
+  );
+  const boilerPointCount = useMemo(
+    () => Math.max(0, ...boilerSeriesByArea.map((s) => s.points.length)),
+    [boilerSeriesByArea]
   );
 
   useEffect(() => {
@@ -207,7 +237,7 @@ export default function AdminDashboard({ username }: Props) {
     requestAnimationFrame(() => {
       el.scrollLeft = el.scrollWidth;
     });
-  }, [energyTrendPoints, bucket]);
+  }, [energySeriesByArea, bucket]);
 
   useEffect(() => {
     const el = batteryScrollRef.current;
@@ -215,7 +245,7 @@ export default function AdminDashboard({ username }: Props) {
     requestAnimationFrame(() => {
       el.scrollLeft = el.scrollWidth;
     });
-  }, [batteryTrendPoints, bucket]);
+  }, [batterySeriesByEntity, bucket]);
 
   useEffect(() => {
     const el = boilerScrollRef.current;
@@ -223,9 +253,7 @@ export default function AdminDashboard({ username }: Props) {
     requestAnimationFrame(() => {
       el.scrollLeft = el.scrollWidth;
     });
-  }, [boilerTrendPoints]);
-
-  const energyVariant = 'line';
+  }, [boilerSeriesByArea]);
 
   // Coverage removed from UI; metric no longer used
 
@@ -273,10 +301,12 @@ export default function AdminDashboard({ username }: Props) {
       params.set('days', preset);
     }
     selectedAreas.forEach((a) => params.append('areas', a));
-    const ids = selectedBoilerEntities.length > 0 ? selectedBoilerEntities : boilerEntities.map((e) => e.entityId);
-    ids.forEach((id) => params.append('entityIds', id));
+    params.set('groupBy', 'area');
+    if (selectedBoilerEntities.length > 0) {
+      selectedBoilerEntities.forEach((id) => params.append('entityIds', id));
+    }
     return params.toString();
-  }, [preset, from, to, selectedAreas, selectedBoilerEntities, boilerEntities]);
+  }, [preset, from, to, selectedAreas, selectedBoilerEntities]);
 
   const loadSummary = async () => {
     if (preset === 'custom' && (!from || !to)) {
@@ -359,11 +389,6 @@ export default function AdminDashboard({ username }: Props) {
       setBoilerError('Choose both from/to dates for a custom range.');
       return;
     }
-    const ids = selectedBoilerEntities.length > 0 ? selectedBoilerEntities : boilerEntities.map((e) => e.entityId);
-    if (ids.length === 0) {
-      setBoilerHistory([]);
-      return;
-    }
     setBoilerLoading(true);
     setBoilerError(null);
     try {
@@ -377,15 +402,15 @@ export default function AdminDashboard({ username }: Props) {
           data && typeof data.error === 'string' && data.error.length > 0 ? data.error : 'Unable to load boiler trend.';
         throw new Error(message);
       }
-      setBoilerHistory(Array.isArray(data.points) ? data.points : []);
+      setBoilerAreaSeries(Array.isArray(data.seriesByArea) ? data.seriesByArea : []);
     } catch (err) {
       console.error('Failed to load boiler trend', err);
       setBoilerError((err as Error).message || 'Unable to load boiler trend.');
-      setBoilerHistory([]);
+      setBoilerAreaSeries([]);
     } finally {
       setBoilerLoading(false);
     }
-  }, [buildBoilerParams, preset, from, to, selectedBoilerEntities, boilerEntities]);
+  }, [buildBoilerParams, preset, from, to]);
 
   useEffect(() => {
     void loadSummary();
@@ -623,7 +648,7 @@ export default function AdminDashboard({ username }: Props) {
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-900">Energy trend</h2>
             <span className="text-xs text-slate-500">
-              Bucket: {bucket}, points: {summary?.seriesTotalKwh.length ?? 0}
+              Bucket: {bucket}, points: {energyPointCount}
             </span>
           </div>
           <div
@@ -632,19 +657,16 @@ export default function AdminDashboard({ username }: Props) {
           >
             <div
               className="min-w-[900px]"
-              style={{ minWidth: `${Math.max(900, energyTrendPoints.length * 32)}px` }}
+              style={{ minWidth: `${Math.max(900, energyPointCount * 32)}px` }}
             >
-              <LineAreaChart
+              <MultiLineChart
                 id="energy-trend"
-                title="Energy"
-                points={energyTrendPoints}
-                color="#0ea5e9"
-                gradientTo="#5ac8fa"
+                title="Energy by area"
+                series={energySeriesByArea}
                 valueUnit="kWh"
-                variant={energyVariant}
                 emptyLabel="No energy readings in this window."
                 formatValue={(v) => Number(v).toFixed(2)}
-                forcedWidth={Math.max(900, energyTrendPoints.length * 32)}
+                forcedWidth={Math.max(900, energyPointCount * 32)}
               />
             </div>
           </div>
@@ -657,7 +679,7 @@ export default function AdminDashboard({ username }: Props) {
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-900">Battery trend</h2>
             <span className="text-xs text-slate-500">
-              Bucket: {bucket}, points: {summary?.seriesBatteryAvgPercent.length ?? 0}
+              Bucket: {bucket}, points: {batteryPointCount}
             </span>
           </div>
           <div
@@ -666,19 +688,16 @@ export default function AdminDashboard({ username }: Props) {
           >
             <div
               className="min-w-[900px]"
-              style={{ minWidth: `${Math.max(900, batteryTrendPoints.length * 32)}px` }}
+              style={{ minWidth: `${Math.max(900, batteryPointCount * 32)}px` }}
             >
-              <LineAreaChart
+              <MultiLineChart
                 id="battery-trend"
-                title="Battery"
-                points={batteryTrendPoints}
-                color="#34c759"
-                gradientTo="#a3e635"
+                title="Battery by entity"
+                series={batterySeriesByEntity}
                 valueUnit="%"
-                variant={energyVariant}
                 emptyLabel="No battery readings in this window."
                 formatValue={(v) => v.toFixed(0)}
-                forcedWidth={Math.max(900, batteryTrendPoints.length * 32)}
+                forcedWidth={Math.max(900, batteryPointCount * 32)}
               />
             </div>
           </div>
@@ -689,7 +708,7 @@ export default function AdminDashboard({ username }: Props) {
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-900">Boiler temperature trend</h2>
             <span className="text-xs text-slate-500">
-              Points: {boilerTrendPoints.length}
+              Points: {boilerPointCount}
             </span>
           </div>
           <div
@@ -698,7 +717,7 @@ export default function AdminDashboard({ username }: Props) {
           >
             <div
               className="min-w-[900px]"
-              style={{ minWidth: `${Math.max(900, boilerTrendPoints.length * 32)}px` }}
+              style={{ minWidth: `${Math.max(900, boilerPointCount * 32)}px` }}
             >
               {boilerError ? (
                 <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
@@ -708,22 +727,19 @@ export default function AdminDashboard({ username }: Props) {
                 <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
                   Loading boiler trend…
                 </div>
-              ) : boilerTrendPoints.length === 0 ? (
+              ) : boilerSeriesByArea.length === 0 ? (
                 <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
                   No boiler readings in this window.
                 </div>
               ) : (
-                <LineAreaChart
+                <MultiLineChart
                   id="boiler-trend"
-                  title="Boiler temperature"
-                  points={boilerTrendPoints}
-                  color="#f59e0b"
-                  gradientTo="#fcd34d"
+                  title="Boiler temperature by area"
+                  series={boilerSeriesByArea}
                   valueUnit="°C"
-                  variant="line"
                   emptyLabel="No boiler readings in this window."
                   formatValue={(v) => v.toFixed(1)}
-                  forcedWidth={Math.max(900, boilerTrendPoints.length * 32)}
+                  forcedWidth={Math.max(900, boilerPointCount * 32)}
                 />
               )}
             </div>

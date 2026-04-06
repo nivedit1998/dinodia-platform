@@ -23,6 +23,14 @@ export type LineAreaChartProps = {
   forcedWidth?: number;
 };
 
+export type MultiSeriesTrend = {
+  id: string;
+  label: string;
+  hint?: string;
+  points: TrendPoint[];
+  color?: string;
+};
+
 const defaultFormat = (v: number) => (Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2));
 const chartPadding = { top: 24, right: 22, bottom: 32, left: 56 };
 
@@ -36,6 +44,28 @@ const getGradientStops = (color: string, from?: string, to?: string) => ({
   start: from || color,
   end: to || color,
 });
+
+const palette = [
+  '#0ea5e9',
+  '#34c759',
+  '#ff9500',
+  '#af52de',
+  '#ff3b30',
+  '#5ac8fa',
+  '#5856d6',
+  '#30d158',
+  '#ff2d55',
+  '#ffd60a',
+];
+
+type ActiveSeriesPoint = { series: MultiSeriesTrend; point: TrendPoint | null; color: string };
+
+function findNearestPoint(points: TrendPoint[], target: Date) {
+  if (points.length === 0) return null;
+  const b = bisector((d: TrendPoint) => d.date).center;
+  const idx = b(points, target);
+  return points[Math.max(0, Math.min(points.length - 1, idx))] ?? null;
+}
 
 export function LineAreaChart({
   id,
@@ -269,6 +299,251 @@ export function LineAreaChart({
         </g>
         </svg>
       )}
+    </div>
+  );
+}
+
+export function MultiLineChart({
+  id,
+  title,
+  series,
+  height = 320,
+  valueUnit,
+  emptyLabel,
+  formatValue = defaultFormat,
+  forcedWidth,
+}: {
+  id: string;
+  title: string;
+  series: MultiSeriesTrend[];
+  height?: number;
+  valueUnit?: string;
+  emptyLabel?: string;
+  formatValue?: (value: number) => string;
+  forcedWidth?: number;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(0);
+  const [hoverDate, setHoverDate] = useState<Date | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current || forcedWidth) return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) setWidth(entry.contentRect.width);
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [forcedWidth]);
+
+  const preparedSeries = useMemo(
+    () =>
+      series
+        .map((s) => ({
+          ...s,
+          points: s.points.filter((p) => Number.isFinite(p.value) && !Number.isNaN(p.value)),
+        }))
+        .filter((s) => s.points.length > 0),
+    [series]
+  );
+
+  const allPoints = useMemo(
+    () => preparedSeries.flatMap((s) => s.points),
+    [preparedSeries]
+  );
+
+  const xDomain = extent(allPoints, (d) => d.date);
+  const safeDomain: [Date, Date] = [
+    xDomain[0] ?? new Date(),
+    xDomain[1] ?? new Date(),
+  ];
+  const yMax = max(allPoints, (d) => d.value) ?? 0;
+  const yDomain: [number, number] = [0, yMax === 0 ? 1 : yMax * 1.08];
+
+  const measuredWidth = forcedWidth || width || 640;
+  const innerWidth = Math.max(140, measuredWidth - chartPadding.left - chartPadding.right);
+  const innerHeight = Math.max(140, height - chartPadding.top - chartPadding.bottom);
+
+  const xScaleTime = scaleTime()
+    .domain(safeDomain)
+    .range([0, innerWidth]);
+  const yScale = scaleLinear().domain(yDomain).range([innerHeight, 0]);
+
+  const orderedSeries = useMemo(
+    () => preparedSeries.slice().sort((a, b) => a.label.localeCompare(b.label)),
+    [preparedSeries]
+  );
+
+  const colorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    orderedSeries.forEach((s, idx) => {
+      map.set(s.id, s.color || palette[idx % palette.length]);
+    });
+    return map;
+  }, [orderedSeries]);
+
+  const allDates = useMemo(() => {
+    const dates = Array.from(new Set(allPoints.map((p) => p.date.getTime()))).sort((a, b) => a - b);
+    return dates.map((ms) => new Date(ms));
+  }, [allPoints]);
+
+  const handlePointer = (evt: PointerEvent<SVGRectElement>) => {
+    if (!allDates.length) return;
+    const rect = evt.currentTarget.getBoundingClientRect();
+    const x = evt.clientX - rect.left;
+    const dateAtCursor = xScaleTime.invert(Math.max(0, Math.min(innerWidth, x)));
+    const b = bisector((d: Date) => d.getTime()).center;
+    const idx = b(allDates, dateAtCursor);
+    setHoverDate(allDates[Math.max(0, Math.min(allDates.length - 1, idx))]);
+  };
+
+  const activeSeries: ActiveSeriesPoint[] = useMemo(() => {
+    if (!hoverDate) return [];
+    return orderedSeries.map((s) => ({
+      series: s,
+      point: findNearestPoint(s.points, hoverDate),
+      color: colorMap.get(s.id) || palette[0],
+    }));
+  }, [hoverDate, orderedSeries, colorMap]);
+
+  const tickCount = innerWidth < 420 ? 4 : Math.min(6, Math.max(3, allDates.length));
+  const ticksX = xScaleTime.ticks(tickCount);
+  const ticksY = yScale.ticks(4);
+
+  if (preparedSeries.length === 0) {
+    return (
+      <div ref={containerRef} className="rounded-3xl border border-slate-200/70 bg-white/90 p-4 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{title}</p>
+        </div>
+        <ChartEmpty label={emptyLabel} />
+      </div>
+    );
+  }
+
+  return (
+    <div ref={containerRef} data-chart-id={id} className="rounded-3xl border border-slate-200/70 bg-white/90 p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{title}</p>
+          <p className="text-lg font-semibold text-slate-900">
+            {hoverDate
+              ? hoverDate.toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' })
+              : allDates[allDates.length - 1]?.toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' })}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+          {orderedSeries.slice(0, 6).map((s) => (
+            <span key={s.id} className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-1">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: colorMap.get(s.id) }} />
+              {s.label}
+            </span>
+          ))}
+          {orderedSeries.length > 6 && (
+            <span className="rounded-full bg-slate-100 px-2 py-1">+{orderedSeries.length - 6} more</span>
+          )}
+        </div>
+      </div>
+
+      <svg width={measuredWidth} height={height} className="overflow-visible">
+        <g transform={`translate(${chartPadding.left},${chartPadding.top})`}>
+          {ticksY.map((t) => (
+            <line
+              key={`y-${t}`}
+              x1={0}
+              x2={innerWidth}
+              y1={yScale(t)}
+              y2={yScale(t)}
+              stroke="#e2e8f0"
+              strokeWidth={1}
+              strokeDasharray="4 4"
+            />
+          ))}
+
+          {orderedSeries.map((s) => {
+            const color = colorMap.get(s.id) || palette[0];
+            const path =
+              line<TrendPoint>()
+                .x((d) => xScaleTime(d.date))
+                .y((d) => yScale(d.value))
+                .curve(curveMonotoneX)(s.points) ?? '';
+            return (
+              <path
+                key={s.id}
+                d={path}
+                fill="none"
+                stroke={color}
+                strokeWidth={2.2}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                opacity={0.95}
+              />
+            );
+          })}
+
+          {hoverDate && (
+            <line
+              x1={xScaleTime(hoverDate)}
+              x2={xScaleTime(hoverDate)}
+              y1={0}
+              y2={innerHeight}
+              stroke="#94a3b8"
+              strokeDasharray="3 3"
+              strokeOpacity={0.5}
+            />
+          )}
+
+          {ticksX.map((t, idx) => (
+            <g key={`x-${idx}`} transform={`translate(${xScaleTime(t as Date)},${innerHeight})`}>
+              <line y2={6} stroke="#cbd5e1" />
+              <text dy="1.3em" textAnchor="middle" className="text-[11px] fill-slate-500">
+                {(t as Date).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })}
+              </text>
+            </g>
+          ))}
+
+          {ticksY.map((t) => (
+            <g key={`y-label-${t}`} transform={`translate(0,${yScale(t)})`}>
+              <text x={-12} dy="0.32em" textAnchor="end" className="text-[11px] fill-slate-500">
+                {formatValue(t)}
+              </text>
+            </g>
+          ))}
+
+          {hoverDate && activeSeries.length > 0 && (
+            <foreignObject
+              x={Math.max(0, xScaleTime(hoverDate) - 80)}
+              y={4}
+              width={180}
+              height={Math.min(200, 28 + activeSeries.length * 18)}
+            >
+              <div className="max-h-44 overflow-auto rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-[11px] text-slate-700 shadow-sm">
+                {activeSeries.map(({ series: s, point, color }) => (
+                  <div key={s.id} className="flex items-center justify-between gap-3">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+                      <span className="truncate">{s.label}</span>
+                    </span>
+                    <span className="font-semibold text-slate-900">
+                      {point ? `${formatValue(point.value)}${valueUnit ? ` ${valueUnit}` : ''}` : '—'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </foreignObject>
+          )}
+
+          <rect
+            x={0}
+            y={0}
+            width={innerWidth}
+            height={innerHeight}
+            fill="transparent"
+            onPointerMove={handlePointer}
+            onPointerLeave={() => setHoverDate(null)}
+          />
+        </g>
+      </svg>
     </div>
   );
 }
