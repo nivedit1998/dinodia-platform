@@ -340,6 +340,7 @@ model MonitoringReading {
   capturedAt     DateTime     @default(now())
 
   @@index([haConnectionId, entityId, capturedAt])
+  @@index([haConnectionId, capturedAt], map: "MonitoringReading_haConnectionId_capturedAt_valid_idx")
 }
 
 model AlexaAuthCode {
