@@ -17,6 +17,7 @@ type SummaryArea = { area: string; totalKwhDelta: number; estimatedCost?: number
 type BatteryRow = { entityId: string; name?: string; latestBatteryPercent: number; capturedAt: string };
 type BatteryPoint = { bucketStart: string; label: string; avgPercent: number; count: number };
 type EntityOption = { entityId: string; name: string; area: string; lastCapturedAt: string };
+type BoilerHistoryPoint = { bucketStart: string; label: string; value: number };
 
 type SummaryResponse = {
   ok: boolean;
@@ -32,6 +33,8 @@ type SummaryResponse = {
   byArea: SummaryArea[];
   batteryLow: BatteryRow[];
 };
+type BoilerEntitiesResponse = { ok: boolean; boilerEntities: EntityOption[]; error?: string };
+type BoilerHistoryResponse = { ok: boolean; unit: string; points: BoilerHistoryPoint[]; error?: string };
 
 type Props = { username?: string };
 
@@ -135,11 +138,17 @@ export default function AdminDashboard({ username }: Props) {
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
   const [energyEntities, setEnergyEntities] = useState<EntityOption[]>([]);
   const [batteryEntities, setBatteryEntities] = useState<EntityOption[]>([]);
+  const [boilerEntities, setBoilerEntities] = useState<EntityOption[]>([]);
   const [selectedEnergyEntities, setSelectedEnergyEntities] = useState<string[]>([]);
   const [selectedBatteryEntities, setSelectedBatteryEntities] = useState<string[]>([]);
+  const [selectedBoilerEntities, setSelectedBoilerEntities] = useState<string[]>([]);
+  const [boilerHistory, setBoilerHistory] = useState<BoilerHistoryPoint[]>([]);
+  const [boilerLoading, setBoilerLoading] = useState(false);
+  const [boilerError, setBoilerError] = useState<string | null>(null);
   const [selectorsError, setSelectorsError] = useState<string | null>(null);
   const energyScrollRef = useRef<HTMLDivElement | null>(null);
   const batteryScrollRef = useRef<HTMLDivElement | null>(null);
+  const boilerScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (preset !== 'custom') return;
@@ -183,6 +192,16 @@ export default function AdminDashboard({ username }: Props) {
     [summary]
   );
 
+  const boilerTrendPoints: TrendPoint[] = useMemo(
+    () =>
+      boilerHistory.map((p) => ({
+        date: new Date(p.bucketStart),
+        label: p.label,
+        value: p.value,
+      })),
+    [boilerHistory]
+  );
+
   useEffect(() => {
     const el = energyScrollRef.current;
     if (!el) return;
@@ -198,6 +217,14 @@ export default function AdminDashboard({ username }: Props) {
       el.scrollLeft = el.scrollWidth;
     });
   }, [batteryTrendPoints, bucket]);
+
+  useEffect(() => {
+    const el = boilerScrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollLeft = el.scrollWidth;
+    });
+  }, [boilerTrendPoints]);
 
   const energyVariant = 'line';
 
@@ -236,6 +263,22 @@ export default function AdminDashboard({ username }: Props) {
     return params.toString();
   }, [preset, from, to, selectedAreas]);
 
+  const buildBoilerParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (preset === 'all') {
+      params.set('days', 'all');
+    } else if (preset === 'custom') {
+      params.set('from', from);
+      params.set('to', to);
+    } else {
+      params.set('days', preset);
+    }
+    selectedAreas.forEach((a) => params.append('areas', a));
+    const ids = selectedBoilerEntities.length > 0 ? selectedBoilerEntities : boilerEntities.map((e) => e.entityId);
+    ids.forEach((id) => params.append('entityIds', id));
+    return params.toString();
+  }, [preset, from, to, selectedAreas, selectedBoilerEntities, boilerEntities]);
+
   const loadSummary = async () => {
     if (preset === 'custom' && (!from || !to)) {
       setError('Choose both from/to dates for a custom range.');
@@ -268,14 +311,20 @@ export default function AdminDashboard({ username }: Props) {
   const loadSelectors = useCallback(async () => {
     try {
       setSelectorsError(null);
-      const [areasRes, entitiesRes] = await Promise.all([
+      const [areasRes, entitiesRes, boilerRes] = await Promise.all([
         platformFetch('/api/admin/areas', { cache: 'no-store', credentials: 'include' }),
         platformFetch(`/api/admin/monitoring/entities?${buildSelectorParams()}`, { cache: 'no-store', credentials: 'include' }),
+        platformFetch(`/api/admin/monitoring/boiler-entities?${buildSelectorParams()}`, {
+          cache: 'no-store',
+          credentials: 'include',
+        }),
       ]);
       const areasData = await areasRes.json().catch(() => ({}));
       const entitiesData = await entitiesRes.json().catch(() => ({}));
+      const boilerData = await boilerRes.json().catch(() => ({}));
       if (!areasRes.ok) throw new Error(areasData.error || 'Unable to load areas.');
       if (!entitiesRes.ok) throw new Error(entitiesData.error || 'Unable to load entities.');
+      if (!boilerRes.ok) throw new Error(boilerData.error || 'Unable to load boiler devices.');
       const areaList: string[] = Array.isArray(areasData.areas)
         ? Array.from(
             new Set(
@@ -291,16 +340,53 @@ export default function AdminDashboard({ username }: Props) {
       const batteryList = Array.isArray(entitiesData.batteryEntities) ? entitiesData.batteryEntities : [];
       setEnergyEntities(energyList.filter((e: EntityOption) => (e.area || '').toLowerCase() !== 'unassigned'));
       setBatteryEntities(batteryList.filter((e: EntityOption) => (e.area || '').toLowerCase() !== 'unassigned'));
+      const boilerList = Array.isArray(boilerData.boilerEntities) ? boilerData.boilerEntities : [];
+      setBoilerEntities(boilerList.filter((e: EntityOption) => (e.area || '').toLowerCase() !== 'unassigned'));
 
       const energyIds = new Set(energyList.map((e: EntityOption) => e.entityId));
       const batteryIds = new Set(batteryList.map((e: EntityOption) => e.entityId));
+      const boilerIds = new Set(boilerList.map((e: EntityOption) => e.entityId));
       setSelectedEnergyEntities((prev) => prev.filter((id) => energyIds.has(id)));
       setSelectedBatteryEntities((prev) => prev.filter((id) => batteryIds.has(id)));
+      setSelectedBoilerEntities((prev) => prev.filter((id) => boilerIds.has(id)));
     } catch (err) {
       console.error('Failed to load selectors', err);
       setSelectorsError((err as Error).message || 'Unable to load filters.');
     }
   }, [buildSelectorParams]);
+
+  const loadBoilerHistory = useCallback(async () => {
+    if (preset === 'custom' && (!from || !to)) {
+      setBoilerError('Choose both from/to dates for a custom range.');
+      return;
+    }
+    const ids = selectedBoilerEntities.length > 0 ? selectedBoilerEntities : boilerEntities.map((e) => e.entityId);
+    if (ids.length === 0) {
+      setBoilerHistory([]);
+      return;
+    }
+    setBoilerLoading(true);
+    setBoilerError(null);
+    try {
+      const res = await platformFetch(`/api/admin/monitoring/boiler-history?${buildBoilerParams()}`, {
+        cache: 'no-store',
+        credentials: 'include',
+      });
+      const data = (await res.json().catch(() => null)) as BoilerHistoryResponse | null;
+      if (!res.ok || !data?.ok) {
+        const message =
+          data && typeof data.error === 'string' && data.error.length > 0 ? data.error : 'Unable to load boiler trend.';
+        throw new Error(message);
+      }
+      setBoilerHistory(Array.isArray(data.points) ? data.points : []);
+    } catch (err) {
+      console.error('Failed to load boiler trend', err);
+      setBoilerError((err as Error).message || 'Unable to load boiler trend.');
+      setBoilerHistory([]);
+    } finally {
+      setBoilerLoading(false);
+    }
+  }, [buildBoilerParams, preset, from, to, selectedBoilerEntities, boilerEntities]);
 
   useEffect(() => {
     void loadSummary();
@@ -311,6 +397,11 @@ export default function AdminDashboard({ username }: Props) {
     if (preset === 'custom' && (!from || !to)) return;
     void loadSelectors();
   }, [preset, from, to, selectedAreas, loadSelectors]);
+
+  useEffect(() => {
+    if (preset === 'custom' && (!from || !to)) return;
+    void loadBoilerHistory();
+  }, [preset, from, to, selectedAreas, selectedBoilerEntities, loadBoilerHistory]);
 
   const lastSnapshotDisplay = summary ? formatDateTime(summary.lastSnapshotAt) : 'Not available';
   const lastFetchedDisplay = lastFetchedAt ? formatDateTime(lastFetchedAt) : 'Never';
@@ -478,7 +569,7 @@ export default function AdminDashboard({ username }: Props) {
           )}
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-3">
+        <section className="grid gap-4 lg:grid-cols-4">
           <MultiSelect
             label="Areas"
             options={areas.map((a) => ({ id: a, label: a, hint: a }))}
@@ -499,6 +590,13 @@ export default function AdminDashboard({ username }: Props) {
             selected={selectedBatteryEntities}
             onChange={setSelectedBatteryEntities}
             placeholder="All battery entities"
+          />
+          <MultiSelect
+            label="Boiler entities"
+            options={boilerEntities.map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
+            selected={selectedBoilerEntities}
+            onChange={setSelectedBoilerEntities}
+            placeholder="All boiler entities"
           />
         </section>
 
@@ -586,6 +684,52 @@ export default function AdminDashboard({ username }: Props) {
             </div>
           </div>
           <p className="text-xs text-slate-500">Average of latest battery % per entity per bucket.</p>
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-900">Boiler temperature trend</h2>
+            <span className="text-xs text-slate-500">
+              Points: {boilerTrendPoints.length}
+            </span>
+          </div>
+          <div
+            ref={boilerScrollRef}
+            className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm"
+          >
+            <div
+              className="min-w-[900px]"
+              style={{ minWidth: `${Math.max(900, boilerTrendPoints.length * 32)}px` }}
+            >
+              {boilerError ? (
+                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
+                  {boilerError}
+                </div>
+              ) : boilerLoading ? (
+                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
+                  Loading boiler trend…
+                </div>
+              ) : boilerTrendPoints.length === 0 ? (
+                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
+                  No boiler readings in this window.
+                </div>
+              ) : (
+                <LineAreaChart
+                  id="boiler-trend"
+                  title="Boiler temperature"
+                  points={boilerTrendPoints}
+                  color="#f59e0b"
+                  gradientTo="#fcd34d"
+                  valueUnit="°C"
+                  variant="line"
+                  emptyLabel="No boiler readings in this window."
+                  formatValue={(v) => v.toFixed(1)}
+                  forcedWidth={Math.max(900, boilerTrendPoints.length * 32)}
+                />
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-slate-500">2-hour temperature snapshots of Boiler devices.</p>
         </section>
 
         <section className="grid gap-6 lg:grid-cols-2">
