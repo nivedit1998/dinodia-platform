@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { HubTokenStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { decryptBootstrapSecret, decryptSyncSecret, encryptSyncSecret, getAcceptedTokenHashes, getLatestVersion, generateHubToken } from '@/lib/hubTokens';
+import { decryptBootstrapSecret, decryptSyncSecret, encryptSyncSecret, getAcceptedTokenHashes, getLatestVersion, generateHubToken, cleanupHubTokens } from '@/lib/hubTokens';
 import { generateRandomHex, verifyHmac } from '@/lib/hubCrypto';
 import { enforceHubReplayProtection, HubReplayError } from '@/lib/hubReplayProtection';
 
@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
         tokenCiphertext: seed.ciphertext,
       },
     });
+    await cleanupHubTokens(hubInstall.id);
   }
 
   const publishedVersion = hubInstall.publishedHubTokenVersion ?? 0;

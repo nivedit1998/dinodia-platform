@@ -3,7 +3,7 @@ import { Role, HomeStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { requireTrustedPrivilegedDevice } from '@/lib/deviceAuth';
-import { encryptBootstrapSecret, generateHubToken } from '@/lib/hubTokens';
+import { encryptBootstrapSecret, generateHubToken, cleanupHubTokens } from '@/lib/hubTokens';
 import { generateRandomHex } from '@/lib/hubCrypto';
 import { buildEncryptedHaSecrets, hashSecretForLookup } from '@/lib/haSecrets';
 
@@ -165,6 +165,8 @@ export async function POST(req: NextRequest) {
 
     return { hubInstall, home };
   });
+
+  await cleanupHubTokens(result.hubInstall.id);
 
   return NextResponse.json({
     ok: true,

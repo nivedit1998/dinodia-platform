@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import {
   decryptSyncSecret,
   generateHubToken,
+  cleanupHubTokens,
   getAcceptedTokenHashes,
   getLatestVersion,
   publishPendingIfAcked,
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest) {
 
   const now = new Date();
   await revokeExpiredGraceTokens(hubInstall.id, now);
+  await cleanupHubTokens(hubInstall.id);
 
   let publishedVersion = hubInstall.publishedHubTokenVersion ?? 0;
 
@@ -125,6 +127,7 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       if (!isUniqueConstraintError(err)) throw err;
     }
+    await cleanupHubTokens(hubInstall.id);
   } else if (!pendingToken && activeToken && hubInstall.platformSyncEnabled) {
     const rotateMinutes = hubInstall.rotateEveryMinutes ?? 60;
     const rotateMs = rotateMinutes * 60 * 1000;
@@ -147,6 +150,7 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         if (!isUniqueConstraintError(err)) throw err;
       }
+      await cleanupHubTokens(hubInstall.id);
     }
   }
 
