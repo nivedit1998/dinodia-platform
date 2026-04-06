@@ -229,3 +229,47 @@ export async function captureMonitoringSnapshotForAllConnections() {
     insertedCount,
   };
 }
+
+function startOfDayUtc(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+export async function shouldCaptureDailyMonitoringSnapshot(haConnectionId: number, now = new Date()) {
+  const last = await prisma.monitoringReading.findFirst({
+    where: { haConnectionId },
+    orderBy: { capturedAt: 'desc' },
+    select: { capturedAt: true },
+  });
+  if (!last) return true;
+  return last.capturedAt < startOfDayUtc(now);
+}
+
+export async function captureDailyMonitoringSnapshotForAllConnections(now = new Date()) {
+  const connections = await prisma.haConnection.findMany({
+    select: { id: true },
+  });
+
+  let totalDevices = 0;
+  let monitoredCount = 0;
+  let insertedCount = 0;
+  let skippedConnections = 0;
+
+  for (const { id } of connections) {
+    if (!(await shouldCaptureDailyMonitoringSnapshot(id, now))) {
+      skippedConnections += 1;
+      continue;
+    }
+    const summary = await captureMonitoringSnapshotForConnection(id);
+    totalDevices += summary.totalDevices;
+    monitoredCount += summary.monitoredCount;
+    insertedCount += summary.insertedCount;
+  }
+
+  return {
+    connections: connections.length,
+    skippedConnections,
+    totalDevices,
+    monitoredCount,
+    insertedCount,
+  };
+}

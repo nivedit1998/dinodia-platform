@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { captureMonitoringSnapshotForAllConnections } from '@/lib/monitoring';
+import { captureBoilerTempSnapshotForAllConnections } from '@/lib/boilerMonitoring';
+import { captureDailyMonitoringSnapshotForAllConnections } from '@/lib/monitoring';
 import { cleanupMonitoringReadings } from '@/lib/monitoringCleanup';
 
 const EXPECTED_SECRET = process.env.CRON_SECRET;
@@ -34,9 +35,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const summary = await captureMonitoringSnapshotForAllConnections();
+    const boilerSummary = await captureBoilerTempSnapshotForAllConnections();
+    const energySummary = await captureDailyMonitoringSnapshotForAllConnections();
     await cleanupMonitoringReadings();
-    return NextResponse.json({ ok: true, ...summary });
+    return NextResponse.json({ ok: true, ...energySummary, boiler: boilerSummary });
   } catch (err) {
     console.error('[cron/monitoring-snapshot] error', err);
     return NextResponse.json({ error: 'Snapshot failed' }, { status: 500 });

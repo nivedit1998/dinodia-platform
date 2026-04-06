@@ -240,6 +240,7 @@ model HaConnection {
   users     User[]   @relation("AssignedHaConnection")
   devices   Device[]
   monitoringReadings MonitoringReading[]
+  boilerTemperatureReadings BoilerTemperatureReading[]
   newDeviceCommissioningSessions NewDeviceCommissioningSession[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -341,6 +342,19 @@ model MonitoringReading {
 
   @@index([haConnectionId, entityId, capturedAt])
   @@index([haConnectionId, capturedAt], map: "MonitoringReading_haConnectionId_capturedAt_valid_idx")
+}
+
+model BoilerTemperatureReading {
+  id             Int          @id @default(autoincrement())
+  haConnection   HaConnection @relation(fields: [haConnectionId], references: [id])
+  haConnectionId Int
+  entityId       String
+  numericValue   Float
+  unit           String       @default("°C")
+  capturedAt     DateTime     @default(now())
+
+  @@index([haConnectionId, entityId, capturedAt])
+  @@index([haConnectionId, capturedAt])
 }
 
 model AlexaAuthCode {
