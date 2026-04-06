@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { captureMonitoringSnapshotForAllConnections } from '@/lib/monitoring';
+import { cleanupMonitoringReadings } from '@/lib/monitoringCleanup';
 
 const EXPECTED_SECRET = process.env.CRON_SECRET;
 const DISABLE_QUERY_SECRET =
@@ -34,6 +35,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const summary = await captureMonitoringSnapshotForAllConnections();
+    await cleanupMonitoringReadings();
     return NextResponse.json({ ok: true, ...summary });
   } catch (err) {
     console.error('[cron/monitoring-snapshot] error', err);

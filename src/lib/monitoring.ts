@@ -156,27 +156,47 @@ export async function captureMonitoringSnapshotForConnection(haConnectionId: num
     };
   }
 
-  const data = monitoringDevices.map((d) => {
-    const unit =
-      typeof d.attributes?.unit_of_measurement === 'string'
-        ? d.attributes.unit_of_measurement.trim()
-        : '';
-    const isBattery = d.entityId.toLowerCase().includes('battery');
-    const numeric = Number(d.state);
+  const data = monitoringDevices
+    .map((d) => {
+      const unitRaw =
+        typeof d.attributes?.unit_of_measurement === 'string'
+          ? d.attributes.unit_of_measurement.trim()
+          : '';
+      const unit = unitRaw.trim();
+      const unitLower = unit.toLowerCase();
+      const entityIdLower = d.entityId.toLowerCase();
+      const isBattery = entityIdLower.includes('battery');
+      const numeric = Number(d.state);
 
-    return {
-      haConnectionId,
-      entityId: d.entityId,
-      state: String(d.state ?? ''),
-      numericValue: Number.isFinite(numeric) ? numeric : null,
-      unit: isBattery ? unit || null : unit,
-      // TODO: consider deduping by date if cron ever runs more than once per day.
-    };
-  });
+      if (!Number.isFinite(numeric)) return null;
 
-  const inserted = await prisma.monitoringReading.createMany({
-    data,
-  });
+      if (isBattery) {
+        if (unit !== '%') return null;
+        return {
+          haConnectionId,
+          entityId: d.entityId,
+          state: String(d.state ?? ''),
+          numericValue: numeric,
+          unit: '%',
+        };
+      }
+
+      if (unitLower !== 'kwh') return null;
+      if (numeric <= 0) return null;
+
+      return {
+        haConnectionId,
+        entityId: d.entityId,
+        state: String(d.state ?? ''),
+        numericValue: numeric,
+        unit: 'kWh',
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => row !== null);
+
+  const inserted = data.length
+    ? await prisma.monitoringReading.createMany({ data })
+    : { count: 0 };
 
   return {
     haConnectionId,
