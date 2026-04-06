@@ -3,6 +3,7 @@ import { Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getUserWithHaConnection } from '@/lib/haConnection';
+import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
@@ -107,23 +108,34 @@ export async function GET(req: NextRequest) {
 
   let allowedEntityIds = new Set(selectedEntityIds);
   if (areasFilter.size > 0) {
-    const allowedAreas = Array.from(areasFilter).filter((a) => a !== UNASSIGNED);
-    const ors = [];
-    if (allowedAreas.length > 0) {
-      ors.push({ area: { in: allowedAreas } });
-    }
-    if (areasFilter.has(UNASSIGNED)) {
-      ors.push({ area: null }, { area: '' });
-    }
-    if (ors.length === 0) {
-      return NextResponse.json({ ok: true, unit: '°C', points: [] });
-    }
-    const devices = await prisma.device.findMany({
-      where: { haConnectionId, OR: ors },
-      select: { entityId: true },
-    });
-    const allowedByArea = new Set(devices.map((d) => d.entityId));
-    allowedEntityIds = new Set(selectedEntityIds.filter((id) => allowedByArea.has(id)));
+    const [haDevices, overrides] = await Promise.all([
+      getDevicesForHaConnection(haConnectionId, { cacheTtlMs: 2000 }).catch(() => []),
+      prisma.device.findMany({
+        where: { haConnectionId },
+        select: { entityId: true, name: true, area: true },
+      }),
+    ]);
+
+    const haMap = new Map(
+      haDevices.map((d) => [d.entityId, { name: d.name ?? '', area: d.area ?? d.areaName ?? null }])
+    );
+    const overrideMap = new Map(overrides.map((d) => [d.entityId, d]));
+
+    const resolveArea = (entityId: string) => {
+      const ha = haMap.get(entityId);
+      const override = overrideMap.get(entityId);
+      return (override?.area ?? ha?.area ?? '').trim() || null;
+    };
+
+    const matchesArea = (area: string | null) => {
+      const normalized = (area ?? '').trim();
+      if (!normalized) return areasFilter.has(UNASSIGNED);
+      return areasFilter.has(normalized);
+    };
+
+    allowedEntityIds = new Set(
+      selectedEntityIds.filter((id) => matchesArea(resolveArea(id)))
+    );
   }
 
   if (allowedEntityIds.size === 0) {

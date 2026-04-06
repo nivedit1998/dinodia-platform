@@ -3,6 +3,7 @@ import { Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getUserWithHaConnection } from '@/lib/haConnection';
+import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_DAYS = 90;
@@ -97,34 +98,40 @@ export async function GET(req: NextRequest) {
     to = nowEnd;
   }
 
-  const deviceWhere: Record<string, unknown> = { haConnectionId };
-  if (hasAreaFilter) {
-    const allowedAreas = areasFilter.filter((a) => a !== UNASSIGNED);
-    const ors = [];
-    if (allowedAreas.length > 0) {
-      ors.push({ area: { in: allowedAreas } });
-    }
-    if (areasFilter.includes(UNASSIGNED)) {
-      ors.push({ area: null }, { area: '' });
-    }
-    if (ors.length === 0) {
-      return NextResponse.json({ ok: true, boilerEntities: [] });
-    }
-    deviceWhere.OR = ors;
-  }
+  const [haDevices, overrides] = await Promise.all([
+    getDevicesForHaConnection(haConnectionId, { cacheTtlMs: 2000 }).catch(() => []),
+    prisma.device.findMany({
+      where: { haConnectionId },
+      select: { entityId: true, name: true, area: true },
+    }),
+  ]);
 
-  const devices = await prisma.device.findMany({
-    where: deviceWhere,
-    select: { entityId: true, name: true, area: true },
-  });
-  const deviceById = new Map(devices.map((d) => [d.entityId, d]));
-  const allowedEntityIds = new Set(devices.map((d) => d.entityId));
+  const haMap = new Map(
+    haDevices.map((d) => [d.entityId, { name: d.name ?? '', area: d.area ?? d.areaName ?? null }])
+  );
+  const overrideMap = new Map(overrides.map((d) => [d.entityId, d]));
+
+  const resolveDevice = (entityId: string) => {
+    const ha = haMap.get(entityId);
+    const override = overrideMap.get(entityId);
+    const name = (override?.name ?? ha?.name ?? '').trim();
+    const area = (override?.area ?? ha?.area ?? '').trim() || null;
+    return { name, area };
+  };
+
+  const matchesAreaFilter = (area: string | null) => {
+    if (!hasAreaFilter) return true;
+    const normalized = (area ?? '').trim();
+    if (normalized.length === 0) {
+      return areasFilter.includes(UNASSIGNED);
+    }
+    return areasFilter.includes(normalized);
+  };
 
   const readings = await prisma.boilerTemperatureReading.findMany({
     where: {
       haConnectionId,
       capturedAt: { gte: from, lte: to },
-      ...(hasAreaFilter ? { entityId: { in: Array.from(allowedEntityIds) } } : {}),
     },
     distinct: ['entityId'],
     orderBy: [{ entityId: 'asc' }],
@@ -134,17 +141,19 @@ export async function GET(req: NextRequest) {
 
   const prettyId = (id: string) => id.replace(/^sensor\./i, '').replace(/_/g, ' ');
 
-  const boilerEntities = readings.map((row) => {
-    const device = deviceById.get(row.entityId);
-    const area = device?.area?.trim() || UNASSIGNED;
-    const name = (device?.name || '').trim() || prettyId(row.entityId);
-    return {
-      entityId: row.entityId,
-      name,
-      area,
-      lastCapturedAt: row.capturedAt.toISOString(),
-    };
-  });
+  const boilerEntities = readings
+    .map((row) => {
+      const resolved = resolveDevice(row.entityId);
+      const area = resolved.area?.trim() || UNASSIGNED;
+      const name = resolved.name?.trim() || prettyId(row.entityId);
+      return {
+        entityId: row.entityId,
+        name,
+        area,
+        lastCapturedAt: row.capturedAt.toISOString(),
+      };
+    })
+    .filter((row) => matchesAreaFilter(row.area === UNASSIGNED ? null : row.area));
 
   return NextResponse.json({ ok: true, boilerEntities });
 }
