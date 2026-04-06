@@ -185,14 +185,9 @@ export async function GET(req: NextRequest) {
     const override = overrideMap.get(d.entityId);
     const name = (override?.name ?? d.name ?? prettyId(d.entityId)).trim();
     const area = (override?.area ?? d.area ?? d.areaName ?? '').trim() || null;
-    const rawLabel =
-      cleanLabel(override?.label) ||
-      cleanLabel((Array.isArray(d.labels) ? d.labels.find((l) => l && l.toString().trim())?.toString() : undefined)) ||
-      cleanLabel(d.label?.toString()) ||
-      cleanLabel(d.labelCategory?.toString()) ||
-      null;
+    const overrideLabel = cleanLabel(override?.label) || null;
     const groupLabel = getGroupLabel({
-      label: rawLabel ?? null,
+      label: overrideLabel,
       labels: Array.isArray(d.labels) ? d.labels : [],
       labelCategory: d.labelCategory ?? null,
     });

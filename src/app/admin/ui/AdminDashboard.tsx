@@ -33,7 +33,6 @@ type SummaryResponse = {
   byArea: SummaryArea[];
   batteryLow: BatteryRow[];
 };
-type BoilerEntitiesResponse = { ok: boolean; boilerEntities: EntityOption[]; error?: string };
 type BoilerHistoryResponse = { ok: boolean; unit: string; points: BoilerHistoryPoint[]; error?: string };
 
 type Props = { username?: string };
