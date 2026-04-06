@@ -65,6 +65,161 @@ const costFmt = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'G
 
 type SelectOption = { id: string; label: string; hint?: string };
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const startOfDayUtc = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+const endOfDayUtc = (date: Date) =>
+  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+
+const parseDateOnlyUtc = (value: string, endOfDay = false) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [y, m, d] = value.split('-').map((v) => Number(v));
+  const date = endOfDay ? endOfDayUtc(new Date(Date.UTC(y, m - 1, d))) : startOfDayUtc(new Date(Date.UTC(y, m - 1, d)));
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const getIsoWeekInfoUtc = (date: Date) => {
+  const temp = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = temp.getUTCDay() || 7;
+  temp.setUTCDate(temp.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(temp.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((temp.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+
+  const weekStart = new Date(Date.UTC(temp.getUTCFullYear(), temp.getUTCMonth(), temp.getUTCDate()));
+  const weekStartDay = weekStart.getUTCDay() || 7;
+  weekStart.setUTCDate(weekStart.getUTCDate() - (weekStartDay - 1));
+
+  return { year: temp.getUTCFullYear(), week, weekStart };
+};
+
+const formatDateUtc = (date: Date) => {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const getBucketInfoUtc = (bucket: HistoryBucket, capturedAt: Date) => {
+  if (bucket === 'weekly') {
+    const { year, week, weekStart } = getIsoWeekInfoUtc(capturedAt);
+    return {
+      key: `${year}-W${String(week).padStart(2, '0')}`,
+      bucketStart: new Date(weekStart),
+      label: `Week of ${formatDateUtc(new Date(weekStart))}`,
+    };
+  }
+
+  if (bucket === 'monthly') {
+    const start = new Date(Date.UTC(capturedAt.getUTCFullYear(), capturedAt.getUTCMonth(), 1));
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return {
+      key: `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, '0')}`,
+      bucketStart: start,
+      label: `${monthNames[start.getUTCMonth()]} ${start.getUTCFullYear()}`,
+    };
+  }
+
+  const start = startOfDayUtc(capturedAt);
+  return { key: formatDateUtc(start), bucketStart: start, label: formatDateUtc(start) };
+};
+
+const aggregateKwhPoints = (points: SummaryPoint[], bucket: HistoryBucket) => {
+  const buckets = new Map<string, { bucketStart: Date; label: string; total: number }>();
+  for (const point of points) {
+    const date = new Date(point.bucketStart);
+    if (Number.isNaN(date.getTime())) continue;
+    const info = getBucketInfoUtc(bucket, date);
+    const existing = buckets.get(info.key);
+    if (!existing) {
+      buckets.set(info.key, { bucketStart: info.bucketStart, label: info.label, total: point.totalKwhDelta || 0 });
+    } else {
+      existing.total += point.totalKwhDelta || 0;
+    }
+  }
+
+  return Array.from(buckets.values())
+    .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
+    .map((entry) => ({
+      bucketStart: entry.bucketStart.toISOString(),
+      label: entry.label,
+      totalKwhDelta: entry.total,
+    }));
+};
+
+const aggregateBatteryAvgPoints = (points: BatteryPoint[], bucket: HistoryBucket) => {
+  const buckets = new Map<string, { bucketStart: Date; label: string; sum: number; count: number }>();
+  for (const point of points) {
+    const date = new Date(point.bucketStart);
+    if (Number.isNaN(date.getTime())) continue;
+    const info = getBucketInfoUtc(bucket, date);
+    const existing = buckets.get(info.key);
+    const weighted = (point.avgPercent || 0) * (point.count || 0);
+    if (!existing) {
+      buckets.set(info.key, { bucketStart: info.bucketStart, label: info.label, sum: weighted, count: point.count || 0 });
+    } else {
+      existing.sum += weighted;
+      existing.count += point.count || 0;
+    }
+  }
+
+  return Array.from(buckets.values())
+    .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
+    .map((entry) => ({
+      bucketStart: entry.bucketStart.toISOString(),
+      label: entry.label,
+      avgPercent: entry.count > 0 ? entry.sum / entry.count : 0,
+      count: entry.count,
+    }));
+};
+
+const aggregateBatteryEntityPoints = (points: Array<{ bucketStart: string; label: string; avgPercent: number }>, bucket: HistoryBucket) => {
+  const buckets = new Map<string, { bucketStart: Date; label: string; sum: number; count: number }>();
+  for (const point of points) {
+    const date = new Date(point.bucketStart);
+    if (Number.isNaN(date.getTime())) continue;
+    const info = getBucketInfoUtc(bucket, date);
+    const existing = buckets.get(info.key);
+    if (!existing) {
+      buckets.set(info.key, { bucketStart: info.bucketStart, label: info.label, sum: point.avgPercent || 0, count: 1 });
+    } else {
+      existing.sum += point.avgPercent || 0;
+      existing.count += 1;
+    }
+  }
+
+  return Array.from(buckets.values())
+    .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
+    .map((entry) => ({
+      bucketStart: entry.bucketStart.toISOString(),
+      label: entry.label,
+      avgPercent: entry.count > 0 ? entry.sum / entry.count : 0,
+    }));
+};
+
+const aggregateBoilerPoints = (points: BoilerHistoryPoint[], bucket: HistoryBucket) => {
+  const buckets = new Map<string, { bucketStart: Date; label: string; sum: number; count: number }>();
+  for (const point of points) {
+    const date = new Date(point.bucketStart);
+    if (Number.isNaN(date.getTime())) continue;
+    const info = getBucketInfoUtc(bucket, date);
+    const existing = buckets.get(info.key);
+    if (!existing) {
+      buckets.set(info.key, { bucketStart: info.bucketStart, label: info.label, sum: point.value || 0, count: 1 });
+    } else {
+      existing.sum += point.value || 0;
+      existing.count += 1;
+    }
+  }
+
+  return Array.from(buckets.values())
+    .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
+    .map((entry) => ({
+      bucketStart: entry.bucketStart.toISOString(),
+      label: entry.label,
+      value: entry.count > 0 ? entry.sum / entry.count : 0,
+    }));
+};
+
 function MultiSelect({
   label,
   options,
@@ -128,7 +283,7 @@ function MultiSelect({
 
 export default function AdminDashboard({ username }: Props) {
   void username; // Provided by page for consistency; not required in observe-only UI.
-  const [summaryAll, setSummaryAll] = useState<SummaryResponse | null>(null);
+  const [summaryAllDaily, setSummaryAllDaily] = useState<SummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bucket, setBucket] = useState<HistoryBucket>('daily');
@@ -166,12 +321,50 @@ export default function AdminDashboard({ username }: Props) {
   const batteryEntityAreaMap = useMemo(() => new Map(batteryEntities.map((e) => [e.entityId, e.area])), [batteryEntities]);
   const boilerEntityAreaMap = useMemo(() => new Map(boilerEntities.map((e) => [e.entityId, e.area])), [boilerEntities]);
 
+  const rangeState = useMemo(() => {
+    if (preset === 'all') {
+      return { window: null as { from: Date; to: Date } | null, error: null as string | null };
+    }
+
+    if (preset === 'custom') {
+      if (!from || !to) {
+        return { window: null, error: 'Choose both from/to dates for a custom range.' };
+      }
+      const fromDate = parseDateOnlyUtc(from, false);
+      const toDate = parseDateOnlyUtc(to, true);
+      if (!fromDate || !toDate) {
+        return { window: null, error: 'Invalid from/to date. Use YYYY-MM-DD.' };
+      }
+      if (toDate.getTime() < fromDate.getTime()) {
+        return { window: null, error: 'From must be on or before to.' };
+      }
+      return { window: { from: fromDate, to: toDate }, error: null };
+    }
+
+    const days = Number.parseInt(preset, 10);
+    if (!Number.isFinite(days) || days <= 0) {
+      return { window: null, error: null };
+    }
+    const toDate = endOfDayUtc(new Date());
+    const fromDate = startOfDayUtc(new Date(toDate.getTime() - (days - 1) * MS_PER_DAY));
+    return { window: { from: fromDate, to: toDate }, error: null };
+  }, [preset, from, to]);
+  const rangeError = rangeState.error;
+
   const summary = useMemo(() => {
-    if (!summaryAll) return null;
+    if (!summaryAllDaily) return null;
     const hasAreaFilter = selectedAreas.length > 0;
     const areaSet = new Set(selectedAreas);
     const energySet = new Set(selectedEnergyEntities);
     const batterySet = new Set(selectedBatteryEntities);
+    const rangeWindow = rangeState.window;
+    const rangeReady = preset !== 'custom' || (from && to);
+    const inRange = (iso: string) => {
+      if (!rangeWindow || !rangeReady) return true;
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return false;
+      return date >= rangeWindow.from && date <= rangeWindow.to;
+    };
 
     const matchesArea = (area?: string | null) => !hasAreaFilter || (area ? areaSet.has(area) : false);
     const matchesEnergyEntity = (entityId: string, area?: string | null) => {
@@ -187,26 +380,132 @@ export default function AdminDashboard({ username }: Props) {
       return resolvedArea ? areaSet.has(resolvedArea) : false;
     };
 
-    return {
-      ...summaryAll,
-      seriesKwhByArea: summaryAll.seriesKwhByArea.filter((series) => matchesArea(series.area)),
-      seriesBatteryByEntity: summaryAll.seriesBatteryByEntity.filter((series) => matchesBatteryEntity(series.entityId)),
-      topEntities: summaryAll.topEntities.filter((row) => matchesEnergyEntity(row.entityId, row.area)),
-      byArea: summaryAll.byArea
-        .filter((row) => matchesArea(row.area))
-        .map((row) => ({
+    const energySeriesDaily = summaryAllDaily.seriesKwhByArea
+      .filter((series) => matchesArea(series.area))
+      .map((series) => ({
+        ...series,
+        points: series.points.filter((p) => inRange(p.bucketStart)),
+      }))
+      .filter((series) => series.points.length > 0);
+
+    const energySeriesBucketed = energySeriesDaily.map((series) => ({
+      area: series.area,
+      points: aggregateKwhPoints(series.points, bucket),
+    }));
+
+    const totalSeriesBuckets = new Map<string, { bucketStart: Date; label: string; total: number }>();
+    for (const series of energySeriesBucketed) {
+      for (const point of series.points) {
+        const date = new Date(point.bucketStart);
+        if (Number.isNaN(date.getTime())) continue;
+        const key = point.bucketStart;
+        const existing = totalSeriesBuckets.get(key);
+        if (!existing) {
+          totalSeriesBuckets.set(key, { bucketStart: date, label: point.label, total: point.totalKwhDelta || 0 });
+        } else {
+          existing.total += point.totalKwhDelta || 0;
+        }
+      }
+    }
+    const seriesTotalKwh = Array.from(totalSeriesBuckets.values())
+      .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
+      .map((entry) => ({
+        bucketStart: entry.bucketStart.toISOString(),
+        label: entry.label,
+        totalKwhDelta: entry.total,
+      }));
+
+    const seriesTotalCost =
+      summaryAllDaily.pricePerKwh == null
+        ? []
+        : seriesTotalKwh.map((entry) => ({
+            bucketStart: entry.bucketStart,
+            label: entry.label,
+            estimatedCost: entry.totalKwhDelta * summaryAllDaily.pricePerKwh!,
+          }));
+
+    const batterySeriesDaily = summaryAllDaily.seriesBatteryByEntity
+      .filter((series) => matchesBatteryEntity(series.entityId))
+      .map((series) => ({
+        ...series,
+        points: series.points.filter((p) => inRange(p.bucketStart)),
+      }))
+      .filter((series) => series.points.length > 0);
+
+    const seriesBatteryByEntity = batterySeriesDaily.map((series) => ({
+      entityId: series.entityId,
+      name: series.name,
+      points: aggregateBatteryEntityPoints(series.points, bucket),
+    }));
+
+    const seriesBatteryAvgPercent = aggregateBatteryAvgPoints(
+      summaryAllDaily.seriesBatteryAvgPercent.filter((p) => inRange(p.bucketStart)),
+      bucket
+    );
+
+    const batteryLow: BatteryRow[] = [];
+    for (const series of batterySeriesDaily) {
+      const latest = series.points[series.points.length - 1];
+      if (!latest) continue;
+      if (latest.avgPercent < 25) {
+        batteryLow.push({
+          entityId: series.entityId,
+          name: series.name,
+          latestBatteryPercent: latest.avgPercent,
+          capturedAt: latest.bucketStart,
+        });
+      }
+    }
+
+    const areaTotals = new Map<string, number>();
+    for (const series of energySeriesDaily) {
+      const total = series.points.reduce((sum, p) => sum + (p.totalKwhDelta || 0), 0);
+      areaTotals.set(series.area, total);
+    }
+
+    const byArea = summaryAllDaily.byArea
+      .filter((row) => matchesArea(row.area))
+      .map((row) => {
+        const total = areaTotals.get(row.area) ?? 0;
+        return {
           ...row,
+          totalKwhDelta: total,
+          estimatedCost: summaryAllDaily.pricePerKwh == null ? undefined : total * summaryAllDaily.pricePerKwh,
           topEntities: row.topEntities.filter((entity) => matchesEnergyEntity(entity.entityId, row.area)),
-        })),
-      batteryLow: summaryAll.batteryLow.filter((row) => matchesBatteryEntity(row.entityId)),
+        };
+      })
+      .sort((a, b) => b.totalKwhDelta - a.totalKwhDelta);
+
+    const topEntities = summaryAllDaily.topEntities.filter((row) => matchesEnergyEntity(row.entityId, row.area));
+
+    const rangeFrom = rangeWindow && rangeReady ? rangeWindow.from.toISOString() : summaryAllDaily.range.from;
+    const rangeTo = rangeWindow && rangeReady ? rangeWindow.to.toISOString() : summaryAllDaily.range.to;
+
+    return {
+      ...summaryAllDaily,
+      bucket,
+      range: { from: rangeFrom, to: rangeTo },
+      seriesTotalKwh,
+      seriesTotalCost,
+      seriesKwhByArea: energySeriesBucketed,
+      seriesBatteryAvgPercent,
+      seriesBatteryByEntity,
+      topEntities,
+      byArea,
+      batteryLow,
     };
   }, [
-    summaryAll,
+    summaryAllDaily,
     selectedAreas,
     selectedEnergyEntities,
     selectedBatteryEntities,
     energyEntityAreaMap,
     batteryEntityAreaMap,
+    bucket,
+    preset,
+    from,
+    to,
+    rangeState.window,
   ]);
 
   const totalKwh = useMemo(() => {
@@ -257,13 +556,37 @@ export default function AdminDashboard({ username }: Props) {
       .filter((area): area is string => typeof area === 'string' && area.length > 0);
     const boilerAreaSet = new Set(boilerAreas);
     const hasBoilerEntityFilter = boilerAreaSet.size > 0;
+    const rangeWindow = rangeState.window;
+    const rangeReady = preset !== 'custom' || (from && to);
+    const inRange = (iso: string) => {
+      if (!rangeWindow || !rangeReady) return true;
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return false;
+      return date >= rangeWindow.from && date <= rangeWindow.to;
+    };
 
-    return boilerAreaSeriesAll.filter((series) => {
-      if (hasAreaFilter && !areaSet.has(series.area)) return false;
-      if (hasBoilerEntityFilter && !boilerAreaSet.has(series.area)) return false;
-      return true;
-    });
-  }, [boilerAreaSeriesAll, selectedAreas, selectedBoilerEntities, boilerEntityAreaMap]);
+    return boilerAreaSeriesAll
+      .filter((series) => {
+        if (hasAreaFilter && !areaSet.has(series.area)) return false;
+        if (hasBoilerEntityFilter && !boilerAreaSet.has(series.area)) return false;
+        return true;
+      })
+      .map((series) => ({
+        ...series,
+        points: aggregateBoilerPoints(series.points.filter((p) => inRange(p.bucketStart)), bucket),
+      }))
+      .filter((series) => series.points.length > 0);
+  }, [
+    boilerAreaSeriesAll,
+    selectedAreas,
+    selectedBoilerEntities,
+    boilerEntityAreaMap,
+    bucket,
+    preset,
+    from,
+    to,
+    rangeState.window,
+  ]);
 
   const boilerSeriesByArea: MultiSeriesTrend[] = useMemo(
     () =>
@@ -322,10 +645,10 @@ export default function AdminDashboard({ username }: Props) {
 
   const buildSummaryParams = useCallback(() => {
     const params = new URLSearchParams();
-    params.set('bucket', bucket);
+    params.set('bucket', 'daily');
     params.set('days', 'all');
     return params.toString();
-  }, [bucket]);
+  }, []);
 
   const buildSelectorParams = useCallback(() => {
     const params = new URLSearchParams();
@@ -355,12 +678,12 @@ export default function AdminDashboard({ username }: Props) {
           data && typeof data.error === 'string' && data.error.length > 0 ? data.error : 'Unable to load analytics right now.';
         throw new Error(message);
       }
-      setSummaryAll(data);
+      setSummaryAllDaily(data);
       setLastFetchedAt(new Date().toISOString());
     } catch (err) {
       console.error('Failed to load summary', err);
       setError((err as Error).message || 'Unable to load analytics right now.');
-      setSummaryAll(null);
+      setSummaryAllDaily(null);
     } finally {
       setLoading(false);
     }
@@ -445,7 +768,7 @@ export default function AdminDashboard({ username }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const lastSnapshotDisplay = summaryAll ? formatDateTime(summaryAll.lastSnapshotAt) : 'Not available';
+  const lastSnapshotDisplay = summaryAllDaily ? formatDateTime(summaryAllDaily.lastSnapshotAt) : 'Not available';
   const lastFetchedDisplay = lastFetchedAt ? formatDateTime(lastFetchedAt) : 'Never';
   const handleRefresh = () => {
     void loadSummary();
@@ -606,6 +929,11 @@ export default function AdminDashboard({ username }: Props) {
           {error && (
             <div className="mt-4 rounded-2xl border border-red-100 bg-red-50/80 px-4 py-3 text-sm text-red-600">
               {error}
+            </div>
+          )}
+          {rangeError && (
+            <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {rangeError}
             </div>
           )}
           {selectorsError && (
