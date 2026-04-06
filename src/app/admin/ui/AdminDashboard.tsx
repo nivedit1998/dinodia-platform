@@ -259,7 +259,7 @@ export default function AdminDashboard({ username }: Props) {
 
   const batteryLowCount = summary?.batteryLow.length ?? 0;
 
-  const buildParams = () => {
+  const buildParams = useCallback(() => {
     const params = new URLSearchParams();
     params.set('bucket', bucket);
     if (preset === 'all') {
@@ -274,7 +274,7 @@ export default function AdminDashboard({ username }: Props) {
     selectedEnergyEntities.forEach((e) => params.append('energyEntityIds', e));
     selectedBatteryEntities.forEach((e) => params.append('batteryEntityIds', e));
     return params.toString();
-  };
+  }, [bucket, preset, from, to, selectedAreas, selectedEnergyEntities, selectedBatteryEntities]);
 
   const buildSelectorParams = useCallback(() => {
     const params = new URLSearchParams();
@@ -308,7 +308,7 @@ export default function AdminDashboard({ username }: Props) {
     return params.toString();
   }, [preset, from, to, selectedAreas, selectedBoilerEntities]);
 
-  const loadSummary = async () => {
+  const loadSummary = async (paramsOverride?: string) => {
     if (preset === 'custom' && (!from || !to)) {
       setError('Choose both from/to dates for a custom range.');
       return;
@@ -316,7 +316,8 @@ export default function AdminDashboard({ username }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const res = await platformFetch(`/api/admin/monitoring/summary?${buildParams()}`, {
+      const params = paramsOverride ?? buildParams();
+      const res = await platformFetch(`/api/admin/monitoring/summary?${params}`, {
         cache: 'no-store',
         credentials: 'include',
       });
@@ -384,7 +385,7 @@ export default function AdminDashboard({ username }: Props) {
     }
   }, [buildSelectorParams]);
 
-  const loadBoilerHistory = useCallback(async () => {
+  const loadBoilerHistory = useCallback(async (paramsOverride?: string) => {
     if (preset === 'custom' && (!from || !to)) {
       setBoilerError('Choose both from/to dates for a custom range.');
       return;
@@ -392,7 +393,8 @@ export default function AdminDashboard({ username }: Props) {
     setBoilerLoading(true);
     setBoilerError(null);
     try {
-      const res = await platformFetch(`/api/admin/monitoring/boiler-history?${buildBoilerParams()}`, {
+      const params = paramsOverride ?? buildBoilerParams();
+      const res = await platformFetch(`/api/admin/monitoring/boiler-history?${params}`, {
         cache: 'no-store',
         credentials: 'include',
       });
@@ -412,10 +414,14 @@ export default function AdminDashboard({ username }: Props) {
     }
   }, [buildBoilerParams, preset, from, to]);
 
+  const summaryParams = useMemo(() => buildParams(), [buildParams]);
+
+  const boilerParams = useMemo(() => buildBoilerParams(), [buildBoilerParams]);
+
   useEffect(() => {
-    void loadSummary();
+    void loadSummary(summaryParams);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bucket, preset, from, to, selectedAreas, selectedEnergyEntities, selectedBatteryEntities]);
+  }, [summaryParams]);
 
   useEffect(() => {
     if (preset === 'custom' && (!from || !to)) return;
@@ -424,8 +430,8 @@ export default function AdminDashboard({ username }: Props) {
 
   useEffect(() => {
     if (preset === 'custom' && (!from || !to)) return;
-    void loadBoilerHistory();
-  }, [preset, from, to, selectedAreas, selectedBoilerEntities, loadBoilerHistory]);
+    void loadBoilerHistory(boilerParams);
+  }, [boilerParams, loadBoilerHistory, preset, from, to]);
 
   const lastSnapshotDisplay = summary ? formatDateTime(summary.lastSnapshotAt) : 'Not available';
   const lastFetchedDisplay = lastFetchedAt ? formatDateTime(lastFetchedAt) : 'Never';
