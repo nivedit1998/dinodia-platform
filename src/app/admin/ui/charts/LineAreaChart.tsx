@@ -512,14 +512,14 @@ export function MultiLineChart({
 
           {hoverDate && activeSeries.length > 0 && (
             <foreignObject
-              x={Math.max(0, xScaleTime(hoverDate) - 80)}
+              x={Math.max(0, xScaleTime(hoverDate) - 90)}
               y={4}
-              width={180}
-              height={Math.min(200, 28 + activeSeries.length * 18)}
+              width={200}
+              height={Math.min(320, 44 + activeSeries.length * 24)}
             >
-              <div className="max-h-44 overflow-auto rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-[11px] text-slate-700 shadow-sm">
+              <div className="rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-[11px] text-slate-700 shadow-sm">
                 {activeSeries.map(({ series: s, point, color }) => (
-                  <div key={s.id} className="flex items-center justify-between gap-3">
+                  <div key={s.id} className="flex items-center justify-between gap-3 py-1">
                     <span className="inline-flex items-center gap-2">
                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
                       <span className="truncate">{s.label}</span>
