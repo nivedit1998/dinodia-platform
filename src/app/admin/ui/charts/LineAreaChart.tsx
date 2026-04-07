@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { scaleBand, scaleLinear, scaleTime } from 'd3-scale';
 import { area, line, curveMonotoneX } from 'd3-shape';
 import { bisector, extent, max } from 'd3-array';
+import { timeHour } from 'd3-time';
 
 export type TrendPoint = { date: Date; label: string; value: number };
 
@@ -312,6 +313,8 @@ export function MultiLineChart({
   emptyLabel,
   formatValue = defaultFormat,
   forcedWidth,
+  xTickIntervalHours,
+  xTickLabelFormat,
 }: {
   id: string;
   title: string;
@@ -321,6 +324,8 @@ export function MultiLineChart({
   emptyLabel?: string;
   formatValue?: (value: number) => string;
   forcedWidth?: number;
+  xTickIntervalHours?: number;
+  xTickLabelFormat?: (date: Date) => string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
@@ -407,8 +412,17 @@ export function MultiLineChart({
   }, [hoverDate, orderedSeries, colorMap]);
 
   const tickCount = innerWidth < 420 ? 4 : Math.min(6, Math.max(3, allDates.length));
-  const ticksX = xScaleTime.ticks(tickCount);
+  const interval = xTickIntervalHours ? timeHour.every(xTickIntervalHours) : null;
+  const ticksX = interval ? xScaleTime.ticks(interval) : xScaleTime.ticks(tickCount);
   const ticksY = yScale.ticks(4);
+  const defaultHeaderLabel = (date: Date) =>
+    date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' });
+  const defaultTickLabel = (date: Date) =>
+    date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  const timeTickLabel = (date: Date) =>
+    date.toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const headerLabel = xTickIntervalHours ? timeTickLabel : defaultHeaderLabel;
+  const tickLabel = xTickLabelFormat ?? (xTickIntervalHours ? timeTickLabel : defaultTickLabel);
 
   if (preparedSeries.length === 0) {
     return (
@@ -428,8 +442,10 @@ export function MultiLineChart({
           <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{title}</p>
           <p className="text-lg font-semibold text-slate-900">
             {hoverDate
-              ? hoverDate.toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' })
-              : allDates[allDates.length - 1]?.toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' })}
+              ? headerLabel(hoverDate)
+              : allDates[allDates.length - 1]
+                ? headerLabel(allDates[allDates.length - 1])
+                : ''}
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-slate-500">
@@ -497,7 +513,7 @@ export function MultiLineChart({
             <g key={`x-${idx}`} transform={`translate(${xScaleTime(t as Date)},${innerHeight})`}>
               <line y2={6} stroke="#cbd5e1" />
               <text dy="1.3em" textAnchor="middle" className="text-[11px] fill-slate-500">
-                {(t as Date).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })}
+                {tickLabel(t as Date)}
               </text>
             </g>
           ))}

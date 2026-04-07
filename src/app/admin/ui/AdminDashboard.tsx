@@ -196,30 +196,6 @@ const aggregateBatteryEntityPoints = (points: Array<{ bucketStart: string; label
     }));
 };
 
-const aggregateBoilerPoints = (points: BoilerHistoryPoint[], bucket: HistoryBucket) => {
-  const buckets = new Map<string, { bucketStart: Date; label: string; sum: number; count: number }>();
-  for (const point of points) {
-    const date = new Date(point.bucketStart);
-    if (Number.isNaN(date.getTime())) continue;
-    const info = getBucketInfoUtc(bucket, date);
-    const existing = buckets.get(info.key);
-    if (!existing) {
-      buckets.set(info.key, { bucketStart: info.bucketStart, label: info.label, sum: point.value || 0, count: 1 });
-    } else {
-      existing.sum += point.value || 0;
-      existing.count += 1;
-    }
-  }
-
-  return Array.from(buckets.values())
-    .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
-    .map((entry) => ({
-      bucketStart: entry.bucketStart.toISOString(),
-      label: entry.label,
-      value: entry.count > 0 ? entry.sum / entry.count : 0,
-    }));
-};
-
 function MultiSelect({
   label,
   options,
@@ -573,7 +549,7 @@ export default function AdminDashboard({ username }: Props) {
       })
       .map((series) => ({
         ...series,
-        points: aggregateBoilerPoints(series.points.filter((p) => inRange(p.bucketStart)), bucket),
+        points: series.points.filter((p) => inRange(p.bucketStart)),
       }))
       .filter((series) => series.points.length > 0);
   }, [
@@ -581,7 +557,6 @@ export default function AdminDashboard({ username }: Props) {
     selectedAreas,
     selectedBoilerEntities,
     boilerEntityAreaMap,
-    bucket,
     preset,
     from,
     to,
@@ -1096,6 +1071,7 @@ export default function AdminDashboard({ username }: Props) {
                   emptyLabel="No boiler readings in this window."
                   formatValue={(v) => v.toFixed(1)}
                   forcedWidth={Math.max(900, boilerPointCount * 32)}
+                  xTickIntervalHours={2}
                 />
               )}
             </div>
