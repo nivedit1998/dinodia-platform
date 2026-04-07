@@ -943,34 +943,13 @@ export default function AdminDashboard({ username }: Props) {
           )}
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-4">
+        <section className="rounded-3xl border border-slate-200/70 bg-white/90 p-4 shadow-sm">
           <MultiSelect
             label="Areas"
             options={areas.map((a) => ({ id: a, label: a, hint: a }))}
             selected={selectedAreas}
             onChange={setSelectedAreas}
             placeholder="All areas"
-          />
-          <MultiSelect
-            label="Energy entities"
-            options={energyEntities.map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
-            selected={selectedEnergyEntities}
-            onChange={setSelectedEnergyEntities}
-            placeholder="All energy entities"
-          />
-          <MultiSelect
-            label="Battery entities"
-            options={batteryEntities.map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
-            selected={selectedBatteryEntities}
-            onChange={setSelectedBatteryEntities}
-            placeholder="All battery entities"
-          />
-          <MultiSelect
-            label="Boiler entities"
-            options={boilerEntities.map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
-            selected={selectedBoilerEntities}
-            onChange={setSelectedBoilerEntities}
-            placeholder="All boiler entities"
           />
         </section>
 
@@ -1000,6 +979,15 @@ export default function AdminDashboard({ username }: Props) {
             <span className="text-xs text-slate-500">
               Bucket: {bucket}, points: {energyPointCount}
             </span>
+          </div>
+          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+            <MultiSelect
+              label="Energy entities"
+              options={energyEntities.map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
+              selected={selectedEnergyEntities}
+              onChange={setSelectedEnergyEntities}
+              placeholder="All energy entities"
+            />
           </div>
           <div
             ref={energyScrollRef}
@@ -1032,6 +1020,15 @@ export default function AdminDashboard({ username }: Props) {
               Bucket: {bucket}, points: {batteryPointCount}
             </span>
           </div>
+          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+            <MultiSelect
+              label="Battery entities"
+              options={batteryEntities.map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
+              selected={selectedBatteryEntities}
+              onChange={setSelectedBatteryEntities}
+              placeholder="All battery entities"
+            />
+          </div>
           <div
             ref={batteryScrollRef}
             className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm"
@@ -1060,6 +1057,15 @@ export default function AdminDashboard({ username }: Props) {
             <span className="text-xs text-slate-500">
               Points: {boilerPointCount}
             </span>
+          </div>
+          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+            <MultiSelect
+              label="Boiler entities"
+              options={boilerEntities.map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
+              selected={selectedBoilerEntities}
+              onChange={setSelectedBoilerEntities}
+              placeholder="All boiler entities"
+            />
           </div>
           <div
             ref={boilerScrollRef}
