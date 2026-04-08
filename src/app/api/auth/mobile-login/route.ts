@@ -32,21 +32,29 @@ export async function POST(req: NextRequest) {
       confirmNewPassword,
     } = await req.json();
 
-    const ip = getClientIp(req);
-    const rateKey = `mobile-login:${ip}:${(username || '').toLowerCase()}`;
-    const allowed = await checkRateLimit(rateKey, { maxRequests: 12, windowMs: 60_000 });
-    if (!allowed) {
-      return NextResponse.json(
-        { error: 'Too many login attempts. Please wait a moment and try again.' },
-        { status: 429 }
-      );
-    }
-
     if (!username || !password) {
       return NextResponse.json(
         { error: 'Please enter both a username and password.' },
         { status: 400 }
       );
+    }
+
+    const normalizedUsername = typeof username === 'string' ? username.toLowerCase() : '';
+    const isDemoUsernameAttempt =
+      APPLE_REVIEW_DEMO_BYPASS_ENABLED &&
+      APPLE_REVIEW_DEMO_USERNAME.length > 0 &&
+      normalizedUsername === APPLE_REVIEW_DEMO_USERNAME;
+
+    if (!isDemoUsernameAttempt) {
+      const ip = getClientIp(req);
+      const rateKey = `mobile-login:${ip}:${normalizedUsername}`;
+      const allowed = await checkRateLimit(rateKey, { maxRequests: 12, windowMs: 60_000 });
+      if (!allowed) {
+        return NextResponse.json(
+          { error: 'Too many login attempts. Please wait a moment and try again.' },
+          { status: 429 }
+        );
+      }
     }
 
     const authUser = await authenticateWithCredentials(username, password);
@@ -95,6 +103,33 @@ export async function POST(req: NextRequest) {
     const cloudEnabled = Boolean(user.home?.haConnection?.cloudUrl?.trim());
     const appUrl = getAppUrl();
 
+    // Apple review bypass: trust device + skip all verification gates for the configured demo tenant user.
+    const isAppleDemoUser =
+      APPLE_REVIEW_DEMO_BYPASS_ENABLED &&
+      APPLE_REVIEW_DEMO_USERNAME.length > 0 &&
+      user.username.toLowerCase() === APPLE_REVIEW_DEMO_USERNAME &&
+      user.role === Role.TENANT;
+    const resolvedDemoDeviceId =
+      typeof deviceId === 'string' && deviceId.trim().length > 0
+        ? deviceId.trim()
+        : 'apple-review-demo-device';
+
+    if (isAppleDemoUser) {
+      await trustDevice(user.id, resolvedDemoDeviceId, deviceLabel);
+      const trustedRow = await prisma.trustedDevice.findUnique({
+        where: { userId_deviceId: { userId: user.id, deviceId: resolvedDemoDeviceId } },
+      });
+      type SessionVersionRow = { sessionVersion?: number | null };
+      const sessionVersion = (trustedRow as unknown as SessionVersionRow | null)?.sessionVersion ?? 0;
+      const token = createKioskToken(sessionUser, resolvedDemoDeviceId, sessionVersion);
+      console.log('[mobile-login] Apple review bypass', {
+        userId: user.id,
+        username: user.username,
+        deviceId: resolvedDemoDeviceId,
+      });
+      return NextResponse.json({ ok: true, token, role: user.role, cloudEnabled });
+    }
+
     if (!deviceId) {
       return NextResponse.json(
         { error: 'Device information is required to continue.' },
@@ -102,7 +137,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Enforce first-login password change for tenants before any bypass/token issuance.
     if (user.role === Role.TENANT && user.mustChangePassword) {
       if (typeof newPassword !== 'string' || typeof confirmNewPassword !== 'string') {
         return NextResponse.json({
@@ -134,28 +168,6 @@ export async function POST(req: NextRequest) {
         where: { id: user.id },
         data: { passwordHash, mustChangePassword: false, passwordChangedAt: now },
       });
-    }
-
-    // Apple review bypass: trust device + skip email/device verification for the configured demo user.
-    const isAppleDemoUser =
-      APPLE_REVIEW_DEMO_BYPASS_ENABLED &&
-      APPLE_REVIEW_DEMO_USERNAME.length > 0 &&
-      user.username.toLowerCase() === APPLE_REVIEW_DEMO_USERNAME;
-
-    if (isAppleDemoUser) {
-      await trustDevice(user.id, deviceId, deviceLabel);
-      const trustedRow = await prisma.trustedDevice.findUnique({
-        where: { userId_deviceId: { userId: user.id, deviceId } },
-      });
-      type SessionVersionRow = { sessionVersion?: number | null };
-      const sessionVersion = (trustedRow as unknown as SessionVersionRow | null)?.sessionVersion ?? 0;
-      const token = createKioskToken(sessionUser, deviceId, sessionVersion);
-      console.log('[mobile-login] Apple review bypass', {
-        userId: user.id,
-        username: user.username,
-        deviceId,
-      });
-      return NextResponse.json({ ok: true, token, role: user.role, cloudEnabled });
     }
 
     try {
