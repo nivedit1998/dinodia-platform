@@ -43,6 +43,8 @@ function bucket2hUtc(date: Date) {
   return { key: bucketStart.toISOString(), bucketStart, label };
 }
 
+const prettyEntityId = (id: string) => id.replace(/^[^.]+\./i, '').replace(/_/g, ' ');
+
 export async function GET(req: NextRequest) {
   const me = await getCurrentUserFromRequest(req);
   if (!me || me.role !== Role.ADMIN) {
@@ -74,7 +76,7 @@ export async function GET(req: NextRequest) {
   const areasFilter = new Set(parseMulti(searchParams, 'areas'));
 
   if (!groupByArea && selectedEntityIds.length === 0) {
-    return NextResponse.json({ ok: true, unit: '°C', points: [] });
+    return NextResponse.json({ ok: true, unit: '°C', points: [], seriesByArea: [], seriesByEntity: [] });
   }
 
   let from = startOfDayUtc(new Date(Date.now() - (days - 1) * MS_PER_DAY));
@@ -108,116 +110,150 @@ export async function GET(req: NextRequest) {
     to = nowEnd;
   }
 
-  let resolveArea: (entityId: string) => string | null = () => null;
-  let allowedEntityIds = new Set(selectedEntityIds);
-  let haEntityIds: string[] = [];
+  const [haDevices, overrides] = await Promise.all([
+    getDevicesForHaConnection(haConnectionId, { cacheTtlMs: 2000 }).catch(() => []),
+    prisma.device.findMany({
+      where: { haConnectionId },
+      select: { entityId: true, name: true, area: true },
+    }),
+  ]);
 
-  if (groupByArea || areasFilter.size > 0) {
-    const [haDevices, overrides] = await Promise.all([
-      getDevicesForHaConnection(haConnectionId, { cacheTtlMs: 2000 }).catch(() => []),
-      prisma.device.findMany({
-        where: { haConnectionId },
-        select: { entityId: true, name: true, area: true },
-      }),
-    ]);
+  const haMap = new Map(
+    haDevices.map((d) => [d.entityId, { name: d.name ?? '', area: d.area ?? d.areaName ?? null }])
+  );
+  const overrideMap = new Map(overrides.map((d) => [d.entityId, d]));
 
-    haEntityIds = haDevices.map((d) => d.entityId);
-    const overrideEntityIds = overrides.map((d) => d.entityId);
-    const allEntityIds = Array.from(new Set([...haEntityIds, ...overrideEntityIds]));
-    const haMap = new Map(
-      haDevices.map((d) => [d.entityId, { name: d.name ?? '', area: d.area ?? d.areaName ?? null }])
-    );
-    const overrideMap = new Map(overrides.map((d) => [d.entityId, d]));
+  const resolveArea = (entityId: string) => {
+    const ha = haMap.get(entityId);
+    const override = overrideMap.get(entityId);
+    return (override?.area ?? ha?.area ?? '').trim() || null;
+  };
+  const resolveName = (entityId: string) => {
+    const ha = haMap.get(entityId);
+    const override = overrideMap.get(entityId);
+    const name = (override?.name ?? ha?.name ?? '').trim();
+    return name || prettyEntityId(entityId);
+  };
+  const hasEntityFilter = selectedEntityIds.length > 0;
+  const selectedEntitySet = new Set(selectedEntityIds);
+  const hasAreaFilter = areasFilter.size > 0;
+  const isAssignedArea = (area: string | null) => {
+    const normalized = (area ?? '').trim();
+    return normalized.length > 0 && normalized.toLowerCase() !== UNASSIGNED.toLowerCase();
+  };
+  const matchesArea = (area: string | null) => {
+    if (!isAssignedArea(area)) return false;
+    if (!hasAreaFilter) return true;
+    return areasFilter.has((area ?? '').trim());
+  };
 
-    resolveArea = (entityId: string) => {
-      const ha = haMap.get(entityId);
-      const override = overrideMap.get(entityId);
-      return (override?.area ?? ha?.area ?? '').trim() || null;
-    };
-
-    const baseCandidates = groupByArea && selectedEntityIds.length > 0 ? selectedEntityIds : allEntityIds;
-
-    if (areasFilter.size > 0) {
-      const matchesArea = (area: string | null) => {
-        const normalized = (area ?? '').trim();
-        if (!normalized) return areasFilter.has(UNASSIGNED);
-        return areasFilter.has(normalized);
-      };
-      const candidates = groupByArea ? baseCandidates : selectedEntityIds;
-      allowedEntityIds = new Set(candidates.filter((id) => matchesArea(resolveArea(id))));
-    } else if (groupByArea) {
-      allowedEntityIds = new Set(baseCandidates);
-    }
+  const allKnownEntityIds = Array.from(new Set([...haMap.keys(), ...overrideMap.keys()]));
+  let queryEntityIds: string[] | null = hasEntityFilter ? Array.from(selectedEntitySet) : null;
+  if (hasAreaFilter) {
+    queryEntityIds = (queryEntityIds ?? allKnownEntityIds).filter((id) => matchesArea(resolveArea(id)));
   }
-
-  if ((!groupByArea && allowedEntityIds.size === 0) || (areasFilter.size > 0 && allowedEntityIds.size === 0)) {
-    return NextResponse.json({ ok: true, unit: '°C', points: [] });
+  if (queryEntityIds && queryEntityIds.length === 0) {
+    return NextResponse.json({ ok: true, unit: '°C', points: [], seriesByArea: [], seriesByEntity: [] });
   }
 
   const readings = await prisma.boilerTemperatureReading.findMany({
     where: {
       haConnectionId,
-      ...(groupByArea || areasFilter.size > 0 ? { entityId: { in: Array.from(allowedEntityIds) } } : {}),
+      ...(queryEntityIds ? { entityId: { in: queryEntityIds } } : {}),
       capturedAt: { gte: from, lte: to },
     },
     orderBy: { capturedAt: 'asc' },
     select: { entityId: true, numericValue: true, capturedAt: true },
   });
 
-  if (groupByArea) {
-    const areaBuckets = new Map<
-      string,
-      Map<string, { bucketStart: Date; label: string; sum: number; count: number }>
-    >();
-    for (const reading of readings) {
-      const area = resolveArea(reading.entityId) || UNASSIGNED;
-      if (area === UNASSIGNED) continue;
-      const info = bucket2hUtc(reading.capturedAt);
-      const map = areaBuckets.get(area) ?? new Map();
-      const existing = map.get(info.key);
-      if (!existing) {
-        map.set(info.key, { bucketStart: info.bucketStart, label: info.label, sum: reading.numericValue, count: 1 });
-      } else {
-        existing.sum += reading.numericValue;
-        existing.count += 1;
-      }
-      if (!areaBuckets.has(area)) areaBuckets.set(area, map);
-    }
-
-    const seriesByArea = Array.from(areaBuckets.entries())
-      .map(([area, buckets]) => ({
-        area,
-        points: Array.from(buckets.values())
-          .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
-          .map((b) => ({
-            bucketStart: b.bucketStart.toISOString(),
-            label: b.label,
-            value: b.count > 0 ? b.sum / b.count : 0,
-          })),
-      }))
-      .sort((a, b) => a.area.localeCompare(b.area));
-
-    return NextResponse.json({ ok: true, unit: '°C', points: [], seriesByArea });
-  }
-
-  const buckets = new Map<string, { bucketStart: Date; label: string; sum: number; count: number }>();
+  const areaBuckets = new Map<string, Map<string, { bucketStart: Date; label: string; sum: number; count: number }>>();
+  const entityBuckets = new Map<string, Map<string, { bucketStart: Date; label: string; sum: number; count: number }>>();
+  const totalBuckets = new Map<string, { bucketStart: Date; label: string; sum: number; count: number }>();
   for (const reading of readings) {
+    const area = resolveArea(reading.entityId);
+    if (!matchesArea(area)) continue;
+    if (hasEntityFilter && !selectedEntitySet.has(reading.entityId)) continue;
+
     const info = bucket2hUtc(reading.capturedAt);
-    const existing = buckets.get(info.key);
-    if (!existing) {
-      buckets.set(info.key, {
+
+    const perArea = areaBuckets.get(area!) ?? new Map();
+    const areaExisting = perArea.get(info.key);
+    if (!areaExisting) {
+      perArea.set(info.key, {
         bucketStart: info.bucketStart,
         label: info.label,
         sum: reading.numericValue,
         count: 1,
       });
     } else {
-      existing.sum += reading.numericValue;
-      existing.count += 1;
+      areaExisting.sum += reading.numericValue;
+      areaExisting.count += 1;
+    }
+    if (!areaBuckets.has(area!)) areaBuckets.set(area!, perArea);
+
+    const perEntity = entityBuckets.get(reading.entityId) ?? new Map();
+    const entityExisting = perEntity.get(info.key);
+    if (!entityExisting) {
+      perEntity.set(info.key, {
+        bucketStart: info.bucketStart,
+        label: info.label,
+        sum: reading.numericValue,
+        count: 1,
+      });
+    } else {
+      entityExisting.sum += reading.numericValue;
+      entityExisting.count += 1;
+    }
+    if (!entityBuckets.has(reading.entityId)) entityBuckets.set(reading.entityId, perEntity);
+
+    const totalExisting = totalBuckets.get(info.key);
+    if (!totalExisting) {
+      totalBuckets.set(info.key, {
+        bucketStart: info.bucketStart,
+        label: info.label,
+        sum: reading.numericValue,
+        count: 1,
+      });
+    } else {
+      totalExisting.sum += reading.numericValue;
+      totalExisting.count += 1;
     }
   }
 
-  const points = Array.from(buckets.values())
+  const seriesByArea = Array.from(areaBuckets.entries())
+    .map(([area, buckets]) => ({
+      area,
+      points: Array.from(buckets.values())
+        .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
+        .map((b) => ({
+          bucketStart: b.bucketStart.toISOString(),
+          label: b.label,
+          value: b.count > 0 ? b.sum / b.count : 0,
+        })),
+    }))
+    .sort((a, b) => a.area.localeCompare(b.area));
+
+  const seriesByEntity = Array.from(entityBuckets.entries())
+    .map(([entityId, buckets]) => ({
+      entityId,
+      name: resolveName(entityId),
+      area: resolveArea(entityId) || UNASSIGNED,
+      points: Array.from(buckets.values())
+        .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
+        .map((b) => ({
+          bucketStart: b.bucketStart.toISOString(),
+          label: b.label,
+          value: b.count > 0 ? b.sum / b.count : 0,
+        })),
+    }))
+    .filter((series) => isAssignedArea(series.area))
+    .sort((a, b) => {
+      const byName = a.name.localeCompare(b.name);
+      if (byName !== 0) return byName;
+      return a.entityId.localeCompare(b.entityId);
+    });
+
+  const points = Array.from(totalBuckets.values())
     .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
     .map((b) => ({
       bucketStart: b.bucketStart.toISOString(),
@@ -225,5 +261,9 @@ export async function GET(req: NextRequest) {
       value: b.count > 0 ? b.sum / b.count : 0,
     }));
 
-  return NextResponse.json({ ok: true, unit: '°C', points });
+  if (groupByArea) {
+    return NextResponse.json({ ok: true, unit: '°C', points: [], seriesByArea, seriesByEntity });
+  }
+
+  return NextResponse.json({ ok: true, unit: '°C', points, seriesByArea, seriesByEntity });
 }

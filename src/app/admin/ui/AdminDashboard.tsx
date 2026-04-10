@@ -20,6 +20,7 @@ type SummaryAreaSeries = { area: string; points: SummaryPoint[] };
 type BatteryEntitySeries = { entityId: string; name?: string; points: Array<{ bucketStart: string; label: string; avgPercent: number }> };
 type EntityOption = { entityId: string; name: string; area: string; lastCapturedAt: string };
 type BoilerHistoryPoint = { bucketStart: string; label: string; value: number };
+type BoilerEntitySeries = { entityId: string; name: string; area: string; points: BoilerHistoryPoint[] };
 
 type SummaryResponse = {
   ok: boolean;
@@ -37,7 +38,14 @@ type SummaryResponse = {
   byArea: SummaryArea[];
   batteryLow: BatteryRow[];
 };
-type BoilerHistoryResponse = { ok: boolean; unit: string; points: BoilerHistoryPoint[]; seriesByArea?: Array<{ area: string; points: BoilerHistoryPoint[] }>; error?: string };
+type BoilerHistoryResponse = {
+  ok: boolean;
+  unit: string;
+  points: BoilerHistoryPoint[];
+  seriesByArea?: Array<{ area: string; points: BoilerHistoryPoint[] }>;
+  seriesByEntity?: BoilerEntitySeries[];
+  error?: string;
+};
 
 type Props = { username?: string };
 
@@ -62,6 +70,7 @@ const dateOnly = (date: Date) => {
 
 const numberFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
 const costFmt = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 2 });
+const chartPalette = ['#0ea5e9', '#34c759', '#ff9500', '#af52de', '#ff3b30', '#5ac8fa', '#5856d6', '#30d158', '#ff2d55', '#ffd60a'];
 
 type SelectOption = { id: string; label: string; hint?: string };
 
@@ -196,6 +205,11 @@ const aggregateBatteryEntityPoints = (points: Array<{ bucketStart: string; label
     }));
 };
 
+const stableColorById = (id: string) => {
+  const hash = id.split('').reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 0);
+  return chartPalette[Math.abs(hash) % chartPalette.length];
+};
+
 function MultiSelect({
   label,
   options,
@@ -276,7 +290,7 @@ export default function AdminDashboard({ username }: Props) {
   const [selectedEnergyEntities, setSelectedEnergyEntities] = useState<string[]>([]);
   const [selectedBatteryEntities, setSelectedBatteryEntities] = useState<string[]>([]);
   const [selectedBoilerEntities, setSelectedBoilerEntities] = useState<string[]>([]);
-  const [boilerAreaSeriesAll, setBoilerAreaSeriesAll] = useState<Array<{ area: string; points: BoilerHistoryPoint[] }>>([]);
+  const [boilerEntitySeriesAll, setBoilerEntitySeriesAll] = useState<BoilerEntitySeries[]>([]);
   const [boilerLoading, setBoilerLoading] = useState(false);
   const [boilerError, setBoilerError] = useState<string | null>(null);
   const [selectorsError, setSelectorsError] = useState<string | null>(null);
@@ -295,8 +309,6 @@ export default function AdminDashboard({ username }: Props) {
 
   const energyEntityAreaMap = useMemo(() => new Map(energyEntities.map((e) => [e.entityId, e.area])), [energyEntities]);
   const batteryEntityAreaMap = useMemo(() => new Map(batteryEntities.map((e) => [e.entityId, e.area])), [batteryEntities]);
-  const boilerEntityAreaMap = useMemo(() => new Map(boilerEntities.map((e) => [e.entityId, e.area])), [boilerEntities]);
-
   const rangeState = useMemo(() => {
     if (preset === 'all') {
       return { window: null as { from: Date; to: Date } | null, error: null as string | null };
@@ -524,14 +536,11 @@ export default function AdminDashboard({ username }: Props) {
     [summary]
   );
 
-  const boilerAreaSeriesFiltered = useMemo(() => {
+  const boilerEntitySeriesFiltered = useMemo(() => {
     const hasAreaFilter = selectedAreas.length > 0;
     const areaSet = new Set(selectedAreas);
-    const boilerAreas = selectedBoilerEntities
-      .map((id) => boilerEntityAreaMap.get(id))
-      .filter((area): area is string => typeof area === 'string' && area.length > 0);
-    const boilerAreaSet = new Set(boilerAreas);
-    const hasBoilerEntityFilter = boilerAreaSet.size > 0;
+    const boilerEntitySet = new Set(selectedBoilerEntities);
+    const hasBoilerEntityFilter = boilerEntitySet.size > 0;
     const rangeWindow = rangeState.window;
     const rangeReady = preset !== 'custom' || (from && to);
     const inRange = (iso: string) => {
@@ -541,10 +550,10 @@ export default function AdminDashboard({ username }: Props) {
       return date >= rangeWindow.from && date <= rangeWindow.to;
     };
 
-    return boilerAreaSeriesAll
+    return boilerEntitySeriesAll
       .filter((series) => {
         if (hasAreaFilter && !areaSet.has(series.area)) return false;
-        if (hasBoilerEntityFilter && !boilerAreaSet.has(series.area)) return false;
+        if (hasBoilerEntityFilter && !boilerEntitySet.has(series.entityId)) return false;
         return true;
       })
       .map((series) => ({
@@ -553,28 +562,29 @@ export default function AdminDashboard({ username }: Props) {
       }))
       .filter((series) => series.points.length > 0);
   }, [
-    boilerAreaSeriesAll,
+    boilerEntitySeriesAll,
     selectedAreas,
     selectedBoilerEntities,
-    boilerEntityAreaMap,
     preset,
     from,
     to,
     rangeState.window,
   ]);
 
-  const boilerSeriesByArea: MultiSeriesTrend[] = useMemo(
+  const boilerSeriesByEntity: MultiSeriesTrend[] = useMemo(
     () =>
-      boilerAreaSeriesFiltered.map((series) => ({
-        id: series.area,
-        label: series.area,
+      boilerEntitySeriesFiltered.map((series) => ({
+        id: series.entityId,
+        label: series.name || series.entityId,
+        hint: `${series.entityId} • ${series.area}`,
+        color: stableColorById(series.entityId),
         points: series.points.map((p) => ({
           date: new Date(p.bucketStart),
           label: p.label,
           value: p.value,
         })),
       })),
-    [boilerAreaSeriesFiltered]
+    [boilerEntitySeriesFiltered]
   );
 
   const energyPointCount = useMemo(
@@ -586,8 +596,8 @@ export default function AdminDashboard({ username }: Props) {
     [batterySeriesByEntity]
   );
   const boilerPointCount = useMemo(
-    () => Math.max(0, ...boilerSeriesByArea.map((s) => s.points.length)),
-    [boilerSeriesByArea]
+    () => Math.max(0, ...boilerSeriesByEntity.map((s) => s.points.length)),
+    [boilerSeriesByEntity]
   );
 
   useEffect(() => {
@@ -612,7 +622,7 @@ export default function AdminDashboard({ username }: Props) {
     requestAnimationFrame(() => {
       el.scrollLeft = el.scrollWidth;
     });
-  }, [boilerSeriesByArea]);
+  }, [boilerSeriesByEntity]);
 
   // Coverage removed from UI; metric no longer used
 
@@ -726,11 +736,11 @@ export default function AdminDashboard({ username }: Props) {
           data && typeof data.error === 'string' && data.error.length > 0 ? data.error : 'Unable to load boiler trend.';
         throw new Error(message);
       }
-      setBoilerAreaSeriesAll(Array.isArray(data.seriesByArea) ? data.seriesByArea : []);
+      setBoilerEntitySeriesAll(Array.isArray(data.seriesByEntity) ? data.seriesByEntity : []);
     } catch (err) {
       console.error('Failed to load boiler trend', err);
       setBoilerError((err as Error).message || 'Unable to load boiler trend.');
-      setBoilerAreaSeriesAll([]);
+      setBoilerEntitySeriesAll([]);
     } finally {
       setBoilerLoading(false);
     }
@@ -1058,15 +1068,15 @@ export default function AdminDashboard({ username }: Props) {
                 <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
                   Loading boiler trend…
                 </div>
-              ) : boilerSeriesByArea.length === 0 ? (
+              ) : boilerSeriesByEntity.length === 0 ? (
                 <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
                   No boiler readings in this window.
                 </div>
               ) : (
                 <MultiLineChart
                   id="boiler-trend"
-                  title="Boiler temperature by area"
-                  series={boilerSeriesByArea}
+                  title="Boiler temperature by entity"
+                  series={boilerSeriesByEntity}
                   valueUnit="°C"
                   emptyLabel="No boiler readings in this window."
                   formatValue={(v) => v.toFixed(1)}
