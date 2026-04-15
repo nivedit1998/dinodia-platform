@@ -4,12 +4,31 @@ import { getGroupLabel, OTHER_LABEL } from '@/lib/deviceLabels';
 
 const MONITORING_OBSERVED_LOOKBACK_DAYS = 90;
 const MAX_OBSERVED_ENTITIES = 500;
+const MAX_ERROR_LENGTH = 300;
 
 type MonitoringMetadataCandidate = {
   entityId: string;
   name: string;
   area: string | null;
 };
+
+type ConnectionSnapshotFailure = {
+  haConnectionId: number;
+  error: string;
+};
+
+function normalizeErrorMessage(err: unknown): string {
+  const raw =
+    err instanceof Error
+      ? err.message
+      : typeof err === 'string'
+      ? err
+      : JSON.stringify(err);
+  const compact = (raw || 'Unknown error').replace(/\s+/g, ' ').trim();
+  return compact.length > MAX_ERROR_LENGTH
+    ? `${compact.slice(0, MAX_ERROR_LENGTH)}...`
+    : compact;
+}
 
 async function upsertDeviceMetadataForMonitoringEntities(
   haConnectionId: number,
@@ -214,12 +233,22 @@ export async function captureMonitoringSnapshotForAllConnections() {
   let totalDevices = 0;
   let monitoredCount = 0;
   let insertedCount = 0;
+  const failures: ConnectionSnapshotFailure[] = [];
 
   for (const { id } of connections) {
-    const summary = await captureMonitoringSnapshotForConnection(id);
-    totalDevices += summary.totalDevices;
-    monitoredCount += summary.monitoredCount;
-    insertedCount += summary.insertedCount;
+    try {
+      const summary = await captureMonitoringSnapshotForConnection(id);
+      totalDevices += summary.totalDevices;
+      monitoredCount += summary.monitoredCount;
+      insertedCount += summary.insertedCount;
+    } catch (err) {
+      const message = normalizeErrorMessage(err);
+      failures.push({ haConnectionId: id, error: message });
+      console.error('[monitoring] snapshot failed for connection', {
+        haConnectionId: id,
+        error: message,
+      });
+    }
   }
 
   return {
@@ -227,6 +256,8 @@ export async function captureMonitoringSnapshotForAllConnections() {
     totalDevices,
     monitoredCount,
     insertedCount,
+    failedConnections: failures.length,
+    failures,
   };
 }
 
@@ -253,16 +284,26 @@ export async function captureDailyMonitoringSnapshotForAllConnections(now = new 
   let monitoredCount = 0;
   let insertedCount = 0;
   let skippedConnections = 0;
+  const failures: ConnectionSnapshotFailure[] = [];
 
   for (const { id } of connections) {
-    if (!(await shouldCaptureDailyMonitoringSnapshot(id, now))) {
-      skippedConnections += 1;
-      continue;
+    try {
+      if (!(await shouldCaptureDailyMonitoringSnapshot(id, now))) {
+        skippedConnections += 1;
+        continue;
+      }
+      const summary = await captureMonitoringSnapshotForConnection(id);
+      totalDevices += summary.totalDevices;
+      monitoredCount += summary.monitoredCount;
+      insertedCount += summary.insertedCount;
+    } catch (err) {
+      const message = normalizeErrorMessage(err);
+      failures.push({ haConnectionId: id, error: message });
+      console.error('[monitoring] daily snapshot failed for connection', {
+        haConnectionId: id,
+        error: message,
+      });
     }
-    const summary = await captureMonitoringSnapshotForConnection(id);
-    totalDevices += summary.totalDevices;
-    monitoredCount += summary.monitoredCount;
-    insertedCount += summary.insertedCount;
   }
 
   return {
@@ -271,5 +312,7 @@ export async function captureDailyMonitoringSnapshotForAllConnections(now = new 
     totalDevices,
     monitoredCount,
     insertedCount,
+    failedConnections: failures.length,
+    failures,
   };
 }

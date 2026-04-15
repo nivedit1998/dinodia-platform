@@ -37,8 +37,38 @@ export async function GET(req: NextRequest) {
   try {
     const boilerSummary = await captureBoilerTempSnapshotForAllConnections();
     const energySummary = await captureDailyMonitoringSnapshotForAllConnections();
-    await cleanupMonitoringReadings();
-    return NextResponse.json({ ok: true, ...energySummary, boiler: boilerSummary });
+    let cleanupError: string | null = null;
+
+    try {
+      await cleanupMonitoringReadings();
+    } catch (err) {
+      cleanupError = err instanceof Error ? err.message : 'Monitoring cleanup failed';
+      console.error('[cron/monitoring-snapshot] cleanup error', err);
+    }
+
+    const degraded =
+      (boilerSummary.failedConnections ?? 0) > 0 ||
+      (energySummary.failedConnections ?? 0) > 0 ||
+      cleanupError !== null;
+
+    if (degraded) {
+      console.warn('[cron/monitoring-snapshot] completed with partial failures', {
+        boilerFailedConnections: boilerSummary.failedConnections ?? 0,
+        energyFailedConnections: energySummary.failedConnections ?? 0,
+        cleanupFailed: cleanupError !== null,
+      });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      degraded,
+      ...energySummary,
+      boiler: boilerSummary,
+      cleanup: {
+        ok: cleanupError === null,
+        error: cleanupError,
+      },
+    });
   } catch (err) {
     console.error('[cron/monitoring-snapshot] error', err);
     return NextResponse.json({ error: 'Snapshot failed' }, { status: 500 });

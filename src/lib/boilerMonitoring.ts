@@ -5,6 +5,25 @@ import { getCurrentTemperature } from '@/lib/deviceCapabilities';
 
 const BOILER_LABEL = 'Boiler';
 const MIN_INTERVAL_MS = 2 * 60 * 60 * 1000;
+const MAX_ERROR_LENGTH = 300;
+
+type ConnectionSnapshotFailure = {
+  haConnectionId: number;
+  error: string;
+};
+
+function normalizeErrorMessage(err: unknown): string {
+  const raw =
+    err instanceof Error
+      ? err.message
+      : typeof err === 'string'
+      ? err
+      : JSON.stringify(err);
+  const compact = (raw || 'Unknown error').replace(/\s+/g, ' ').trim();
+  return compact.length > MAX_ERROR_LENGTH
+    ? `${compact.slice(0, MAX_ERROR_LENGTH)}...`
+    : compact;
+}
 
 export async function captureBoilerTempSnapshotForConnection(haConnectionId: number, now = new Date()) {
   const devices = await getDevicesForHaConnection(haConnectionId);
@@ -59,12 +78,22 @@ export async function captureBoilerTempSnapshotForAllConnections(now = new Date(
   let totalDevices = 0;
   let boilerCount = 0;
   let insertedCount = 0;
+  const failures: ConnectionSnapshotFailure[] = [];
 
   for (const { id } of connections) {
-    const summary = await captureBoilerTempSnapshotForConnection(id, now);
-    totalDevices += summary.totalDevices;
-    boilerCount += summary.boilerCount;
-    insertedCount += summary.insertedCount;
+    try {
+      const summary = await captureBoilerTempSnapshotForConnection(id, now);
+      totalDevices += summary.totalDevices;
+      boilerCount += summary.boilerCount;
+      insertedCount += summary.insertedCount;
+    } catch (err) {
+      const message = normalizeErrorMessage(err);
+      failures.push({ haConnectionId: id, error: message });
+      console.error('[boilerMonitoring] snapshot failed for connection', {
+        haConnectionId: id,
+        error: message,
+      });
+    }
   }
 
   return {
@@ -72,5 +101,7 @@ export async function captureBoilerTempSnapshotForAllConnections(now = new Date(
     totalDevices,
     boilerCount,
     insertedCount,
+    failedConnections: failures.length,
+    failures,
   };
 }
