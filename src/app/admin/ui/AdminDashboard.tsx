@@ -652,17 +652,6 @@ export default function AdminDashboard({ username }: Props) {
     () => Math.max(0, ...boilerHeatingSeriesByEntity.map((s) => s.points.length)),
     [boilerHeatingSeriesByEntity]
   );
-  const boilerMissingTargetSamples = useMemo(() => {
-    let total = 0;
-    let withTarget = 0;
-    for (const series of boilerTemperatureSeriesFiltered) {
-      for (const point of series.points) {
-        total += 1;
-        if (point.targetTemperature != null) withTarget += 1;
-      }
-    }
-    return Math.max(0, total - withTarget);
-  }, [boilerTemperatureSeriesFiltered]);
   const energyPointCount = useMemo(
     () => Math.max(0, ...energySeriesByArea.map((s) => s.points.length)),
     [energySeriesByArea]
@@ -1157,11 +1146,6 @@ export default function AdminDashboard({ username }: Props) {
               placeholder="All boiler entities"
             />
           </div>
-          {boilerMissingTargetSamples > 0 ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              No target temperature snapshots in part of this range. Missing samples: {boilerMissingTargetSamples}.
-            </div>
-          ) : null}
           <div
             className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm"
           >

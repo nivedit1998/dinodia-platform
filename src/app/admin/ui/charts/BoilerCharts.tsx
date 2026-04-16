@@ -9,6 +9,8 @@ import { timeHour } from 'd3-time';
 
 const chartPadding = { top: 24, right: 24, bottom: 34, left: 56 };
 const palette = ['#0ea5e9', '#34c759', '#ff9500', '#af52de', '#ff3b30', '#5ac8fa', '#5856d6', '#30d158'];
+const ORANGE_BAND = '#f97316';
+const BLUE_BAND = '#0ea5e9';
 
 type TemperaturePoint = {
   date: Date;
@@ -60,6 +62,77 @@ function findNearestDate(points: Array<{ date: Date }>, target: Date) {
   const b = bisector((d: { date: Date }) => d.date).center;
   const idx = b(points, target);
   return points[Math.max(0, Math.min(points.length - 1, idx))] ?? null;
+}
+
+function bandColor(delta: number) {
+  if (delta > 0) return ORANGE_BAND;
+  if (delta < 0) return BLUE_BAND;
+  return null;
+}
+
+function buildTemperatureBands(
+  points: TemperaturePoint[],
+  xForDate: (date: Date) => number,
+  yForTemp: (value: number) => number,
+  prefix: string
+) {
+  const bands: Array<{ id: string; points: string; color: string }> = [];
+
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (a.targetTemperature == null || b.targetTemperature == null) continue;
+
+    const deltaA = a.targetTemperature - a.currentTemperature;
+    const deltaB = b.targetTemperature - b.currentTemperature;
+
+    const x1 = xForDate(a.date);
+    const x2 = xForDate(b.date);
+    const yc1 = yForTemp(a.currentTemperature);
+    const yc2 = yForTemp(b.currentTemperature);
+    const yt1 = yForTemp(a.targetTemperature);
+    const yt2 = yForTemp(b.targetTemperature);
+
+    const sameDirection = deltaA === 0 || deltaB === 0 || Math.sign(deltaA) === Math.sign(deltaB);
+
+    if (sameDirection) {
+      const color = bandColor((deltaA + deltaB) / 2);
+      if (!color) continue;
+      bands.push({
+        id: `${prefix}-${a.date.toISOString()}-${b.date.toISOString()}-single`,
+        points: `${x1},${yc1} ${x1},${yt1} ${x2},${yt2} ${x2},${yc2}`,
+        color,
+      });
+      continue;
+    }
+
+    const ratioRaw = deltaA / (deltaA - deltaB);
+    const ratio = Math.max(0, Math.min(1, ratioRaw));
+    const xMid = x1 + (x2 - x1) * ratio;
+    const yCurrentMid = yc1 + (yc2 - yc1) * ratio;
+    const yTargetMid = yt1 + (yt2 - yt1) * ratio;
+    const yMid = (yCurrentMid + yTargetMid) / 2;
+
+    const colorA = bandColor(deltaA);
+    if (colorA) {
+      bands.push({
+        id: `${prefix}-${a.date.toISOString()}-${b.date.toISOString()}-a`,
+        points: `${x1},${yc1} ${x1},${yt1} ${xMid},${yMid}`,
+        color: colorA,
+      });
+    }
+
+    const colorB = bandColor(deltaB);
+    if (colorB) {
+      bands.push({
+        id: `${prefix}-${a.date.toISOString()}-${b.date.toISOString()}-b`,
+        points: `${xMid},${yMid} ${x2},${yt2} ${x2},${yc2}`,
+        color: colorB,
+      });
+    }
+  }
+
+  return bands;
 }
 
 export function BoilerTemperatureBandChart({
@@ -203,6 +276,7 @@ export function BoilerTemperatureBandChart({
 
             {preparedSeries.map((entry) => {
               const color = colorMap.get(entry.id) || palette[0];
+              const areaBands = buildTemperatureBands(entry.points, (date) => xScale(date), (value) => yScale(value), entry.id);
               const currentPath =
                 line<TemperaturePoint>()
                   .x((d) => xScale(d.date))
@@ -216,6 +290,9 @@ export function BoilerTemperatureBandChart({
                   .curve(curveMonotoneX)(entry.points) ?? '';
               return (
                 <g key={entry.id}>
+                  {areaBands.map((band) => (
+                    <polygon key={band.id} points={band.points} fill={band.color} fillOpacity={0.14} />
+                  ))}
                   <path d={currentPath} fill="none" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
                   <path d={targetPath} fill="none" stroke={color} strokeWidth={1.9} strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" opacity={0.72} />
                 </g>
