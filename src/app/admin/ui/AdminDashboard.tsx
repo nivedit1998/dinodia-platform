@@ -611,54 +611,22 @@ export default function AdminDashboard({ username }: Props) {
       .filter((series) => series.points.length > 0);
   }, [boilerHeatingSeriesAll, selectedAreas, selectedBoilerEntities, preset, from, to, rangeState.window]);
 
-  const boilerAggregateTemperaturePoints = useMemo(() => {
-    const buckets = new Map<
-      string,
-      {
-        date: Date;
-        label: string;
-        currentSum: number;
-        currentCount: number;
-        targetSum: number;
-        targetCount: number;
-      }
-    >();
-
-    for (const series of boilerTemperatureSeriesFiltered) {
-      for (const point of series.points) {
-        const date = new Date(point.bucketStart);
-        if (Number.isNaN(date.getTime())) continue;
-        const key = point.bucketStart;
-        const existing = buckets.get(key);
-        if (!existing) {
-          buckets.set(key, {
-            date,
-            label: point.label,
-            currentSum: point.currentTemperature,
-            currentCount: 1,
-            targetSum: point.targetTemperature ?? 0,
-            targetCount: point.targetTemperature == null ? 0 : 1,
-          });
-        } else {
-          existing.currentSum += point.currentTemperature;
-          existing.currentCount += 1;
-          if (point.targetTemperature != null) {
-            existing.targetSum += point.targetTemperature;
-            existing.targetCount += 1;
-          }
-        }
-      }
-    }
-
-    return Array.from(buckets.values())
-      .sort((a, b) => a.date.getTime() - b.date.getTime())
-      .map((bucket) => ({
-        date: bucket.date,
-        label: bucket.label,
-        currentTemperature: bucket.currentCount > 0 ? bucket.currentSum / bucket.currentCount : 0,
-        targetTemperature: bucket.targetCount > 0 ? bucket.targetSum / bucket.targetCount : null,
-      }));
-  }, [boilerTemperatureSeriesFiltered]);
+  const boilerTemperatureSeriesByEntity = useMemo(
+    () =>
+      boilerTemperatureSeriesFiltered.map((series) => ({
+        id: series.entityId,
+        label: series.name || series.entityId,
+        hint: `${series.entityId} • ${series.area}`,
+        color: stableColorById(series.entityId),
+        points: series.points.map((point) => ({
+          date: new Date(point.bucketStart),
+          label: point.label,
+          currentTemperature: point.currentTemperature,
+          targetTemperature: point.targetTemperature,
+        })),
+      })),
+    [boilerTemperatureSeriesFiltered]
+  );
 
   const boilerHeatingSeriesByEntity: HeatingStateSeries[] = useMemo(
     () =>
@@ -677,8 +645,8 @@ export default function AdminDashboard({ username }: Props) {
   );
 
   const boilerTemperaturePointCount = useMemo(
-    () => boilerAggregateTemperaturePoints.length,
-    [boilerAggregateTemperaturePoints]
+    () => Math.max(0, ...boilerTemperatureSeriesByEntity.map((s) => s.points.length)),
+    [boilerTemperatureSeriesByEntity]
   );
   const boilerStatePointCount = useMemo(
     () => Math.max(0, ...boilerHeatingSeriesByEntity.map((s) => s.points.length)),
@@ -695,22 +663,6 @@ export default function AdminDashboard({ username }: Props) {
     }
     return Math.max(0, total - withTarget);
   }, [boilerTemperatureSeriesFiltered]);
-  const boilerLegacySeriesByEntity: MultiSeriesTrend[] = useMemo(
-    () =>
-      boilerTemperatureSeriesFiltered.map((series) => ({
-        id: series.entityId,
-        label: series.name || series.entityId,
-        hint: `${series.entityId} • ${series.area}`,
-        color: stableColorById(series.entityId),
-        points: series.points.map((p) => ({
-          date: new Date(p.bucketStart),
-          label: p.label,
-          value: p.currentTemperature,
-        })),
-      })),
-    [boilerTemperatureSeriesFiltered]
-  );
-
   const energyPointCount = useMemo(
     () => Math.max(0, ...energySeriesByArea.map((s) => s.points.length)),
     [energySeriesByArea]
@@ -1225,15 +1177,15 @@ export default function AdminDashboard({ username }: Props) {
                 <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
                   Loading boiler trend…
                 </div>
-              ) : boilerAggregateTemperaturePoints.length === 0 ? (
+              ) : boilerTemperatureSeriesByEntity.length === 0 ? (
                 <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
                   No boiler readings in this window.
                 </div>
               ) : (
                 <BoilerTemperatureBandChart
                   id="boiler-temperature-band"
-                  title="Current vs target temperature"
-                  points={boilerAggregateTemperaturePoints}
+                  title="Current vs target temperature by entity"
+                  series={boilerTemperatureSeriesByEntity}
                   emptyLabel="No boiler readings in this window."
                   forcedWidth={Math.max(900, boilerTemperaturePointCount * 44)}
                 />
@@ -1271,22 +1223,6 @@ export default function AdminDashboard({ username }: Props) {
               )}
             </div>
           </div>
-          {boilerMissingTargetSamples > 0 ? (
-            <div className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
-              <div className="min-w-[900px]" style={{ minWidth: `${Math.max(900, boilerTemperaturePointCount * 32)}px` }}>
-                <MultiLineChart
-                  id="boiler-current-fallback"
-                  title="Current temperature only (for legacy rows without target)"
-                  series={boilerLegacySeriesByEntity}
-                  valueUnit="°C"
-                  emptyLabel="No boiler readings in this window."
-                  formatValue={(v) => v.toFixed(1)}
-                  forcedWidth={Math.max(900, boilerTemperaturePointCount * 32)}
-                  xTickIntervalHours={2}
-                />
-              </div>
-            </div>
-          ) : null}
           <p className="text-xs text-slate-500">
             2-hour snapshots. Heating ON when target is above current; OFF when target is below or equal to current.
           </p>

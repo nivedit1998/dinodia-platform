@@ -9,15 +9,20 @@ import { timeHour } from 'd3-time';
 
 const chartPadding = { top: 24, right: 24, bottom: 34, left: 56 };
 const palette = ['#0ea5e9', '#34c759', '#ff9500', '#af52de', '#ff3b30', '#5ac8fa', '#5856d6', '#30d158'];
-const ORANGE_BAND = '#f97316';
-const BLUE_BAND = '#0ea5e9';
-const NEUTRAL_BAND = '#94a3b8';
 
 type TemperaturePoint = {
   date: Date;
   label: string;
   currentTemperature: number;
   targetTemperature: number | null;
+};
+
+type BoilerTemperatureSeries = {
+  id: string;
+  label: string;
+  hint?: string;
+  color?: string;
+  points: TemperaturePoint[];
 };
 
 type HeatingStatePoint = {
@@ -57,24 +62,17 @@ function findNearestDate(points: Array<{ date: Date }>, target: Date) {
   return points[Math.max(0, Math.min(points.length - 1, idx))] ?? null;
 }
 
-function bandColor(deltaA: number, deltaB: number) {
-  const avg = (deltaA + deltaB) / 2;
-  if (avg > 0) return ORANGE_BAND;
-  if (avg < 0) return BLUE_BAND;
-  return NEUTRAL_BAND;
-}
-
 export function BoilerTemperatureBandChart({
   id,
   title,
-  points,
+  series,
   height = 340,
   forcedWidth,
   emptyLabel,
 }: {
   id: string;
   title: string;
-  points: TemperaturePoint[];
+  series: BoilerTemperatureSeries[];
   height?: number;
   forcedWidth?: number;
   emptyLabel?: string;
@@ -93,16 +91,31 @@ export function BoilerTemperatureBandChart({
     return () => observer.disconnect();
   }, [forcedWidth]);
 
-  const prepared = useMemo(
+  const preparedSeries = useMemo(
     () =>
-      points
-        .filter((p) => Number.isFinite(p.currentTemperature) && !Number.isNaN(p.currentTemperature))
-        .sort((a, b) => a.date.getTime() - b.date.getTime()),
-    [points]
+      series
+        .map((entry) => ({
+          ...entry,
+          points: entry.points
+            .filter((p) => Number.isFinite(p.currentTemperature) && !Number.isNaN(p.currentTemperature))
+            .sort((a, b) => a.date.getTime() - b.date.getTime()),
+        }))
+        .filter((entry) => entry.points.length > 0)
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [series]
   );
 
-  const xDomain = extent(prepared, (d) => d.date);
-  const yValues = prepared.flatMap((point) =>
+  const allPoints = useMemo(() => preparedSeries.flatMap((entry) => entry.points), [preparedSeries]);
+  const allDates = useMemo(() => {
+    const values = new Set<number>();
+    for (const point of allPoints) values.add(point.date.getTime());
+    return Array.from(values)
+      .sort((a, b) => a - b)
+      .map((ms) => new Date(ms));
+  }, [allPoints]);
+
+  const xDomain = extent(allPoints, (d) => d.date);
+  const yValues = allPoints.flatMap((point) =>
     point.targetTemperature == null ? [point.currentTemperature] : [point.currentTemperature, point.targetTemperature]
   );
   const yMinRaw = yValues.length > 0 ? Math.min(...yValues) : 0;
@@ -117,89 +130,36 @@ export function BoilerTemperatureBandChart({
   const xScale = scaleTime().domain((xDomain as [Date, Date]) || [new Date(), new Date()]).range([0, innerWidth]);
   const yScale = scaleLinear().domain(yDomain).range([innerHeight, 0]);
 
-  const currentPath =
-    prepared.length > 0
-      ? line<TemperaturePoint>()
-          .x((d) => xScale(d.date))
-          .y((d) => yScale(d.currentTemperature))
-          .curve(curveMonotoneX)(prepared)
-      : null;
+  const colorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    preparedSeries.forEach((entry, idx) => {
+      map.set(entry.id, entry.color || palette[idx % palette.length]);
+    });
+    return map;
+  }, [preparedSeries]);
 
-  const targetPath =
-    prepared.length > 0
-      ? line<TemperaturePoint>()
-          .defined((d) => d.targetTemperature != null && Number.isFinite(d.targetTemperature))
-          .x((d) => xScale(d.date))
-          .y((d) => yScale(d.targetTemperature ?? d.currentTemperature))
-          .curve(curveMonotoneX)(prepared)
-      : null;
-
-  const areaBands = useMemo(() => {
-    const bands: Array<{ id: string; points: string; color: string }> = [];
-
-    for (let i = 0; i < prepared.length - 1; i += 1) {
-      const a = prepared[i];
-      const b = prepared[i + 1];
-      if (a.targetTemperature == null || b.targetTemperature == null) continue;
-
-      const deltaA = a.targetTemperature - a.currentTemperature;
-      const deltaB = b.targetTemperature - b.currentTemperature;
-
-      const x1 = xScale(a.date);
-      const x2 = xScale(b.date);
-      const yc1 = yScale(a.currentTemperature);
-      const yc2 = yScale(b.currentTemperature);
-      const yt1 = yScale(a.targetTemperature);
-      const yt2 = yScale(b.targetTemperature);
-
-      const sameDirection = deltaA === 0 || deltaB === 0 || Math.sign(deltaA) === Math.sign(deltaB);
-
-      if (sameDirection) {
-        bands.push({
-          id: `${a.date.toISOString()}-${b.date.toISOString()}-single`,
-          points: `${x1},${yc1} ${x1},${yt1} ${x2},${yt2} ${x2},${yc2}`,
-          color: bandColor(deltaA, deltaB),
-        });
-        continue;
-      }
-
-      const ratioRaw = deltaA / (deltaA - deltaB);
-      const ratio = Math.max(0, Math.min(1, ratioRaw));
-      const xMid = x1 + (x2 - x1) * ratio;
-      const yCurrentMid = yc1 + (yc2 - yc1) * ratio;
-      const yTargetMid = yt1 + (yt2 - yt1) * ratio;
-      const yMid = (yCurrentMid + yTargetMid) / 2;
-
-      bands.push({
-        id: `${a.date.toISOString()}-${b.date.toISOString()}-a`,
-        points: `${x1},${yc1} ${x1},${yt1} ${xMid},${yMid}`,
-        color: bandColor(deltaA, 0),
-      });
-
-      bands.push({
-        id: `${a.date.toISOString()}-${b.date.toISOString()}-b`,
-        points: `${xMid},${yMid} ${x2},${yt2} ${x2},${yc2}`,
-        color: bandColor(0, deltaB),
-      });
-    }
-
-    return bands;
-  }, [prepared, xScale, yScale]);
-
-  const hoverAnchor = useMemo(() => {
-    if (!hoverDate) return null;
-    return findNearestDate(prepared, hoverDate) as TemperaturePoint | null;
-  }, [hoverDate, prepared]);
+  const activeRows = useMemo(() => {
+    if (!hoverDate) return [];
+    return preparedSeries.map((entry) => {
+      const nearest = findNearestDate(entry.points, hoverDate) as TemperaturePoint | null;
+      return {
+        id: entry.id,
+        label: entry.label,
+        color: colorMap.get(entry.id) || palette[0],
+        point: nearest,
+      };
+    });
+  }, [hoverDate, preparedSeries, colorMap]);
 
   const ticksX = (timeHour.every(2) ? xScale.ticks(timeHour.every(2)!) : xScale.ticks(6)).slice(-12);
   const ticksY = yScale.ticks(4);
 
   const handlePointer = (evt: PointerEvent<SVGRectElement>) => {
-    if (!prepared.length) return;
+    if (!allDates.length) return;
     const rect = evt.currentTarget.getBoundingClientRect();
     const x = evt.clientX - rect.left;
     const dateAtCursor = xScale.invert(Math.max(0, Math.min(innerWidth, x)));
-    const nearest = findNearestDate(prepared, dateAtCursor);
+    const nearest = findNearestDate(allDates.map((date) => ({ date })), dateAtCursor);
     if (nearest) setHoverDate(nearest.date);
   };
 
@@ -209,20 +169,21 @@ export function BoilerTemperatureBandChart({
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{title}</p>
           <p className="text-lg font-semibold text-slate-900">
-            {hoverAnchor ? formatDateTime(hoverAnchor.date) : prepared[prepared.length - 1] ? formatDateTime(prepared[prepared.length - 1].date) : ''}
+            {hoverDate ? formatDateTime(hoverDate) : allDates[allDates.length - 1] ? formatDateTime(allDates[allDates.length - 1]) : ''}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-1 text-orange-700">
-            <span className="h-2 w-2 rounded-full bg-orange-500" /> Target above current
-          </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-1 text-sky-700">
-            <span className="h-2 w-2 rounded-full bg-sky-500" /> Target below current
-          </span>
+        <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+          {preparedSeries.slice(0, 6).map((entry) => (
+            <span key={entry.id} className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-1">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: colorMap.get(entry.id) }} />
+              {entry.label}
+            </span>
+          ))}
+          {preparedSeries.length > 6 && <span className="rounded-full bg-slate-100 px-2 py-1">+{preparedSeries.length - 6} more</span>}
         </div>
       </div>
 
-      {!prepared.length ? (
+      {!preparedSeries.length ? (
         <ChartEmpty label={emptyLabel} />
       ) : (
         <svg width={measuredWidth} height={height} className="overflow-visible">
@@ -240,82 +201,57 @@ export function BoilerTemperatureBandChart({
               />
             ))}
 
-            {areaBands.map((band) => (
-              <polygon key={band.id} points={band.points} fill={band.color} fillOpacity={0.22} />
-            ))}
+            {preparedSeries.map((entry) => {
+              const color = colorMap.get(entry.id) || palette[0];
+              const currentPath =
+                line<TemperaturePoint>()
+                  .x((d) => xScale(d.date))
+                  .y((d) => yScale(d.currentTemperature))
+                  .curve(curveMonotoneX)(entry.points) ?? '';
+              const targetPath =
+                line<TemperaturePoint>()
+                  .defined((d) => d.targetTemperature != null && Number.isFinite(d.targetTemperature))
+                  .x((d) => xScale(d.date))
+                  .y((d) => yScale(d.targetTemperature ?? d.currentTemperature))
+                  .curve(curveMonotoneX)(entry.points) ?? '';
+              return (
+                <g key={entry.id}>
+                  <path d={currentPath} fill="none" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+                  <path d={targetPath} fill="none" stroke={color} strokeWidth={1.9} strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" opacity={0.72} />
+                </g>
+              );
+            })}
 
-            {targetPath && (
-              <path
-                d={targetPath}
-                fill="none"
-                stroke="#0f172a"
-                strokeWidth={2}
-                strokeDasharray="6 4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity={0.8}
-              />
-            )}
-
-            {currentPath && (
-              <path
-                d={currentPath}
-                fill="none"
-                stroke="#334155"
-                strokeWidth={2.6}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            )}
-
-            {hoverAnchor && (
+            {hoverDate && (
               <>
                 <line
-                  x1={xScale(hoverAnchor.date)}
-                  x2={xScale(hoverAnchor.date)}
+                  x1={xScale(hoverDate)}
+                  x2={xScale(hoverDate)}
                   y1={0}
                   y2={innerHeight}
                   stroke="#94a3b8"
                   strokeDasharray="3 3"
                   strokeOpacity={0.55}
                 />
-                <circle
-                  cx={xScale(hoverAnchor.date)}
-                  cy={yScale(hoverAnchor.currentTemperature)}
-                  r={5}
-                  fill="white"
-                  stroke="#334155"
-                  strokeWidth={2}
-                />
-                {hoverAnchor.targetTemperature != null && (
-                  <circle
-                    cx={xScale(hoverAnchor.date)}
-                    cy={yScale(hoverAnchor.targetTemperature)}
-                    r={5}
-                    fill="white"
-                    stroke="#0f172a"
-                    strokeWidth={2}
-                  />
-                )}
                 <foreignObject
-                  x={Math.max(0, xScale(hoverAnchor.date) - 95)}
+                  x={Math.max(0, xScale(hoverDate) - 140)}
                   y={6}
-                  width={210}
-                  height={90}
+                  width={300}
+                  height={Math.min(320, 40 + activeRows.length * 24)}
                 >
                   <div className="rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-[11px] text-slate-700 shadow-sm">
-                    <div className="font-semibold text-slate-900">Current: {formatTemp(hoverAnchor.currentTemperature)}</div>
-                    <div>
-                      Target:{' '}
-                      {hoverAnchor.targetTemperature == null ? 'Unknown' : formatTemp(hoverAnchor.targetTemperature)}
-                    </div>
-                    <div className="text-slate-500">
-                      {hoverAnchor.targetTemperature == null
-                        ? 'Heating state unknown'
-                        : hoverAnchor.targetTemperature > hoverAnchor.currentTemperature
-                        ? 'Heating ON'
-                        : 'Heating OFF'}
-                    </div>
+                    {activeRows.map((row) => (
+                      <div key={row.id} className="flex items-center justify-between gap-3 py-1">
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: row.color }} />
+                          <span className="truncate">{row.label}</span>
+                        </span>
+                        <span className="font-semibold text-slate-900">
+                          C: {row.point ? formatTemp(row.point.currentTemperature) : '—'} · T:{' '}
+                          {row.point?.targetTemperature == null ? 'Unknown' : formatTemp(row.point.targetTemperature)}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </foreignObject>
               </>
