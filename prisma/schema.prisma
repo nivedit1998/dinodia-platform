@@ -350,6 +350,8 @@ model BoilerTemperatureReading {
   haConnectionId Int
   entityId       String
   numericValue   Float
+  currentTemperature Float
+  targetTemperature  Float?
   unit           String       @default("°C")
   capturedAt     DateTime     @default(now())
 

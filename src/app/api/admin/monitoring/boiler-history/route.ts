@@ -45,6 +45,25 @@ function bucket2hUtc(date: Date) {
 
 const prettyEntityId = (id: string) => id.replace(/^[^.]+\./i, '').replace(/_/g, ' ');
 
+type ValueBucket = {
+  bucketStart: Date;
+  label: string;
+  sum: number;
+  count: number;
+};
+
+type TemperatureBucket = {
+  bucketStart: Date;
+  label: string;
+  currentSum: number;
+  currentCount: number;
+  targetSum: number;
+  targetCount: number;
+};
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
 export async function GET(req: NextRequest) {
   const me = await getCurrentUserFromRequest(req);
   if (!me || me.role !== Role.ADMIN) {
@@ -76,7 +95,15 @@ export async function GET(req: NextRequest) {
   const areasFilter = new Set(parseMulti(searchParams, 'areas'));
 
   if (!groupByArea && selectedEntityIds.length === 0) {
-    return NextResponse.json({ ok: true, unit: '°C', points: [], seriesByArea: [], seriesByEntity: [] });
+    return NextResponse.json({
+      ok: true,
+      unit: '°C',
+      points: [],
+      seriesByArea: [],
+      seriesByEntity: [],
+      seriesTemperatureByEntity: [],
+      seriesHeatingStateByEntity: [],
+    });
   }
 
   let from = startOfDayUtc(new Date(Date.now() - (days - 1) * MS_PER_DAY));
@@ -153,7 +180,15 @@ export async function GET(req: NextRequest) {
     queryEntityIds = (queryEntityIds ?? allKnownEntityIds).filter((id) => matchesArea(resolveArea(id)));
   }
   if (queryEntityIds && queryEntityIds.length === 0) {
-    return NextResponse.json({ ok: true, unit: '°C', points: [], seriesByArea: [], seriesByEntity: [] });
+    return NextResponse.json({
+      ok: true,
+      unit: '°C',
+      points: [],
+      seriesByArea: [],
+      seriesByEntity: [],
+      seriesTemperatureByEntity: [],
+      seriesHeatingStateByEntity: [],
+    });
   }
 
   const readings = await prisma.boilerTemperatureReading.findMany({
@@ -163,17 +198,33 @@ export async function GET(req: NextRequest) {
       capturedAt: { gte: from, lte: to },
     },
     orderBy: { capturedAt: 'asc' },
-    select: { entityId: true, numericValue: true, capturedAt: true },
+    select: {
+      entityId: true,
+      numericValue: true,
+      currentTemperature: true,
+      targetTemperature: true,
+      capturedAt: true,
+    },
   });
 
-  const areaBuckets = new Map<string, Map<string, { bucketStart: Date; label: string; sum: number; count: number }>>();
-  const entityBuckets = new Map<string, Map<string, { bucketStart: Date; label: string; sum: number; count: number }>>();
-  const totalBuckets = new Map<string, { bucketStart: Date; label: string; sum: number; count: number }>();
+  const areaBuckets = new Map<string, Map<string, ValueBucket>>();
+  const entityBuckets = new Map<string, Map<string, ValueBucket>>();
+  const entityTemperatureBuckets = new Map<string, Map<string, TemperatureBucket>>();
+  const totalBuckets = new Map<string, ValueBucket>();
+
   for (const reading of readings) {
     const area = resolveArea(reading.entityId);
     if (!matchesArea(area)) continue;
     if (hasEntityFilter && !selectedEntitySet.has(reading.entityId)) continue;
 
+    const currentValue = isFiniteNumber(reading.currentTemperature)
+      ? reading.currentTemperature
+      : isFiniteNumber(reading.numericValue)
+      ? reading.numericValue
+      : null;
+    if (currentValue == null) continue;
+
+    const targetValue = isFiniteNumber(reading.targetTemperature) ? reading.targetTemperature : null;
     const info = bucket2hUtc(reading.capturedAt);
 
     const perArea = areaBuckets.get(area!) ?? new Map();
@@ -182,11 +233,11 @@ export async function GET(req: NextRequest) {
       perArea.set(info.key, {
         bucketStart: info.bucketStart,
         label: info.label,
-        sum: reading.numericValue,
+        sum: currentValue,
         count: 1,
       });
     } else {
-      areaExisting.sum += reading.numericValue;
+      areaExisting.sum += currentValue;
       areaExisting.count += 1;
     }
     if (!areaBuckets.has(area!)) areaBuckets.set(area!, perArea);
@@ -197,25 +248,46 @@ export async function GET(req: NextRequest) {
       perEntity.set(info.key, {
         bucketStart: info.bucketStart,
         label: info.label,
-        sum: reading.numericValue,
+        sum: currentValue,
         count: 1,
       });
     } else {
-      entityExisting.sum += reading.numericValue;
+      entityExisting.sum += currentValue;
       entityExisting.count += 1;
     }
     if (!entityBuckets.has(reading.entityId)) entityBuckets.set(reading.entityId, perEntity);
+
+    const perEntityTemp = entityTemperatureBuckets.get(reading.entityId) ?? new Map();
+    const tempExisting = perEntityTemp.get(info.key);
+    if (!tempExisting) {
+      perEntityTemp.set(info.key, {
+        bucketStart: info.bucketStart,
+        label: info.label,
+        currentSum: currentValue,
+        currentCount: 1,
+        targetSum: targetValue ?? 0,
+        targetCount: targetValue == null ? 0 : 1,
+      });
+    } else {
+      tempExisting.currentSum += currentValue;
+      tempExisting.currentCount += 1;
+      if (targetValue != null) {
+        tempExisting.targetSum += targetValue;
+        tempExisting.targetCount += 1;
+      }
+    }
+    if (!entityTemperatureBuckets.has(reading.entityId)) entityTemperatureBuckets.set(reading.entityId, perEntityTemp);
 
     const totalExisting = totalBuckets.get(info.key);
     if (!totalExisting) {
       totalBuckets.set(info.key, {
         bucketStart: info.bucketStart,
         label: info.label,
-        sum: reading.numericValue,
+        sum: currentValue,
         count: 1,
       });
     } else {
-      totalExisting.sum += reading.numericValue;
+      totalExisting.sum += currentValue;
       totalExisting.count += 1;
     }
   }
@@ -253,6 +325,43 @@ export async function GET(req: NextRequest) {
       return a.entityId.localeCompare(b.entityId);
     });
 
+  const seriesTemperatureByEntity = Array.from(entityTemperatureBuckets.entries())
+    .map(([entityId, buckets]) => ({
+      entityId,
+      name: resolveName(entityId),
+      area: resolveArea(entityId) || UNASSIGNED,
+      points: Array.from(buckets.values())
+        .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
+        .map((b) => ({
+          bucketStart: b.bucketStart.toISOString(),
+          label: b.label,
+          currentTemperature: b.currentCount > 0 ? b.currentSum / b.currentCount : 0,
+          targetTemperature: b.targetCount > 0 ? b.targetSum / b.targetCount : null,
+        })),
+    }))
+    .filter((series) => isAssignedArea(series.area))
+    .sort((a, b) => {
+      const byName = a.name.localeCompare(b.name);
+      if (byName !== 0) return byName;
+      return a.entityId.localeCompare(b.entityId);
+    });
+
+  const seriesHeatingStateByEntity = seriesTemperatureByEntity.map((series) => ({
+    entityId: series.entityId,
+    name: series.name,
+    area: series.area,
+    points: series.points.map((point) => ({
+      bucketStart: point.bucketStart,
+      label: point.label,
+      state:
+        point.targetTemperature == null
+          ? null
+          : point.targetTemperature > point.currentTemperature
+          ? 1
+          : 0,
+    })),
+  }));
+
   const points = Array.from(totalBuckets.values())
     .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
     .map((b) => ({
@@ -261,9 +370,13 @@ export async function GET(req: NextRequest) {
       value: b.count > 0 ? b.sum / b.count : 0,
     }));
 
-  if (groupByArea) {
-    return NextResponse.json({ ok: true, unit: '°C', points: [], seriesByArea, seriesByEntity });
-  }
-
-  return NextResponse.json({ ok: true, unit: '°C', points, seriesByArea, seriesByEntity });
+  return NextResponse.json({
+    ok: true,
+    unit: '°C',
+    points: groupByArea ? [] : points,
+    seriesByArea,
+    seriesByEntity,
+    seriesTemperatureByEntity,
+    seriesHeatingStateByEntity,
+  });
 }

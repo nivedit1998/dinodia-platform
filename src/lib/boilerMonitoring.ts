@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { getGroupLabel } from '@/lib/deviceLabels';
-import { getCurrentTemperature } from '@/lib/deviceCapabilities';
+import { getCurrentTemperature, getTargetTemperature } from '@/lib/deviceCapabilities';
 
 const BOILER_LABEL = 'Boiler';
 const MIN_INTERVAL_MS = 2 * 60 * 60 * 1000;
@@ -34,10 +34,13 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
       const attrs = d.attributes ?? {};
       const current = getCurrentTemperature(attrs);
       if (typeof current !== 'number' || !Number.isFinite(current)) return null;
+      const target = getTargetTemperature(attrs);
       return {
         haConnectionId,
         entityId: d.entityId,
         numericValue: current,
+        currentTemperature: current,
+        targetTemperature: typeof target === 'number' && Number.isFinite(target) ? target : null,
         unit: '°C',
         capturedAt: now,
       };
