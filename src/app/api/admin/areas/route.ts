@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getUserWithHaConnection } from '@/lib/haConnection';
+import { listHaAreaNames } from '@/lib/haAreas';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(req: NextRequest) {
@@ -15,10 +16,13 @@ export async function GET(req: NextRequest) {
 
   let homeId: number;
   let haConnectionId: number;
+  let haConnection: Awaited<ReturnType<typeof getUserWithHaConnection>>['haConnection'];
   try {
-    const { user, haConnection } = await getUserWithHaConnection(me.id);
+    const resolved = await getUserWithHaConnection(me.id);
+    const { user } = resolved;
     homeId = user.homeId!;
-    haConnectionId = haConnection.id;
+    haConnection = resolved.haConnection;
+    haConnectionId = resolved.haConnection.id;
   } catch (err) {
     return NextResponse.json(
       { error: (err as Error).message || 'Dinodia Hub connection is missing for this home.' },
@@ -36,14 +40,25 @@ export async function GET(req: NextRequest) {
     select: { area: true },
   });
 
-  const areas = new Set<string>();
-  [...accessAreas, ...deviceAreas].forEach((entry) => {
-    const val = (entry.area ?? '').trim();
-    if (val) areas.add(val);
-  });
+  let haAreas: string[] = [];
+  try {
+    haAreas = await listHaAreaNames(haConnection);
+  } catch (err) {
+    console.warn('[api/admin/areas] failed to fetch HA area registry list; returning DB-derived areas only', err);
+  }
+
+  const merged = new Map<string, string>();
+  const addArea = (value: string | null | undefined) => {
+    const normalized = (value ?? '').trim();
+    if (!normalized) return;
+    const key = normalized.toLowerCase();
+    if (!merged.has(key)) merged.set(key, normalized);
+  };
+  [...accessAreas, ...deviceAreas].forEach((entry) => addArea(entry.area));
+  haAreas.forEach((name) => addArea(name));
 
   return NextResponse.json({
     ok: true,
-    areas: Array.from(areas).sort((a, b) => a.localeCompare(b)),
+    areas: Array.from(merged.values()).sort((a, b) => a.localeCompare(b)),
   });
 }
