@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
 import { getCurrentUserFromRequest } from '@/lib/auth';
-import { getUserWithHaConnection } from '@/lib/haConnection';
+import { getUserWithHaConnection, resolveHaCloudFirst } from '@/lib/haConnection';
+import type { HaConnectionLike } from '@/lib/homeAssistant';
 import { listHaAreaNames } from '@/lib/haAreas';
 import { prisma } from '@/lib/prisma';
 
@@ -40,13 +41,6 @@ export async function GET(req: NextRequest) {
     select: { area: true },
   });
 
-  let haAreas: string[] = [];
-  try {
-    haAreas = await listHaAreaNames(haConnection);
-  } catch (err) {
-    console.warn('[api/admin/areas] failed to fetch HA area registry list; returning DB-derived areas only', err);
-  }
-
   const merged = new Map<string, string>();
   const addArea = (value: string | null | undefined) => {
     const normalized = (value ?? '').trim();
@@ -55,7 +49,36 @@ export async function GET(req: NextRequest) {
     if (!merged.has(key)) merged.set(key, normalized);
   };
   [...accessAreas, ...deviceAreas].forEach((entry) => addArea(entry.area));
-  haAreas.forEach((name) => addArea(name));
+
+  const candidates: HaConnectionLike[] = [];
+  const seenBaseUrls = new Set<string>();
+  const addCandidate = (candidate: HaConnectionLike) => {
+    const key = candidate.baseUrl.trim().replace(/\/+$/, '').toLowerCase();
+    if (!key || seenBaseUrls.has(key)) return;
+    seenBaseUrls.add(key);
+    candidates.push({
+      baseUrl: candidate.baseUrl.trim(),
+      longLivedToken: candidate.longLivedToken,
+    });
+  };
+
+  addCandidate(resolveHaCloudFirst(haConnection));
+  addCandidate({
+    baseUrl: haConnection.baseUrl,
+    longLivedToken: haConnection.longLivedToken,
+  });
+
+  for (const candidate of candidates) {
+    try {
+      const names = await listHaAreaNames(candidate);
+      names.forEach((name) => addArea(name));
+    } catch (err) {
+      console.warn('[api/admin/areas] failed to fetch HA area registry list for candidate', {
+        baseUrl: candidate.baseUrl,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   return NextResponse.json({
     ok: true,
