@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
-import { authenticateWithCredentials, createKioskToken, hashPassword } from '@/lib/auth';
+import { authenticateWithCredentialsDetailed, createKioskToken, hashPassword } from '@/lib/auth';
+import { AUTH_ERROR_CODES, type AuthErrorCode } from '@/lib/authErrorCodes';
 import { prisma } from '@/lib/prisma';
 import {
   createAuthChallenge,
@@ -20,6 +21,10 @@ const APPLE_REVIEW_DEMO_BYPASS_ENABLED =
   (process.env.APPLE_REVIEW_DEMO_BYPASS_ENABLED || '').toLowerCase() === 'true';
 const APPLE_REVIEW_DEMO_USERNAME = (process.env.APPLE_REVIEW_DEMO_USERNAME || '').toLowerCase();
 
+function fail(status: number, errorCode: AuthErrorCode, error: string) {
+  return NextResponse.json({ ok: false, errorCode, error }, { status });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const {
@@ -33,9 +38,10 @@ export async function POST(req: NextRequest) {
     } = await req.json();
 
     if (!username || !password) {
-      return NextResponse.json(
-        { error: 'Please enter both a username and password.' },
-        { status: 400 }
+      return fail(
+        400,
+        AUTH_ERROR_CODES.INVALID_LOGIN_INPUT,
+        'Please enter both a username and password.'
       );
     }
 
@@ -50,20 +56,26 @@ export async function POST(req: NextRequest) {
       const rateKey = `mobile-login:${ip}:${normalizedUsername}`;
       const allowed = await checkRateLimit(rateKey, { maxRequests: 12, windowMs: 60_000 });
       if (!allowed) {
-        return NextResponse.json(
-          { error: 'Too many login attempts. Please wait a moment and try again.' },
-          { status: 429 }
+        return fail(
+          429,
+          AUTH_ERROR_CODES.RATE_LIMITED,
+          'Too many login attempts. Please wait a moment and try again.'
         );
       }
     }
 
-    const authUser = await authenticateWithCredentials(username, password);
-    if (!authUser) {
-      return NextResponse.json(
-        { error: 'Those details don’t match any Dinodia account.' },
-        { status: 401 }
-      );
+    const authResult = await authenticateWithCredentialsDetailed(normalizedUsername, password);
+    if (!authResult.ok) {
+      if (authResult.reason === 'USERNAME_NOT_FOUND') {
+        return fail(
+          401,
+          AUTH_ERROR_CODES.USERNAME_NOT_FOUND,
+          'This username doesn’t exist. Ask your homeowner to create it first.'
+        );
+      }
+      return fail(401, AUTH_ERROR_CODES.INVALID_PASSWORD, 'That password is incorrect. Please try again.');
     }
+    const authUser = authResult.user;
 
     const user = await prisma.user.findUnique({
       where: { id: authUser.id },
@@ -89,10 +101,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { error: 'We could not find your account. Please try again.' },
-        { status: 404 }
-      );
+      return fail(404, AUTH_ERROR_CODES.INTERNAL_ERROR, 'We could not find your account. Please try again.');
     }
 
     const sessionUser = {
@@ -131,10 +140,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!deviceId) {
-      return NextResponse.json(
-        { error: 'Device information is required to continue.' },
-        { status: 400 }
-      );
+      return fail(400, AUTH_ERROR_CODES.DEVICE_REQUIRED, 'Device information is required to continue.');
     }
 
     if (user.role === Role.TENANT && user.mustChangePassword) {
@@ -147,18 +153,16 @@ export async function POST(req: NextRequest) {
         });
       }
       if (newPassword !== confirmNewPassword) {
-        return NextResponse.json({ error: 'New passwords do not match.' }, { status: 400 });
+        return fail(400, AUTH_ERROR_CODES.INVALID_LOGIN_INPUT, 'New passwords do not match.');
       }
       if (newPassword.length < 8) {
-        return NextResponse.json(
-          { error: 'Password must be at least 8 characters.' },
-          { status: 400 }
-        );
+        return fail(400, AUTH_ERROR_CODES.INVALID_LOGIN_INPUT, 'Password must be at least 8 characters.');
       }
       if (newPassword === password) {
-        return NextResponse.json(
-          { error: 'New password must be different from the current password.' },
-          { status: 400 }
+        return fail(
+          400,
+          AUTH_ERROR_CODES.INVALID_LOGIN_INPUT,
+          'New password must be different from the current password.'
         );
       }
 
@@ -175,7 +179,7 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       const message =
         err instanceof DeviceBlockedError ? err.message : 'This device is blocked. Please contact support.';
-      return NextResponse.json({ error: message }, { status: 403 });
+      return fail(403, AUTH_ERROR_CODES.DEVICE_REQUIRED, message);
     }
 
     if (user.role === Role.ADMIN) {
@@ -192,10 +196,7 @@ export async function POST(req: NextRequest) {
             });
           }
           if (!EMAIL_REGEX.test(email)) {
-            return NextResponse.json(
-              { error: 'Please enter a valid email address.' },
-              { status: 400 }
-            );
+            return fail(400, AUTH_ERROR_CODES.EMAIL_INVALID, 'Please enter a valid email address.');
           }
           targetEmail = email;
           await prisma.user.update({
@@ -205,16 +206,18 @@ export async function POST(req: NextRequest) {
         }
 
         if (!targetEmail) {
-          return NextResponse.json(
-            { error: 'An email address is required for verification.' },
-            { status: 400 }
+          return fail(
+            400,
+            AUTH_ERROR_CODES.EMAIL_REQUIRED,
+            'An email address is required for verification.'
           );
         }
 
         if (!deviceId) {
-          return NextResponse.json(
-            { error: 'Device information is required for verification.' },
-            { status: 400 }
+          return fail(
+            400,
+            AUTH_ERROR_CODES.DEVICE_REQUIRED,
+            'Device information is required for verification.'
           );
         }
 
@@ -256,19 +259,13 @@ export async function POST(req: NextRequest) {
       }
 
       if (!deviceId) {
-        return NextResponse.json(
-          { error: 'Device information is required to continue.' },
-          { status: 400 }
-        );
+        return fail(400, AUTH_ERROR_CODES.DEVICE_REQUIRED, 'Device information is required to continue.');
       }
 
       const trusted = await isDeviceTrusted(user.id, deviceId);
       if (!trusted) {
         if (!user.email) {
-          return NextResponse.json(
-            { error: 'Admin email is missing. Please contact support.' },
-            { status: 400 }
-          );
+          return fail(400, AUTH_ERROR_CODES.EMAIL_REQUIRED, 'Admin email is missing. Please contact support.');
         }
 
         const challenge = await createAuthChallenge({
@@ -325,9 +322,10 @@ export async function POST(req: NextRequest) {
 
     if (requiresInitialEmailSetup) {
       if (!deviceId) {
-        return NextResponse.json(
-          { error: 'Device information is required for verification.' },
-          { status: 400 }
+        return fail(
+          400,
+          AUTH_ERROR_CODES.DEVICE_REQUIRED,
+          'Device information is required for verification.'
         );
       }
 
@@ -335,10 +333,7 @@ export async function POST(req: NextRequest) {
       if (!targetEmail) {
         if (email) {
           if (!EMAIL_REGEX.test(email)) {
-            return NextResponse.json(
-              { error: 'Please enter a valid email address.' },
-              { status: 400 }
-            );
+            return fail(400, AUTH_ERROR_CODES.EMAIL_INVALID, 'Please enter a valid email address.');
           }
           targetEmail = email;
           await prisma.user.update({
@@ -393,16 +388,14 @@ export async function POST(req: NextRequest) {
     }
 
     if (!deviceId) {
-      return NextResponse.json(
-        { error: 'Device information is required to continue.' },
-        { status: 400 }
-      );
+      return fail(400, AUTH_ERROR_CODES.DEVICE_REQUIRED, 'Device information is required to continue.');
     }
 
     if (!user.email) {
-      return NextResponse.json(
-        { error: 'Email is required for verification. Please contact support.' },
-        { status: 400 }
+      return fail(
+        400,
+        AUTH_ERROR_CODES.EMAIL_REQUIRED,
+        'Email is required for verification. Please contact support.'
       );
     }
 
@@ -454,9 +447,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, token, role: user.role, cloudEnabled });
   } catch (err) {
     console.error('[mobile-login] Login error', err);
-    return NextResponse.json(
-      { error: 'We couldn’t log you in right now. Please try again in a moment.' },
-      { status: 500 }
+    return fail(
+      500,
+      AUTH_ERROR_CODES.INTERNAL_ERROR,
+      'We couldn’t log you in right now. Please try again in a moment.'
     );
   }
 }

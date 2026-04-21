@@ -6,6 +6,9 @@ import { createAuthChallenge, buildVerifyUrl, getAppUrl } from '@/lib/authChalle
 import { buildVerifyLinkEmail } from '@/lib/emailTemplates';
 import { sendEmail } from '@/lib/email';
 import { prisma } from '@/lib/prisma';
+import { AUTH_ERROR_CODES, type AuthErrorCode } from '@/lib/authErrorCodes';
+import { checkRateLimit } from '@/lib/rateLimit';
+import { getClientIp } from '@/lib/requestInfo';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,8 +30,13 @@ class ClaimFlowError extends Error {
   }
 }
 
-function errorResponse(message: string, status = 400, extras: Record<string, unknown> = {}) {
-  return NextResponse.json({ error: message, ...extras }, { status });
+function errorResponse(
+  message: string,
+  status = 400,
+  errorCode: AuthErrorCode = AUTH_ERROR_CODES.CLAIM_INVALID,
+  extras: Record<string, unknown> = {}
+) {
+  return NextResponse.json({ ok: false, errorCode, error: message, ...extras }, { status });
 }
 
 async function getClaimableHome(
@@ -52,15 +60,23 @@ function handleClaimError(err: unknown) {
   if (err instanceof ClaimFlowError) {
     switch (err.code) {
       case 'HOME_NOT_FOUND':
-        return errorResponse('That claim code is not valid for any home.', 404);
+        return errorResponse('That claim code is not valid for any home.', 404, AUTH_ERROR_CODES.CLAIM_INVALID);
       case 'CLAIM_CONSUMED':
-        return errorResponse('This claim code has already been used. Request a new one.', 409);
+        return errorResponse(
+          'This claim code has already been used. Request a new one.',
+          409,
+          AUTH_ERROR_CODES.CLAIM_INVALID
+        );
       case 'HOME_ACTIVE':
-        return errorResponse('This home is already active with an owner.', 409);
+        return errorResponse('This home is already active with an owner.', 409, AUTH_ERROR_CODES.CLAIM_INVALID);
       case 'HOME_HAS_OWNER':
-        return errorResponse('Another owner is already linked to this Dinodia Hub.', 409);
+        return errorResponse(
+          'Another owner is already linked to this Dinodia Hub.',
+          409,
+          AUTH_ERROR_CODES.CLAIM_INVALID
+        );
       default:
-        return errorResponse('We could not start the claim. Please try again.', 400);
+        return errorResponse('We could not start the claim. Please try again.', 400, AUTH_ERROR_CODES.CLAIM_INVALID);
     }
   }
   return null;
@@ -76,19 +92,31 @@ export async function POST(req: NextRequest) {
   const email = typeof body?.email === 'string' ? body.email.trim() : '';
   const deviceId = typeof body?.deviceId === 'string' ? body.deviceId.trim() : '';
   const deviceLabel = typeof body?.deviceLabel === 'string' ? body.deviceLabel : undefined;
-  if (!claimCode) return errorResponse('Enter the claim code from the previous owner.');
+  if (!claimCode) return errorResponse('Enter the claim code from the previous owner.', 400, AUTH_ERROR_CODES.CLAIM_INVALID);
+
+  const ip = getClientIp(req);
+  const rateKey = `claim:${ip}:${claimCode.toUpperCase()}:${validateOnly ? 'validate' : 'start'}`;
+  const allowed = await checkRateLimit(rateKey, { maxRequests: 12, windowMs: 10 * 60_000 });
+  if (!allowed) {
+    return errorResponse(
+      'Too many claim attempts. Please wait a few minutes and try again.',
+      429,
+      AUTH_ERROR_CODES.RATE_LIMITED
+    );
+  }
+
   if (!validateOnly) {
     if (!username || !password) {
-      return errorResponse('Create a username and password to continue.');
+      return errorResponse('Create a username and password to continue.', 400, AUTH_ERROR_CODES.INVALID_LOGIN_INPUT);
     }
     if (!email) {
-      return errorResponse('Enter an email address to verify your admin account.');
+      return errorResponse('Enter an email address to verify your admin account.', 400, AUTH_ERROR_CODES.EMAIL_REQUIRED);
     }
     if (!EMAIL_REGEX.test(email)) {
-      return errorResponse('Please enter a valid email address.');
+      return errorResponse('Please enter a valid email address.', 400, AUTH_ERROR_CODES.EMAIL_INVALID);
     }
     if (!deviceId) {
-      return errorResponse('We need your device info to secure this claim.');
+      return errorResponse('We need your device info to secure this claim.', 400, AUTH_ERROR_CODES.DEVICE_REQUIRED);
     }
   }
 
@@ -100,7 +128,7 @@ export async function POST(req: NextRequest) {
       err instanceof Error && err.message.includes('CLAIM_CODE_PEPPER')
         ? 'Claiming is not available right now. Please try again later.'
         : 'Invalid claim code.';
-    return errorResponse(message, 500);
+    return errorResponse(message, 500, AUTH_ERROR_CODES.INTERNAL_ERROR);
   }
 
   if (validateOnly) {
@@ -114,13 +142,16 @@ export async function POST(req: NextRequest) {
       const mapped = handleClaimError(err);
       if (mapped) return mapped;
       console.error('[api/claim] Failed to validate claim code', err);
-      return errorResponse('We could not validate this claim code. Please try again.', 500);
+      return errorResponse('We could not validate this claim code. Please try again.', 500, AUTH_ERROR_CODES.INTERNAL_ERROR);
     }
   }
 
-  const existingUser = await prisma.user.findUnique({ where: { username } });
+  const existingUser = await prisma.user.findFirst({
+    where: { username: { equals: username, mode: 'insensitive' } },
+    select: { id: true },
+  });
   if (existingUser) {
-    return errorResponse('That username is already taken. Choose another one.');
+    return errorResponse('That username is already taken. Choose another one.', 409, AUTH_ERROR_CODES.REGISTRATION_BLOCKED);
   }
 
   const passwordHash = await hashPassword(password);
@@ -179,7 +210,7 @@ export async function POST(req: NextRequest) {
     const mapped = handleClaimError(err);
     if (mapped) return mapped;
     console.error('[api/claim] Failed to start claim', err);
-    return errorResponse('We could not start the claim. Please try again.', 500);
+    return errorResponse('We could not start the claim. Please try again.', 500, AUTH_ERROR_CODES.INTERNAL_ERROR);
   }
 
   try {
@@ -216,6 +247,10 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error('[api/claim] Failed to send verification email', err);
-    return errorResponse('We could not send the verification email. Please try again.', 500);
+    return errorResponse(
+      'We could not send the verification email. Please try again.',
+      500,
+      AUTH_ERROR_CODES.INTERNAL_ERROR
+    );
   }
 }

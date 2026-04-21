@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { friendlyErrorFromUnknown, parseApiError } from '@/lib/authClientError';
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -33,10 +34,11 @@ export default function ForgotPasswordPage() {
       setLoading(false);
 
       if (!res.ok) {
-        setError(
-          data?.error ||
-            'Unable to start password reset right now. Please try again.'
+        const parsed = parseApiError(
+          data,
+          'Unable to start password reset right now. Please try again.'
         );
+        setError(parsed.message);
         return;
       }
 
@@ -46,7 +48,7 @@ export default function ForgotPasswordPage() {
     } catch (err) {
       console.error(err);
       setLoading(false);
-      setError('Unable to start password reset right now. Please try again.');
+      setError(friendlyErrorFromUnknown(err, 'Unable to start password reset right now. Please try again.'));
     }
   }
 

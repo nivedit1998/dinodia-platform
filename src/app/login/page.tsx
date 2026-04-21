@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getDeviceLabel, getOrCreateDeviceId } from '@/lib/clientDevice';
+import { parseApiError } from '@/lib/authClientError';
 
 type ChallengeStatus = 'PENDING' | 'APPROVED' | 'CONSUMED' | 'EXPIRED' | null;
 
@@ -91,7 +92,8 @@ export default function LoginPage() {
       setCompleting(false);
 
       if (!res.ok) {
-        setError(data.error || 'Verification failed. Please try again.');
+        const parsed = parseApiError(data, 'Verification failed. Please try again.');
+        setError(parsed.message);
         resetVerification();
         return;
       }
@@ -110,14 +112,15 @@ export default function LoginPage() {
     async function pollStatus() {
       try {
         const res = await fetch(`/api/auth/challenges/${id}`);
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           if (!cancelled) {
-            setError('Verification expired. Please try again.');
+            const parsed = parseApiError(data, 'Verification expired. Please try again.');
+            setError(parsed.message);
             resetVerification();
           }
           return;
         }
-        const data = await res.json();
         if (cancelled) return;
         setChallengeStatus(data.status);
 
@@ -183,10 +186,8 @@ export default function LoginPage() {
     setLoading(false);
 
     if (!res.ok) {
-      setError(
-        data.error ||
-          'We couldn’t log you in. Check your details and try again.'
-      );
+      const parsed = parseApiError(data, 'We couldn’t log you in. Check your details and try again.');
+      setError(parsed.message);
       return;
     }
 
@@ -258,9 +259,8 @@ export default function LoginPage() {
     });
     const data = await res.json();
     if (!res.ok) {
-      setError(
-        data.error || 'Unable to resend the verification email right now.'
-      );
+      const parsed = parseApiError(data, 'Unable to resend the verification email right now.');
+      setError(parsed.message);
       return;
     }
     setInfo('We’ve resent the verification email.');

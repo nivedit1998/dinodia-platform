@@ -24,6 +24,12 @@ export type AuthClaims = AuthUser & {
   exp?: number;
 };
 
+export type CredentialAuthFailureReason = 'USERNAME_NOT_FOUND' | 'INVALID_PASSWORD';
+
+export type CredentialAuthResult =
+  | { ok: true; user: AuthUser }
+  | { ok: false; reason: CredentialAuthFailureReason };
+
 type KioskTokenClaims = AuthUser & {
   kind: 'KIOSK';
   deviceId: string;
@@ -139,10 +145,21 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 }
 
 export async function authenticateWithCredentials(username: string, password: string): Promise<AuthUser | null> {
-  if (!username || !password) return null;
+  const result = await authenticateWithCredentialsDetailed(username, password);
+  return result.ok ? result.user : null;
+}
 
-  const user = await prisma.user.findUnique({
-    where: { username },
+export async function authenticateWithCredentialsDetailed(
+  username: string,
+  password: string
+): Promise<CredentialAuthResult> {
+  const normalizedUsername = typeof username === 'string' ? username.trim() : '';
+  if (!normalizedUsername || !password) {
+    return { ok: false, reason: 'USERNAME_NOT_FOUND' };
+  }
+
+  const user = await prisma.user.findFirst({
+    where: { username: { equals: normalizedUsername, mode: 'insensitive' } },
     select: {
       id: true,
       username: true,
@@ -151,12 +168,16 @@ export async function authenticateWithCredentials(username: string, password: st
     },
   });
 
-  if (!user) return null;
+  if (!user) {
+    return { ok: false, reason: 'USERNAME_NOT_FOUND' };
+  }
 
   const valid = await verifyPassword(password, user.passwordHash);
-  if (!valid) return null;
+  if (!valid) {
+    return { ok: false, reason: 'INVALID_PASSWORD' };
+  }
 
-  return { id: user.id, username: user.username, role: user.role };
+  return { ok: true, user: { id: user.id, username: user.username, role: user.role } };
 }
 
 export async function createSessionForUser(user: AuthUser) {

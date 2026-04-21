@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getDeviceLabel, getOrCreateDeviceId } from '@/lib/clientDevice';
+import { friendlyErrorFromUnknown, parseApiError } from '@/lib/authClientError';
 
 type ChallengeStatus = 'PENDING' | 'APPROVED' | 'CONSUMED' | 'EXPIRED' | 'NOT_FOUND' | null;
 
@@ -101,12 +102,12 @@ export default function TenantFirstLoginPage() {
         });
         const data = await res.json();
         if (!res.ok) {
-          throw new Error(data.error || 'Verification failed. Please try again.');
+          throw new Error(parseApiError(data, 'Verification failed. Please try again.').message);
         }
         clearSavedState();
         router.push('/tenant/dashboard');
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Verification failed. Please try again.');
+        setError(friendlyErrorFromUnknown(err, 'Verification failed. Please try again.'));
       } finally {
         setCompleting(false);
       }
@@ -122,7 +123,7 @@ export default function TenantFirstLoginPage() {
           const res = await fetch(`/api/auth/challenges/${id}`, { cache: 'no-store' });
           const data = await res.json();
           if (!res.ok) {
-            throw new Error(data.error || 'Unable to check verification status.');
+            throw new Error(parseApiError(data, 'Unable to check verification status.').message);
           }
           setChallengeStatus(data.status ?? null);
 
@@ -149,7 +150,7 @@ export default function TenantFirstLoginPage() {
           }
         } catch (err) {
           stopPolling();
-          setError(err instanceof Error ? err.message : 'Unable to check verification status.');
+          setError(friendlyErrorFromUnknown(err, 'Unable to check verification status.'));
         }
       };
 
@@ -204,7 +205,7 @@ export default function TenantFirstLoginPage() {
         });
         const data = await res.json();
         if (!res.ok) {
-          throw new Error(data.error || 'We could not finish setup. Please try again.');
+          throw new Error(parseApiError(data, 'We could not finish setup. Please try again.').message);
         }
 
         if (data.requiresEmailVerification && data.challengeId) {
@@ -224,7 +225,7 @@ export default function TenantFirstLoginPage() {
 
         throw new Error('Unexpected response. Please try again.');
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'We could not finish setup. Please try again.');
+        setError(friendlyErrorFromUnknown(err, 'We could not finish setup. Please try again.'));
       } finally {
         setLoading(false);
       }
@@ -253,11 +254,11 @@ export default function TenantFirstLoginPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Unable to resend the verification email.');
+        throw new Error(parseApiError(data, 'Unable to resend the verification email.').message);
       }
       setInfo('Verification email resent.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to resend email right now.');
+      setError(friendlyErrorFromUnknown(err, 'Unable to resend email right now.'));
     }
   }, [challengeId]);
 

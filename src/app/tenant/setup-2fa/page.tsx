@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getDeviceLabel, getOrCreateDeviceId } from '@/lib/clientDevice';
+import { friendlyErrorFromUnknown, parseApiError } from '@/lib/authClientError';
 
 type ChallengeStatus = 'PENDING' | 'APPROVED' | 'CONSUMED' | 'EXPIRED' | 'NOT_FOUND' | null;
 
@@ -97,7 +98,8 @@ export default function TenantSetup2FA() {
       setCompleting(false);
 
       if (!res.ok) {
-        setError(data.error || 'Verification failed. Please try again.');
+        const parsed = parseApiError(data, 'Verification failed. Please try again.');
+        setError(parsed.message);
         stopPolling();
         return;
       }
@@ -116,7 +118,7 @@ export default function TenantSetup2FA() {
           const res = await fetch(`/api/auth/challenges/${id}`, { cache: 'no-store' });
           const data = await res.json();
           if (!res.ok) {
-            throw new Error(data.error || 'Unable to check verification status.');
+            throw new Error(parseApiError(data, 'Unable to check verification status.').message);
           }
           setChallengeStatus(data.status ?? null);
 
@@ -143,9 +145,7 @@ export default function TenantSetup2FA() {
           }
         } catch (err) {
           stopPolling();
-          setError(
-            err instanceof Error ? err.message : 'Unable to check verification status.'
-          );
+          setError(friendlyErrorFromUnknown(err, 'Unable to check verification status.'));
         }
       };
 
@@ -189,9 +189,7 @@ export default function TenantSetup2FA() {
         });
         const data = await res.json();
         if (!res.ok) {
-          throw new Error(
-            data.error || 'We could not start verification. Please try again.'
-          );
+          throw new Error(parseApiError(data, 'We could not start verification. Please try again.').message);
         }
 
         if (data.requiresEmailVerification && data.challengeId) {
@@ -211,9 +209,7 @@ export default function TenantSetup2FA() {
 
         throw new Error('We could not start verification. Please try again.');
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : 'We could not start verification.'
-        );
+        setError(friendlyErrorFromUnknown(err, 'We could not start verification.'));
       } finally {
         setLoading(false);
       }
@@ -231,11 +227,11 @@ export default function TenantSetup2FA() {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Unable to resend the verification email.');
+        throw new Error(parseApiError(data, 'Unable to resend the verification email.').message);
       }
       setInfo('Verification email resent.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to resend email.');
+      setError(friendlyErrorFromUnknown(err, 'Unable to resend email.'));
     }
   }, [challengeId]);
 

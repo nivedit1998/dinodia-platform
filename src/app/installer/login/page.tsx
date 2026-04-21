@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getDeviceLabel, getOrCreateDeviceId } from '@/lib/clientDevice';
+import { parseApiError } from '@/lib/authClientError';
 
 type LoginResponse =
   | { ok: true; role: string; requiresEmailVerification?: false }
@@ -36,8 +37,8 @@ export default function InstallerLoginPage() {
     setLoading(false);
 
     if (!res.ok || !data.ok) {
-      const errMsg = (data as { error?: string }).error;
-      setError(errMsg || 'Login failed. Check your details and try again.');
+      const parsed = parseApiError(data, 'Login failed. Check your details and try again.');
+      setError(parsed.message);
       return;
     }
 
