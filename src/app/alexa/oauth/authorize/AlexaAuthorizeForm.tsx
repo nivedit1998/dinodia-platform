@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getDeviceLabel, getOrCreateDeviceId } from '@/lib/clientDevice';
+import { friendlyUnknownError } from '@/lib/clientError';
+import { platformFetchJson } from '@/lib/platformFetchClient';
 
 type OAuthParams = {
   clientId: string | null;
@@ -113,14 +115,21 @@ export function AlexaAuthorizeForm() {
     retriedRef.current = true;
 
     try {
-      const res = await fetch('/api/alexa/oauth/authorize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json().catch(() => ({}));
+      const data = await platformFetchJson<{
+        redirectTo?: string;
+        requiresEmailVerification?: boolean;
+        challengeId?: string;
+      }>(
+        '/api/alexa/oauth/authorize',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        },
+        'We couldn’t finish linking after verification. Please try again from the Alexa app.'
+      );
 
-      if (res.ok && data.redirectTo) {
+      if (data.redirectTo) {
         window.location.href = data.redirectTo as string;
         return;
       }
@@ -128,13 +137,17 @@ export function AlexaAuthorizeForm() {
       const fallbackError =
         data.requiresEmailVerification && data.challengeId
           ? 'We couldn’t finish verification. Please start linking again from Alexa.'
-          : data.error ||
-            'We couldn’t finish linking after verification. Please try again from the Alexa app.';
+          : 'We couldn’t finish linking after verification. Please try again from the Alexa app.';
       setError(fallbackError);
       resetVerification({ keepError: true });
     } catch (err) {
       console.error('Alexa authorize retry failed', err);
-      setError('We couldn’t finish linking after verification. Please try again from the Alexa app.');
+      setError(
+        friendlyUnknownError(
+          err,
+          'We couldn’t finish linking after verification. Please try again from the Alexa app.'
+        )
+      );
       resetVerification({ keepError: true });
     }
   }, [resetVerification]);
@@ -153,23 +166,22 @@ export function AlexaAuthorizeForm() {
       setCompleting(true);
 
       try {
-        const res = await fetch(`/api/auth/challenges/${id}/complete`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deviceId, deviceLabel }),
-        });
-        const data = await res.json().catch(() => ({}));
-
-        if (!res.ok) {
-          setError(data.error || 'Unable to finish verification. Please try again.');
-          resetVerification({ keepError: true });
-          return;
-        }
+        await platformFetchJson<{ ok: boolean }>(
+          `/api/auth/challenges/${id}/complete`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId, deviceLabel }),
+          },
+          'Unable to finish verification. Please try again.'
+        );
 
         await retryAuthorizeAfterVerification();
       } catch (err) {
         console.error('Alexa verification complete failed', err);
-        setError('We could not finish verification. Please try again from the Alexa app.');
+        setError(
+          friendlyUnknownError(err, 'We could not finish verification. Please try again from the Alexa app.')
+        );
         resetVerification({ keepError: true });
       } finally {
         setCompleting(false);
@@ -184,14 +196,13 @@ export function AlexaAuthorizeForm() {
 
       const runCheck = async () => {
         try {
-          const res = await fetch(`/api/auth/challenges/${id}`, { cache: 'no-store' });
-          const data = await res.json();
+          const data = await platformFetchJson<{ status?: string }>(
+            `/api/auth/challenges/${id}`,
+            { cache: 'no-store' },
+            'Unable to check verification status.'
+          );
 
-          if (!res.ok) {
-            throw new Error(data.error || 'Unable to check verification status.');
-          }
-
-          setChallengeStatus(data.status);
+          setChallengeStatus(data.status ?? null);
 
           if (data.status === 'APPROVED') {
             stopPolling();
@@ -213,7 +224,7 @@ export function AlexaAuthorizeForm() {
         } catch (err) {
           console.error('Alexa challenge poll failed', err);
           stopPolling();
-          setError('Unable to check verification status. Please try again.');
+          setError(friendlyUnknownError(err, 'Unable to check verification status. Please try again.'));
           resetVerification({ keepError: true });
         }
       };
@@ -265,19 +276,19 @@ export function AlexaAuthorizeForm() {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/alexa/oauth/authorize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setError(data.error || 'We couldn’t finish linking with Alexa. Please try again in a moment.');
-        setLoading(false);
-        return;
-      }
+      const data = await platformFetchJson<{
+        redirectTo?: string;
+        requiresEmailVerification?: boolean;
+        challengeId?: string;
+      }>(
+        '/api/alexa/oauth/authorize',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        },
+        'We couldn’t finish linking with Alexa. Please try again in a moment.'
+      );
 
       if (data.requiresEmailVerification) {
         if (!data.challengeId) {
@@ -303,7 +314,7 @@ export function AlexaAuthorizeForm() {
       window.location.href = data.redirectTo as string;
     } catch (err) {
       console.error('Alexa authorize failed', err);
-      setError('We couldn’t reach Alexa right now. Please try again.');
+      setError(friendlyUnknownError(err, 'We couldn’t reach Alexa right now. Please try again.'));
       setLoading(false);
     }
   }
@@ -314,18 +325,17 @@ export function AlexaAuthorizeForm() {
     setInfo(null);
 
     try {
-      const res = await fetch(`/api/auth/challenges/${challengeId}/resend`, {
-        method: 'POST',
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.error || 'Unable to resend the verification email right now.');
-        return;
-      }
+      await platformFetchJson<{ ok: boolean }>(
+        `/api/auth/challenges/${challengeId}/resend`,
+        {
+          method: 'POST',
+        },
+        'Unable to resend the verification email right now.'
+      );
       setInfo('We’ve resent the verification email.');
     } catch (err) {
       console.error('Alexa verification resend failed', err);
-      setError('Unable to resend the verification email right now.');
+      setError(friendlyUnknownError(err, 'Unable to resend the verification email right now.'));
     }
   }
 

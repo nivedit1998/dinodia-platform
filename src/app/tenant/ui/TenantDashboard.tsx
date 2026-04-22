@@ -15,6 +15,8 @@ import { getTileEligibleDevicesForTenantDashboard } from '@/lib/deviceCapabiliti
 import { buildBatteryPercentByDeviceGroup, getBatteryPercentForDevice } from '@/lib/deviceBattery';
 import { useDevicesVersionPolling } from '@/lib/useDevicesVersionPolling';
 import TenantAccessRosterDialog from './TenantAccessRosterDialog';
+import { friendlyUnknownError } from '@/lib/clientError';
+import { platformFetchJson } from '@/lib/platformFetchClient';
 
 type Props = {
   username: string;
@@ -117,9 +119,8 @@ export default function TenantDashboard(props: Props) {
   const [rosterError, setRosterError] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<'area' | 'user'>('area');
 
-  const resolveDeviceErrorMessage = useCallback(async (dataError?: string) => {
+  const resolveDeviceErrorMessage = useCallback(async () => {
     return (
-      dataError ||
       'We couldn’t load your devices. Please check your connection and try again.'
     );
   }, []);
@@ -152,20 +153,16 @@ export default function TenantDashboard(props: Props) {
 
       try {
         const endpoint = force ? '/api/devices?fresh=1' : '/api/devices';
-        const res = await fetch(endpoint, { signal: controller.signal });
-        const data = await res.json();
+        const data = await platformFetchJson<{ devices?: UIDevice[] }>(
+          endpoint,
+          { signal: controller.signal },
+          'We couldn’t load your devices. Please check your connection and try again.'
+        );
         const isLatest = latestRequestRef.current === requestId;
         if (!isLatest) return;
 
         setLoading(false);
         abortControllerRef.current = null;
-
-        if (!res.ok) {
-          const friendly = await resolveDeviceErrorMessage(data.error);
-          if (latestRequestRef.current !== requestId) return;
-          setError(friendly);
-          return;
-        }
 
         const list: UIDevice[] = data.devices || [];
         setDevices((prev) => {
@@ -184,7 +181,7 @@ export default function TenantDashboard(props: Props) {
         console.error(err);
         setLoading(false);
         abortControllerRef.current = null;
-        const friendly = await resolveDeviceErrorMessage();
+        const friendly = friendlyUnknownError(err, await resolveDeviceErrorMessage());
         if (latestRequestRef.current !== requestId) return;
         setError(friendly);
       }
@@ -262,21 +259,17 @@ export default function TenantDashboard(props: Props) {
     setRosterError(null);
     setRosterLoading(true);
     try {
-      const res = await fetch('/api/tenant/access-roster', {
-        cache: 'no-store',
-        credentials: 'include',
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Unable to load access roster.');
-      }
+      const data = await platformFetchJson<AccessRoster>(
+        '/api/tenant/access-roster',
+        {
+          cache: 'no-store',
+          credentials: 'include',
+        },
+        'Unable to load access roster.'
+      );
       setRoster(data as AccessRoster);
     } catch (err) {
-      setRosterError(
-        err instanceof Error
-          ? err.message
-          : 'We could not load who has access. Please try again.'
-      );
+      setRosterError(friendlyUnknownError(err, 'We could not load who has access. Please try again.'));
     } finally {
       setRosterLoading(false);
     }
@@ -298,15 +291,15 @@ export default function TenantDashboard(props: Props) {
     let active = true;
     async function checkAlexaDevices() {
       try {
-        const res = await fetch('/api/alexa/devices', {
-          cache: 'no-store',
-          credentials: 'include',
-        });
-        const data = await res.json();
+        const data = await platformFetchJson<{ devices?: unknown[] }>(
+          '/api/alexa/devices',
+          {
+            cache: 'no-store',
+            credentials: 'include',
+          },
+          'Failed to check Alexa devices.'
+        );
         if (!active) return;
-        if (!res.ok) {
-          throw new Error(data.error || 'Failed to check Alexa devices');
-        }
         const list = Array.isArray(data.devices) ? data.devices : [];
         setShowAlexaLink(list.length > 0);
       } catch {

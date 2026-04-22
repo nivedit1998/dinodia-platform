@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailFromStatus } from '@/lib/apiError';
 import { Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
@@ -18,13 +19,13 @@ export async function GET(
 ) {
   const me = await getCurrentUserFromRequest(req);
   if (!me || me.role !== Role.INSTALLER) {
-    return NextResponse.json({ error: 'Installer access required.' }, { status: 401 });
+    return apiFailFromStatus(401, 'Installer access required.');
   }
 
   const { homeId: rawHomeId } = await context.params;
   const homeId = parseHomeId(rawHomeId);
   if (!homeId) {
-    return NextResponse.json({ error: 'Invalid home id.' }, { status: 400 });
+    return apiFailFromStatus(400, 'Invalid home id.');
   }
 
   const home = await prisma.home.findUnique({
@@ -75,7 +76,7 @@ export async function GET(
   });
 
   if (!home || !home.haConnection) {
-    return NextResponse.json({ error: 'Home not found.' }, { status: 404 });
+    return apiFailFromStatus(404, 'Home not found.');
   }
 
   const installedAt = home.hubInstall?.createdAt ?? home.createdAt;
@@ -133,7 +134,8 @@ export async function GET(
       creds.bootstrapSecret = decryptBootstrapSecret(home.hubInstall.bootstrapSecretCiphertext);
     }
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    console.error('[api/installer/home-support/homes/[homeId]] failed to resolve credentials', err);
+    return apiFailFromStatus(500, 'Dinodia Hub unavailable. Please refresh and try again.');
   }
 
   const homeowners = home.users

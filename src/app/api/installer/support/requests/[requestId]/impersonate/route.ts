@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailFromStatus } from '@/lib/apiError';
 import { Role } from '@prisma/client';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
@@ -20,12 +21,12 @@ export async function POST(
 ) {
   const me = await getCurrentUserFromRequest(req);
   if (!me || me.role !== Role.INSTALLER) {
-    return NextResponse.json({ error: 'Installer access required.' }, { status: 401 });
+    return apiFailFromStatus(401, 'Installer access required.');
   }
 
   const { requestId } = await context.params;
   if (!requestId) {
-    return NextResponse.json({ error: 'Missing request id.' }, { status: 400 });
+    return apiFailFromStatus(400, 'Missing request id.');
   }
 
   const supportRequest = await prisma.supportRequest.findUnique({
@@ -46,7 +47,7 @@ export async function POST(
     supportRequest.kind !== 'USER_REMOTE_ACCESS' ||
     !supportRequest.targetUserId
   ) {
-    return NextResponse.json({ error: 'Support request not found.' }, { status: 404 });
+    return apiFailFromStatus(404, 'Support request not found.');
   }
 
   const challenge = await prisma.authChallenge.findUnique({
@@ -56,7 +57,7 @@ export async function POST(
 
   const approval = computeSupportApproval(challenge);
   if (approval.status !== 'APPROVED') {
-    return NextResponse.json({ error: 'Support request is not approved or expired.' }, { status: 403 });
+    return apiFailFromStatus(403, 'Support request is not approved or expired.');
   }
 
   const targetUser = await prisma.user.findUnique({
@@ -65,13 +66,13 @@ export async function POST(
   });
 
   if (!targetUser) {
-    return NextResponse.json({ error: 'Target user not found.' }, { status: 404 });
+    return apiFailFromStatus(404, 'Target user not found.');
   }
 
   const cookieStore = await cookies();
   const currentToken = cookieStore.get(AUTH_COOKIE_NAME)?.value ?? null;
   if (!currentToken) {
-    return NextResponse.json({ error: 'Missing installer session.' }, { status: 401 });
+    return apiFailFromStatus(401, 'Missing installer session.');
   }
 
   // Backup installer session for 60 minutes

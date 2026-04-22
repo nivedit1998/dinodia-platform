@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { logout as performLogout } from '@/lib/logout';
 import { getDeviceLabel, getOrCreateDeviceId } from '@/lib/clientDevice';
+import { friendlyUnknownError } from '@/lib/clientError';
+import { platformFetchJson } from '@/lib/platformFetchClient';
 
 type Props = {
   username: string;
@@ -73,20 +75,19 @@ export default function TenantSettings({ username }: Props) {
   const refreshTwoFaStatus = useCallback(async () => {
     setTwoFaStatusLoading(true);
     try {
-      const res = await fetch('/api/tenant/profile/2fa/status', {
-        cache: 'no-store',
-        credentials: 'include',
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Unable to load verification status.');
-      }
+      const data = await platformFetchJson<TwoFaStatus>(
+        '/api/tenant/profile/2fa/status',
+        {
+          cache: 'no-store',
+          credentials: 'include',
+        },
+        'Unable to load verification status.'
+      );
       setTwoFaStatus(data);
     } catch (err) {
       setTwoFaAlert({
         type: 'error',
-        message:
-          err instanceof Error ? err.message : 'Unable to load verification status.',
+        message: friendlyUnknownError(err, 'Unable to load verification status.'),
       });
     } finally {
       setTwoFaStatusLoading(false);
@@ -103,15 +104,15 @@ export default function TenantSettings({ username }: Props) {
       deviceLabelRef.current = deviceLabel;
 
       try {
-        const res = await fetch('/api/tenant/profile/2fa/complete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ challengeId: id, deviceId, deviceLabel }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || 'Unable to finish verification.');
-        }
+        await platformFetchJson<{ ok: boolean }>(
+          '/api/tenant/profile/2fa/complete',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ challengeId: id, deviceId, deviceLabel }),
+          },
+          'Unable to finish verification.'
+        );
         setTwoFaAlert({
           type: 'success',
           message: 'Email verification enabled. This device is trusted.',
@@ -122,7 +123,7 @@ export default function TenantSettings({ username }: Props) {
       } catch (err) {
         setTwoFaAlert({
           type: 'error',
-          message: err instanceof Error ? err.message : 'Unable to finish verification.',
+          message: friendlyUnknownError(err, 'Unable to finish verification.'),
         });
       } finally {
         completingRef.current = false;
@@ -137,12 +138,12 @@ export default function TenantSettings({ username }: Props) {
       stopPolling();
       const runCheck = async (): Promise<boolean> => {
         try {
-          const res = await fetch(`/api/auth/challenges/${id}`, { cache: 'no-store' });
-          const data = await res.json();
-          if (!res.ok) {
-            throw new Error(data.error || 'Unable to check verification status.');
-          }
-          setChallengeStatus(data.status);
+          const data = await platformFetchJson<{ status?: string }>(
+            `/api/auth/challenges/${id}`,
+            { cache: 'no-store' },
+            'Unable to check verification status.'
+          );
+          setChallengeStatus(data.status ?? null);
 
           if (data.status === 'APPROVED') {
             stopPolling();
@@ -175,8 +176,7 @@ export default function TenantSettings({ username }: Props) {
           stopPolling();
           setTwoFaAlert({
             type: 'error',
-            message:
-              err instanceof Error ? err.message : 'Unable to check verification status.',
+            message: friendlyUnknownError(err, 'Unable to check verification status.'),
           });
           return false;
         }
@@ -210,26 +210,29 @@ export default function TenantSettings({ username }: Props) {
 
     setTwoFaSubmitting(true);
     try {
-      const res = await fetch('/api/tenant/profile/2fa/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: twoFaForm.email,
-          confirmEmail: twoFaForm.confirmEmail,
-          deviceId,
-          deviceLabel,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Unable to start verification.');
-      }
+      const data = await platformFetchJson<{ alreadyEnabled?: boolean; challengeId?: string }>(
+        '/api/tenant/profile/2fa/start',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: twoFaForm.email,
+            confirmEmail: twoFaForm.confirmEmail,
+            deviceId,
+            deviceLabel,
+          }),
+        },
+        'Unable to start verification.'
+      );
       if (data.alreadyEnabled) {
         setTwoFaAlert({ type: 'success', message: 'Two-factor authentication is already on.' });
         await refreshTwoFaStatus();
         setChallengeId(null);
         setChallengeStatus(null);
         return;
+      }
+      if (!data.challengeId) {
+        throw new Error('Unable to start verification.');
       }
 
       setChallengeId(data.challengeId);
@@ -243,7 +246,7 @@ export default function TenantSettings({ username }: Props) {
     } catch (err) {
       setTwoFaAlert({
         type: 'error',
-        message: err instanceof Error ? err.message : 'Unable to start verification.',
+        message: friendlyUnknownError(err, 'Unable to start verification.'),
       });
     } finally {
       setTwoFaSubmitting(false);
@@ -254,16 +257,16 @@ export default function TenantSettings({ username }: Props) {
     if (!challengeId) return;
     setResending(true);
     try {
-      const res = await fetch(`/api/auth/challenges/${challengeId}/resend`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Unable to resend email.');
-      }
+      await platformFetchJson<{ ok: boolean }>(
+        `/api/auth/challenges/${challengeId}/resend`,
+        { method: 'POST' },
+        'Unable to resend email.'
+      );
       setTwoFaAlert({ type: 'success', message: 'Verification email resent.' });
     } catch (err) {
       setTwoFaAlert({
         type: 'error',
-        message: err instanceof Error ? err.message : 'Unable to resend email.',
+        message: friendlyUnknownError(err, 'Unable to resend email.'),
       });
     } finally {
       setResending(false);
@@ -281,21 +284,21 @@ export default function TenantSettings({ username }: Props) {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/tenant/profile/change-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Unable to update password');
-      }
+      await platformFetchJson<{ ok: boolean }>(
+        '/api/tenant/profile/change-password',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        },
+        'Unable to update password.'
+      );
       setAlert({ type: 'success', message: 'Password updated successfully' });
       setForm(EMPTY_FORM);
     } catch (err) {
       setAlert({
         type: 'error',
-        message: err instanceof Error ? err.message : 'Unable to update password',
+        message: friendlyUnknownError(err, 'Unable to update password.'),
       });
     } finally {
       setLoading(false);
@@ -337,15 +340,15 @@ export default function TenantSettings({ username }: Props) {
     let active = true;
     async function checkAlexaDevices() {
       try {
-        const res = await fetch('/api/alexa/devices', {
-          cache: 'no-store',
-          credentials: 'include',
-        });
-        const data = await res.json();
+        const data = await platformFetchJson<{ devices?: unknown[] }>(
+          '/api/alexa/devices',
+          {
+            cache: 'no-store',
+            credentials: 'include',
+          },
+          'Unable to load devices.'
+        );
         if (!active) return;
-        if (!res.ok) {
-          throw new Error(data.error || 'Unable to load devices');
-        }
         const devices = Array.isArray(data.devices) ? data.devices : [];
         setAlexaLinkVisible(devices.length > 0);
       } catch {

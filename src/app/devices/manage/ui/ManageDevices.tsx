@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { friendlyUnknownError } from '@/lib/clientError';
+import { platformFetchJson } from '@/lib/platformFetchClient';
 
 type DeviceStatus = 'ACTIVE' | 'STOLEN' | 'BLOCKED';
 
@@ -27,17 +29,17 @@ export default function ManageDevices() {
   const loadDevices = useCallback(async () => {
     setLoadState({ loading: true, error: null });
     try {
-      const res = await fetch('/api/devices/manage', { cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error((data && data.error) || 'Unable to load devices.');
-      }
+      const data = await platformFetchJson<{ devices?: Device[] }>(
+        '/api/devices/manage',
+        { cache: 'no-store' },
+        'Unable to load devices.'
+      );
       setDevices(data.devices || []);
       setLoadState({ loading: false, error: null });
     } catch (err) {
       setLoadState({
         loading: false,
-        error: err instanceof Error ? err.message : 'Unable to load devices.',
+        error: friendlyUnknownError(err, 'Unable to load devices.'),
       });
     }
   }, []);
@@ -50,15 +52,15 @@ export default function ManageDevices() {
     async (deviceId: string) => {
       setActionState((prev) => ({ ...prev, [deviceId]: { saving: true, error: null } }));
       try {
-        const res = await fetch('/api/devices/manage/stolen', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deviceId }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error((data && data.error) || 'Unable to mark device as stolen.');
-        }
+        await platformFetchJson<{ ok: boolean }>(
+          '/api/devices/manage/stolen',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId }),
+          },
+          'Unable to mark device as stolen.'
+        );
         await loadDevices();
         setActionState((prev) => ({ ...prev, [deviceId]: { saving: false, error: null } }));
       } catch (err) {
@@ -66,7 +68,7 @@ export default function ManageDevices() {
           ...prev,
           [deviceId]: {
             saving: false,
-            error: err instanceof Error ? err.message : 'Unable to mark device as stolen.',
+            error: friendlyUnknownError(err, 'Unable to mark device as stolen.'),
           },
         }));
       }
@@ -78,15 +80,15 @@ export default function ManageDevices() {
     async (deviceId: string) => {
       setActionState((prev) => ({ ...prev, [deviceId]: { saving: true, error: null } }));
       try {
-        const res = await fetch('/api/devices/manage/restore', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deviceId }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error((data && data.error) || 'Unable to restore device.');
-        }
+        await platformFetchJson<{ ok: boolean }>(
+          '/api/devices/manage/restore',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId }),
+          },
+          'Unable to restore device.'
+        );
         await loadDevices();
         setActionState((prev) => ({ ...prev, [deviceId]: { saving: false, error: null } }));
       } catch (err) {
@@ -94,7 +96,7 @@ export default function ManageDevices() {
           ...prev,
           [deviceId]: {
             saving: false,
-            error: err instanceof Error ? err.message : 'Unable to restore device.',
+            error: friendlyUnknownError(err, 'Unable to restore device.'),
           },
         }));
       }

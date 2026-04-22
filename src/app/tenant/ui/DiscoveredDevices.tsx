@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { HaConfigFlowStep } from '@/lib/haConfigFlow';
+import { friendlyUnknownError } from '@/lib/clientError';
+import { platformFetchJson } from '@/lib/platformFetchClient';
 
 type Props = {
   areas: string[];
@@ -193,17 +195,15 @@ export default function DiscoveredDevices(props: Props) {
     setLabelsLoading(true);
     setLabelsError(null);
     try {
-      const res = await fetch('/api/tenant/homeassistant/labels', { cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Unable to load labels');
-      }
+      const data = await platformFetchJson<{ labels?: LabelOption[] }>(
+        '/api/tenant/homeassistant/labels',
+        { cache: 'no-store' },
+        'Unable to load labels.'
+      );
       const list: LabelOption[] = Array.isArray(data?.labels) ? data.labels : [];
       setLabels(list);
     } catch (err) {
-      setLabelsError(
-        err instanceof Error ? err.message : 'Home Assistant labels are unavailable right now.'
-      );
+      setLabelsError(friendlyUnknownError(err, 'Home Assistant labels are unavailable right now.'));
     } finally {
       setLabelsLoading(false);
     }
@@ -217,16 +217,14 @@ export default function DiscoveredDevices(props: Props) {
     setFlowsLoading(true);
     setFlowsError(null);
     try {
-      const res = await fetch('/api/tenant/homeassistant/discovery', { cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Unable to fetch discovered devices.');
-      }
+      const data = await platformFetchJson<{ flows?: DiscoveryFlow[] }>(
+        '/api/tenant/homeassistant/discovery',
+        { cache: 'no-store' },
+        'Unable to fetch discovered devices.'
+      );
       setFlows(Array.isArray(data.flows) ? data.flows : []);
     } catch (err) {
-      setFlowsError(
-        err instanceof Error ? err.message : 'We could not reach Dinodia Hub for discovery.'
-      );
+      setFlowsError(friendlyUnknownError(err, 'We could not reach Dinodia Hub for discovery.'));
     } finally {
       setFlowsLoading(false);
     }
@@ -239,11 +237,11 @@ export default function DiscoveredDevices(props: Props) {
   const refreshSessionFromServer = useCallback(
     async (sessionId: string) => {
       try {
-        const res = await fetch(`/api/tenant/discovery/sessions/${sessionId}`, { cache: 'no-store' });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data?.error || 'Failed to refresh session.');
-        }
+        const data = await platformFetchJson<{ session: SessionPayload; warnings?: string[] }>(
+          `/api/tenant/discovery/sessions/${sessionId}`,
+          { cache: 'no-store' },
+          'Failed to refresh session.'
+        );
         const nextSession = data.session as SessionPayload;
         setSession(nextSession);
         setWarnings((prev) => {
@@ -251,7 +249,7 @@ export default function DiscoveredDevices(props: Props) {
           return [...prev, ...incoming];
         });
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : 'Unable to refresh session.');
+        setActionError(friendlyUnknownError(err, 'Unable to refresh session.'));
       }
     },
     []
@@ -313,26 +311,26 @@ export default function DiscoveredDevices(props: Props) {
     setWarnings([]);
     setStepError(null);
     try {
-      const res = await fetch('/api/tenant/discovery/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          flowId: selectedFlow.flowId,
-          requestedArea,
-          requestedName: requestedName.trim() || null,
-          requestedDinodiaType: requestedDinodiaType || null,
-          requestedHaLabelId,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Unable to start setup.');
-      }
+      const data = await platformFetchJson<{ session: SessionPayload; warnings?: string[] }>(
+        '/api/tenant/discovery/sessions',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            flowId: selectedFlow.flowId,
+            requestedArea,
+            requestedName: requestedName.trim() || null,
+            requestedDinodiaType: requestedDinodiaType || null,
+            requestedHaLabelId,
+          }),
+        },
+        'Unable to start setup.'
+      );
       const newSession = data.session as SessionPayload;
       setSession(newSession);
       setWarnings(Array.isArray(data?.warnings) ? data.warnings : []);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to start setup.');
+      setActionError(friendlyUnknownError(err, 'Unable to start setup.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -354,23 +352,20 @@ export default function DiscoveredDevices(props: Props) {
     setIsSubmitting(true);
     setStepError(null);
     try {
-      const res = await fetch(`/api/tenant/discovery/sessions/${session.id}/step`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userInput: formValues }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        if (data?.session) {
-          setSession(data.session as SessionPayload);
-        }
-        throw new Error(data?.error || 'Unable to continue setup.');
-      }
+      const data = await platformFetchJson<{ session: SessionPayload; warnings?: string[] }>(
+        `/api/tenant/discovery/sessions/${session.id}/step`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userInput: formValues }),
+        },
+        'Unable to continue setup.'
+      );
       const nextSession = data.session as SessionPayload;
       setSession(nextSession);
       setWarnings((prev) => [...prev, ...(Array.isArray(data?.warnings) ? data.warnings : [])]);
     } catch (err) {
-      setStepError(err instanceof Error ? err.message : 'Unable to continue setup.');
+      setStepError(friendlyUnknownError(err, 'Unable to continue setup.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -385,10 +380,14 @@ export default function DiscoveredDevices(props: Props) {
     setIsSubmitting(true);
     setActionError(null);
     try {
-      await fetch(`/api/tenant/discovery/sessions/${session.id}/cancel`, { method: 'POST' });
+      await platformFetchJson<{ ok: boolean }>(
+        `/api/tenant/discovery/sessions/${session.id}/cancel`,
+        { method: 'POST' },
+        'Unable to cancel setup.'
+      );
       await refreshSessionFromServer(session.id);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to cancel setup.');
+      setActionError(friendlyUnknownError(err, 'Unable to cancel setup.'));
     } finally {
       setIsSubmitting(false);
     }

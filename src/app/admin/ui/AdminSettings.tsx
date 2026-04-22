@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { logout as performLogout } from '@/lib/logout';
 import { platformFetch } from '@/lib/platformFetchClient';
+import { friendlyUnknownError } from '@/lib/clientError';
 
 type Props = {
   username: string;
@@ -160,7 +161,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       const res = await platformFetch('/api/admin/areas', { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to load areas');
+        throw new Error('Failed to load areas.');
       }
       const list: string[] = Array.isArray(data.areas)
         ? data.areas
@@ -217,13 +218,13 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       );
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to load device overrides.');
+        throw new Error('Failed to load device overrides.');
       }
       setOverrides(Array.isArray(data.devices) ? data.devices : []);
     } catch (err) {
       setOverrideAlert({
         type: 'error',
-        message: err instanceof Error ? err.message : 'Failed to load device overrides.',
+        message: friendlyUnknownError(err, 'Failed to load device overrides.'),
       });
     }
   }, []);
@@ -290,9 +291,9 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
           blindTravelSeconds,
         }),
       });
-      const data = await res.json();
+      await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to save device override.');
+        throw new Error('Failed to save device override.');
       }
       setOverrideAlert({ type: 'success', message: 'Device override saved.' });
       startNewOverride('');
@@ -301,7 +302,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     } catch (err) {
       setOverrideAlert({
         type: 'error',
-        message: err instanceof Error ? err.message : 'Failed to save device override.',
+        message: friendlyUnknownError(err, 'Failed to save device override.'),
       });
     }
   }
@@ -333,11 +334,11 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
         headers: { 'Content-Type': 'application/json' },
       });
 
-      const data = await res.json();
+      await res.json();
 
       if (!res.ok) {
         setTenantMsg(
-          data.error || 'We couldn’t create this tenant right now. Please try again.'
+          'We couldn’t create this tenant right now. Please try again.'
         );
         return;
       }
@@ -372,10 +373,10 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(passwordForm),
       });
-      const data = await res.json();
+      await res.json();
       if (!res.ok) {
         throw new Error(
-          data.error || 'We couldn’t update your password right now. Please try again.'
+          'We couldn’t update your password right now. Please try again.'
         );
       }
       setPasswordAlert({ type: 'success', message: 'Password updated successfully.' });
@@ -383,10 +384,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     } catch (err) {
       setPasswordAlert({
         type: 'error',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'We couldn’t update your password right now. Please try again.',
+        message: friendlyUnknownError(err, 'We couldn’t update your password right now. Please try again.'),
       });
     } finally {
       setPasswordLoading(false);
@@ -433,7 +431,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       const data = await res.json();
       if (!res.ok) {
         throw new Error(
-          data.error || 'We couldn’t process this request. Please try again.'
+          'We couldn’t process this request. Please try again.'
         );
       }
       if (mode === 'OWNER_TRANSFER') {
@@ -450,9 +448,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       }
     } catch (err) {
       setSellingError(
-        err instanceof Error
-          ? err.message
-          : 'We couldn’t process this request. Please try again.'
+        friendlyUnknownError(err, 'We couldn’t process this request. Please try again.')
       );
     } finally {
       setSellingLoading(false);
@@ -525,7 +521,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       const res = await platformFetch('/api/admin/tenant', { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to load tenants.');
+        throw new Error('Failed to load tenants.');
       }
       const list: TenantInfo[] = Array.isArray(data.tenants)
         ? data.tenants
@@ -554,7 +550,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       });
     } catch (err) {
       setTenantsError(
-        err instanceof Error ? err.message : 'Failed to load tenants. Please try again.'
+        friendlyUnknownError(err, 'Failed to load tenants. Please try again.')
       );
     } finally {
       setTenantsLoading(false);
@@ -576,7 +572,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to update tenant areas.');
+        throw new Error('Failed to update tenant areas.');
       }
       const updatedAreas =
         Array.isArray(data.tenant?.areas) && data.tenant.areas.every((a: unknown) => typeof a === 'string')
@@ -592,7 +588,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     } catch (err) {
       updateTenantActionState(tenantId, {
         saving: false,
-        error: err instanceof Error ? err.message : 'Failed to update tenant areas.',
+        error: friendlyUnknownError(err, 'Failed to update tenant areas.'),
       });
     }
   }
@@ -625,9 +621,9 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     setTenantDeleteError(null);
     try {
       const res = await platformFetch(`/api/admin/tenant/${targetId}`, { method: 'DELETE' });
-      const data = await res.json();
+      await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to delete tenant.');
+        throw new Error('Failed to delete tenant.');
       }
       setTenants((prev) => prev.filter((tenant) => tenant.id !== targetId));
       setTenantActions((prev) => {
@@ -643,7 +639,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       setTenantToDelete(null);
     } catch (err) {
       setTenantDeleteError(
-        err instanceof Error ? err.message : 'Failed to delete tenant. Please try again.'
+        friendlyUnknownError(err, 'Failed to delete tenant. Please try again.')
       );
     } finally {
       setTenantDeleteLoading(false);

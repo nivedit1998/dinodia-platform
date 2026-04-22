@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailFromStatus } from '@/lib/apiError';
 import { Role } from '@prisma/client';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getUserWithHaConnection, resolveHaForRequestedMode } from '@/lib/haConnection';
@@ -7,11 +8,11 @@ import { setAutomationEnabled } from '@/lib/homeAssistantAutomations';
 import { requireTrustedAdminDevice, toTrustedDeviceResponse } from '@/lib/deviceAuth';
 
 function badRequest(message: string) {
-  return NextResponse.json({ ok: false, error: message }, { status: 400 });
+  return apiFailFromStatus(400, message);
 }
 
 function forbidden(message: string) {
-  return NextResponse.json({ ok: false, error: message }, { status: 403 });
+  return apiFailFromStatus(403, message);
 }
 
 function parseMode(value: string | null): 'home' | 'cloud' | undefined {
@@ -51,10 +52,7 @@ export async function POST(
 ) {
   const user = await getCurrentUserFromRequest(req);
   if (!user) {
-    return NextResponse.json(
-      { ok: false, error: 'Your session has ended. Please sign in again.' },
-      { status: 401 }
-    );
+    return apiFailFromStatus(401, 'Your session has ended. Please sign in again.');
   }
 
   const deviceError = await guardAdminDevice(req, user as { id: number; role: Role });
@@ -76,17 +74,8 @@ export async function POST(
     const result = await getUserWithHaConnection(user.id);
     haConnectionId = result.haConnection.id;
     ha = resolveHaForRequestedMode(result.haConnection, mode);
-  } catch (err) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Dinodia Hub connection isn’t set up yet for this home.',
-      },
-      { status: 400 }
-    );
+  } catch {
+    return apiFailFromStatus(400, 'Dinodia Hub connection isn’t set up yet for this home.');
   }
 
   const allowedEntities = await getAllowedEntitiesForUser(user.id, user.role as Role, haConnectionId);
@@ -99,9 +88,6 @@ export async function POST(
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[api/automations/[id]/enabled] Failed to toggle automation', err);
-    return NextResponse.json(
-      { ok: false, error: 'Failed to update automation state in Home Assistant' },
-      { status: 502 }
-    );
+    return apiFailFromStatus(502, 'Dinodia Hub unavailable. Please refresh and try again.');
   }
 }

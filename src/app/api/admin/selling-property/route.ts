@@ -16,6 +16,7 @@ import { sendEmail } from '@/lib/email';
 import { getAppUrl } from '@/lib/authChallenges';
 import { requireTrustedAdminDevice, toTrustedDeviceResponse } from '@/lib/deviceAuth';
 import { resolveHaLongLivedToken } from '@/lib/haSecrets';
+import { apiFailPayload } from '@/lib/apiError';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,7 +36,7 @@ type SellingPropertyResponse =
 const REPLY_TO = 'niveditgupta@dinodiasmartliving.com';
 
 function errorResponse(message: string, status = 400, extras: Record<string, unknown> = {}) {
-  return NextResponse.json({ error: message, ...extras }, { status });
+  return apiFailPayload(status, { error: message, ...extras });
 }
 
 export async function GET(req: NextRequest) {
@@ -148,11 +149,8 @@ export async function POST(req: NextRequest) {
       let claimCode: string;
       try {
         ({ claimCode } = await setHomeClaimCode(home.id));
-      } catch (err) {
-        return errorResponse(
-          err instanceof Error ? err.message : 'We could not generate a claim code. Please try again.',
-          500
-        );
+      } catch {
+        return errorResponse('We could not generate a claim code. Please try again.', 500);
       }
 
       await prisma.auditEvent.create({
@@ -305,7 +303,9 @@ export async function POST(req: NextRequest) {
       });
 
       if (err instanceof HaCleanupConnectionError) {
-        return errorResponse(err.message, 400, { reasons: err.reasons });
+        return errorResponse('Dinodia Hub unavailable. Please refresh and try again.', 400, {
+          reasons: err.reasons,
+        });
       }
       return errorResponse('We could not reset this home. Please try again.', 500);
     }

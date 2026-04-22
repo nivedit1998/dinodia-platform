@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailFromStatus } from '@/lib/apiError';
 import { AuthChallengePurpose, Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
@@ -12,14 +13,14 @@ const TTL_MINUTES = 60;
 export async function POST(req: NextRequest) {
   const me = await getCurrentUserFromRequest(req);
   if (!me || me.role !== Role.INSTALLER) {
-    return NextResponse.json({ error: 'Installer access required.' }, { status: 401 });
+    return apiFailFromStatus(401, 'Installer access required.');
   }
 
   const body = await req.json().catch(() => null);
   const homeId = Number(body?.homeId ?? 0);
   const userId = Number(body?.userId ?? 0);
   if (!Number.isInteger(homeId) || homeId <= 0 || !Number.isInteger(userId) || userId <= 0) {
-    return NextResponse.json({ error: 'Invalid home or user id.' }, { status: 400 });
+    return apiFailFromStatus(400, 'Invalid home or user id.');
   }
 
   const targetUser = await prisma.user.findUnique({
@@ -28,11 +29,11 @@ export async function POST(req: NextRequest) {
   });
 
   if (!targetUser || targetUser.homeId !== homeId) {
-    return NextResponse.json({ error: 'User not found for this home.' }, { status: 404 });
+    return apiFailFromStatus(404, 'User not found for this home.');
   }
 
   if (!targetUser.email) {
-    return NextResponse.json({ error: 'User has no email set for approvals.' }, { status: 400 });
+    return apiFailFromStatus(400, 'User has no email set for approvals.');
   }
 
   // Reuse existing approved request within window

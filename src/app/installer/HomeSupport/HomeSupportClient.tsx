@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { friendlyUnknownError } from '@/lib/clientError';
+import { platformFetchJson } from '@/lib/platformFetchClient';
 
 type HomeSummary = {
   homeId: number;
@@ -91,12 +93,15 @@ export default function HomeSupportClient({ installerName }: { installerName: st
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch('/api/installer/home-support/homes');
-        const data = await res.json();
-        if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load homes.');
+        const data = await platformFetchJson<{ ok?: boolean; homes?: HomeSummary[] }>(
+          '/api/installer/home-support/homes',
+          undefined,
+          'Failed to load homes.'
+        );
+        if (!data?.ok) throw new Error('Failed to load homes.');
         if (!cancelled) setHomes(data.homes ?? []);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load homes.');
+        if (!cancelled) setError(friendlyUnknownError(err, 'Failed to load homes.'));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -111,14 +116,17 @@ export default function HomeSupportClient({ installerName }: { installerName: st
     setDetailError((prev) => ({ ...prev, [homeId]: null }));
     setDetailLoading((prev) => ({ ...prev, [homeId]: true }));
     try {
-      const res = await fetch(`/api/installer/home-support/homes/${homeId}`);
-      const data = await res.json();
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load details.');
+      const data = await platformFetchJson<HomeDetail & { ok?: boolean }>(
+        `/api/installer/home-support/homes/${homeId}`,
+        undefined,
+        'Failed to load details.'
+      );
+      if (!data?.ok) throw new Error('Failed to load details.');
       setDetails((prev) => ({ ...prev, [homeId]: data }));
     } catch (err) {
       setDetailError((prev) => ({
         ...prev,
-        [homeId]: err instanceof Error ? err.message : 'Failed to load details.',
+        [homeId]: friendlyUnknownError(err, 'Failed to load details.'),
       }));
     } finally {
       setDetailLoading((prev) => ({ ...prev, [homeId]: false }));
@@ -136,13 +144,22 @@ export default function HomeSupportClient({ installerName }: { installerName: st
   async function requestHomeAccess(homeId: number) {
     setHomeRequests((prev) => ({ ...prev, [homeId]: { status: 'PENDING' } }));
     try {
-      const res = await fetch('/api/installer/support/home-access/request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ homeId }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Request failed');
+      const data = await platformFetchJson<{
+        ok?: boolean;
+        requestId?: string;
+        expiresAt?: string | null;
+        approvedAt?: string | null;
+        validUntil?: string | null;
+      }>(
+        '/api/installer/support/home-access/request',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ homeId }),
+        },
+        'Request failed.'
+      );
+      if (!data?.ok) throw new Error('Request failed.');
       setHomeRequests((prev) => ({
         ...prev,
         [homeId]: {
@@ -176,13 +193,22 @@ export default function HomeSupportClient({ installerName }: { installerName: st
     const key = `${homeId}:${userId}`;
     setUserRequests((prev) => ({ ...prev, [key]: { status: 'PENDING' } }));
     try {
-      const res = await fetch('/api/installer/support/user-access/request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ homeId, userId }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Request failed');
+      const data = await platformFetchJson<{
+        ok?: boolean;
+        requestId?: string;
+        expiresAt?: string | null;
+        approvedAt?: string | null;
+        validUntil?: string | null;
+      }>(
+        '/api/installer/support/user-access/request',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ homeId, userId }),
+        },
+        'Request failed.'
+      );
+      if (!data?.ok) throw new Error('Request failed.');
       setUserRequests((prev) => ({
         ...prev,
         [key]: {
@@ -217,8 +243,12 @@ export default function HomeSupportClient({ installerName }: { installerName: st
     async function loop() {
       if (done) return;
       try {
-        const res = await fetch(`/api/installer/support/requests/${requestId}/status`);
-        const data = await res.json();
+        const data = await platformFetchJson<{
+          status?: RequestStatus;
+          approvedAt?: string | null;
+          validUntil?: string | null;
+          expiresAt?: string | null;
+        }>(`/api/installer/support/requests/${requestId}/status`, undefined, 'Unable to load request status.');
         const status: RequestStatus = data?.status || 'NOT_FOUND';
         onUpdate(status, {
           approvedAt: data?.approvedAt ?? null,
@@ -239,16 +269,23 @@ export default function HomeSupportClient({ installerName }: { installerName: st
   }
 
   async function impersonate(requestId: string) {
-    const res = await fetch(`/api/installer/support/requests/${requestId}/impersonate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.ok || !data.redirectTo) {
-      alert(data?.error || 'Impersonation failed');
-      return;
+    try {
+      const data = await platformFetchJson<{ ok?: boolean; redirectTo?: string }>(
+        `/api/installer/support/requests/${requestId}/impersonate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        },
+        'Impersonation failed.'
+      );
+      if (!data?.ok || !data.redirectTo) {
+        alert('Impersonation failed.');
+        return;
+      }
+      window.location.href = data.redirectTo;
+    } catch (err) {
+      alert(friendlyUnknownError(err, 'Impersonation failed.'));
     }
-    window.location.href = data.redirectTo;
   }
 
   const homesSorted = useMemo(

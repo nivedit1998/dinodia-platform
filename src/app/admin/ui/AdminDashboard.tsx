@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { platformFetch } from '@/lib/platformFetchClient';
 import { logout as performLogout } from '@/lib/logout';
+import { friendlyUnknownError } from '@/lib/clientError';
 import { MultiLineChart, MultiSeriesTrend } from './charts/LineAreaChart';
 import { BoilerHeatingStateChart, BoilerTemperatureBandChart, HeatingStateSeries } from './charts/BoilerCharts';
 
@@ -727,7 +728,7 @@ export default function AdminDashboard({ username }: Props) {
       setLastFetchedAt(new Date().toISOString());
     } catch (err) {
       console.error('Failed to load summary', err);
-      setError((err as Error).message || 'Unable to load analytics right now.');
+      setError(friendlyUnknownError(err, 'Unable to load analytics right now.'));
       setSummaryAllDaily(null);
     } finally {
       setLoading(false);
@@ -777,7 +778,7 @@ export default function AdminDashboard({ username }: Props) {
       setSelectedBoilerEntities((prev) => prev.filter((id) => boilerIds.has(id)));
     } catch (err) {
       console.error('Failed to load selectors', err);
-      setSelectorsError((err as Error).message || 'Unable to load filters.');
+      setSelectorsError(friendlyUnknownError(err, 'Unable to load filters.'));
     }
   }, [buildSelectorParams]);
 
@@ -832,7 +833,7 @@ export default function AdminDashboard({ username }: Props) {
       setBoilerHeatingSeriesAll(heatingSeries);
     } catch (err) {
       console.error('Failed to load boiler trend', err);
-      setBoilerError((err as Error).message || 'Unable to load boiler trend.');
+      setBoilerError(friendlyUnknownError(err, 'Unable to load boiler trend.'));
       setBoilerTemperatureSeriesAll([]);
       setBoilerHeatingSeriesAll([]);
     } finally {

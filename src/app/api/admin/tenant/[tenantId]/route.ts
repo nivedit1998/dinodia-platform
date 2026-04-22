@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailFromStatus } from '@/lib/apiError';
 import { Prisma, Role } from '@prisma/client';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getUserWithHaConnection, resolveHaCloudFirst } from '@/lib/haConnection';
@@ -142,10 +143,7 @@ export async function PATCH(
 ) {
   const me = await getCurrentUserFromRequest(req);
   if (!me || me.role !== Role.ADMIN) {
-    return NextResponse.json(
-      { error: 'Your session has ended. Please sign in again.' },
-      { status: 401 }
-    );
+    return apiFailFromStatus(401, 'Your session has ended. Please sign in again.');
   }
 
   try {
@@ -158,21 +156,18 @@ export async function PATCH(
 
   const tenantId = await parseTenantId(context);
   if (!tenantId) {
-    return NextResponse.json({ error: 'Invalid tenant.' }, { status: 400 });
+    return apiFailFromStatus(400, 'Invalid tenant.');
   }
 
   let admin: UserWithConnection['user'];
   try {
     ({ user: admin } = await getUserWithHaConnection(me.id));
-  } catch (err) {
-    return NextResponse.json(
-      { error: (err as Error).message || 'Dinodia Hub connection isn’t set up yet for this home.' },
-      { status: 400 }
-    );
+  } catch {
+    return apiFailFromStatus(400, 'Dinodia Hub connection isn’t set up yet for this home.');
   }
 
   if (!admin.homeId) {
-    return NextResponse.json({ error: 'This account is not linked to a home.' }, { status: 400 });
+    return apiFailFromStatus(400, 'This account is not linked to a home.');
   }
   const adminHomeId = admin.homeId;
 
@@ -182,14 +177,14 @@ export async function PATCH(
   });
 
   if (!tenant) {
-    return NextResponse.json({ error: 'Tenant not found for this home.' }, { status: 404 });
+    return apiFailFromStatus(404, 'Tenant not found for this home.');
   }
 
   const body = await req
     .json()
     .catch(() => null) as { areas?: unknown } | null;
   if (!body || !('areas' in body)) {
-    return NextResponse.json({ error: 'Please provide areas to update.' }, { status: 400 });
+    return apiFailFromStatus(400, 'Please provide areas to update.');
   }
 
   const areas = sanitizeAreas(body.areas);
@@ -216,10 +211,7 @@ export async function DELETE(
 ) {
   const me = await getCurrentUserFromRequest(req);
   if (!me || me.role !== Role.ADMIN) {
-    return NextResponse.json(
-      { error: 'Your session has ended. Please sign in again.' },
-      { status: 401 }
-    );
+    return apiFailFromStatus(401, 'Your session has ended. Please sign in again.');
   }
 
   try {
@@ -232,22 +224,19 @@ export async function DELETE(
 
   const tenantId = await parseTenantId(context);
   if (!tenantId) {
-    return NextResponse.json({ error: 'Invalid tenant.' }, { status: 400 });
+    return apiFailFromStatus(400, 'Invalid tenant.');
   }
 
   let admin: UserWithConnection['user'];
   let haConnection: UserWithConnection['haConnection'];
   try {
     ({ user: admin, haConnection } = await getUserWithHaConnection(me.id));
-  } catch (err) {
-    return NextResponse.json(
-      { error: (err as Error).message || 'Dinodia Hub connection isn’t set up yet for this home.' },
-      { status: 400 }
-    );
+  } catch {
+    return apiFailFromStatus(400, 'Dinodia Hub connection isn’t set up yet for this home.');
   }
 
   if (!admin.homeId) {
-    return NextResponse.json({ error: 'This account is not linked to a home.' }, { status: 400 });
+    return apiFailFromStatus(400, 'This account is not linked to a home.');
   }
   const adminHomeId = admin.homeId;
 
@@ -257,14 +246,11 @@ export async function DELETE(
   });
 
   if (!tenant) {
-    return NextResponse.json({ error: 'Tenant not found for this home.' }, { status: 404 });
+    return apiFailFromStatus(404, 'Tenant not found for this home.');
   }
 
   if (tenant.haConnectionId && tenant.haConnectionId !== haConnection.id) {
-    return NextResponse.json(
-      { error: 'Tenant is linked to a different home connection.' },
-      { status: 400 }
-    );
+    return apiFailFromStatus(400, 'Tenant is linked to a different home connection.');
   }
 
   const ha = resolveHaCloudFirst(haConnection);
@@ -276,10 +262,7 @@ export async function DELETE(
   const automationIds = ownedAutomations.map((item) => item.automationId);
   const automationResult = await deleteTenantAutomations(ha, automationIds);
   if (automationResult.failed > 0) {
-    return NextResponse.json(
-      { error: 'We could not remove all automations for this tenant. Please try again.' },
-      { status: 502 }
-    );
+    return apiFailFromStatus(502, 'Dinodia Hub unavailable. Please refresh and try again.');
   }
 
   const sessions = await prisma.newDeviceCommissioningSession.findMany({
@@ -299,10 +282,7 @@ export async function DELETE(
   const registryFailures = entityResult.failed + deviceResult.failed;
 
   if (registryFailures > 0) {
-    return NextResponse.json(
-      { error: 'We could not clean up this tenant’s devices. Please try again.' },
-      { status: 502 }
-    );
+    return apiFailFromStatus(502, 'Dinodia Hub unavailable. Please refresh and try again.');
   }
 
   const deletionResult = await prisma.$transaction(async (tx) => {

@@ -5,6 +5,8 @@ import type { FormEvent } from 'react';
 import Link from 'next/link';
 import type { UIDevice } from '@/types/device';
 import { isDetailState } from '@/lib/deviceSensors';
+import { friendlyUnknownError } from '@/lib/clientError';
+import { platformFetchJson } from '@/lib/platformFetchClient';
 import {
   DeviceActionSpec,
   DeviceTriggerSpec,
@@ -352,15 +354,17 @@ export default function TenantAutomations() {
     setLoadingAutomations(true);
     try {
       const url = entityId ? `/api/automations?entityId=${encodeURIComponent(entityId)}` : '/api/automations';
-      const res = await fetch(url, { credentials: 'include' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to fetch automations');
+      const data = await platformFetchJson<{ automations?: AutomationListItem[] }>(
+        url,
+        { credentials: 'include' },
+        'Failed to fetch automations.'
+      );
       const list: AutomationListItem[] = Array.isArray(data.automations)
         ? data.automations
         : [];
       setAutomations(list);
     } catch (err) {
-      setError((err as Error).message || 'Failed to load automations');
+      setError(friendlyUnknownError(err, 'Failed to load automations.'));
     } finally {
       setLoadingAutomations(false);
     }
@@ -374,13 +378,15 @@ export default function TenantAutomations() {
     async function loadDevices() {
       setLoadingDevices(true);
       try {
-        const res = await fetch('/api/devices?fresh=1', { credentials: 'include' });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to load devices');
+        const data = await platformFetchJson<{ devices?: UIDevice[] }>(
+          '/api/devices?fresh=1',
+          { credentials: 'include' },
+          'Failed to load devices.'
+        );
         const list: UIDevice[] = Array.isArray(data.devices) ? data.devices : [];
         setDevices(list);
       } catch (err) {
-        setError((err as Error).message || 'Failed to load devices');
+        setError(friendlyUnknownError(err, 'Failed to load devices.'));
       } finally {
         setLoadingDevices(false);
       }
@@ -503,18 +509,20 @@ export default function TenantAutomations() {
     setError(null);
     try {
       const payload = buildPayload();
-      const res = await fetch('/api/automations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        credentials: 'include',
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save automation');
+      await platformFetchJson<{ ok: boolean }>(
+        '/api/automations',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          credentials: 'include',
+        },
+        'Failed to save automation.'
+      );
       setForm({ ...defaultFormState });
       await fetchAndSetAutomations(selectedEntityId);
     } catch (err) {
-      setError((err as Error).message);
+      setError(friendlyUnknownError(err, 'Failed to save automation.'));
     } finally {
       setSaving(false);
     }
@@ -524,15 +532,17 @@ export default function TenantAutomations() {
     setDeletingId(id);
     setError(null);
     try {
-      const res = await fetch(`/api/automations/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Failed to delete');
+      await platformFetchJson<{ ok: boolean }>(
+        `/api/automations/${encodeURIComponent(id)}`,
+        {
+          method: 'DELETE',
+          credentials: 'include',
+        },
+        'Failed to delete automation.'
+      );
       await fetchAndSetAutomations(selectedEntityId);
     } catch (err) {
-      setError((err as Error).message);
+      setError(friendlyUnknownError(err, 'Failed to delete automation.'));
     } finally {
       setDeletingId(null);
     }

@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import jsQR from 'jsqr';
 import type { HaConfigFlowStep } from '@/lib/matterConfigFlow';
+import { friendlyUnknownError } from '@/lib/clientError';
+import { platformFetchJson } from '@/lib/platformFetchClient';
 
 type Props = {
   areas: string[];
@@ -100,19 +102,17 @@ export default function AddMatterDeviceWizard(props: Props) {
       setLabelsLoading(true);
       setLabelsError(null);
       try {
-        const res = await fetch('/api/tenant/homeassistant/labels', { cache: 'no-store' });
-        const data = await res.json();
+        const data = await platformFetchJson<{ labels?: LabelOption[] }>(
+          '/api/tenant/homeassistant/labels',
+          { cache: 'no-store' },
+          'Unable to load labels.'
+        );
         if (!active) return;
-        if (!res.ok) {
-          throw new Error(data?.error || 'Unable to load labels');
-        }
         const list: LabelOption[] = Array.isArray(data?.labels) ? data.labels : [];
         setLabels(list);
       } catch (err) {
         if (!active) return;
-        setLabelsError(
-          err instanceof Error ? err.message : 'Home Assistant labels are unavailable right now.'
-        );
+        setLabelsError(friendlyUnknownError(err, 'Home Assistant labels are unavailable right now.'));
       } finally {
         if (active) setLabelsLoading(false);
       }
@@ -247,15 +247,11 @@ export default function AddMatterDeviceWizard(props: Props) {
     stopPolling();
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/tenant/matter/sessions/${id}`, {
-          cache: 'no-store',
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data?.error || 'Failed to check commissioning status.');
-          stopPolling();
-          return;
-        }
+        const data = await platformFetchJson<{ session: SessionPayload }>(
+          `/api/tenant/matter/sessions/${id}`,
+          { cache: 'no-store' },
+          'Failed to check commissioning status.'
+        );
         const nextSession: SessionPayload = data.session;
         setSession(nextSession);
         if (
@@ -270,6 +266,8 @@ export default function AddMatterDeviceWizard(props: Props) {
         }
       } catch (err) {
         console.error('Polling session failed', err);
+        setError(friendlyUnknownError(err, 'Failed to check commissioning status.'));
+        stopPolling();
       }
     }, 3000);
   };
@@ -292,48 +290,44 @@ export default function AddMatterDeviceWizard(props: Props) {
 
     setIsSubmitting(true);
     try {
-      const createRes = await fetch('/api/tenant/matter/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requestedArea: selectedArea,
-          requestedName: requestedName.trim() || null,
-          requestedDinodiaType: selectedType,
-          requestedHaLabelId: selectedHaLabelId,
-          setupPayload: pairingCode.trim(),
-          manualPairingCode: pairingCode.trim(),
-        }),
-      });
-      const createData = await createRes.json();
-      if (!createRes.ok) {
-        setError(createData?.error || 'Unable to start commissioning.');
-        setIsSubmitting(false);
-        return;
-      }
+      const createData = await platformFetchJson<{ session: SessionPayload; warnings?: string[] }>(
+        '/api/tenant/matter/sessions',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requestedArea: selectedArea,
+            requestedName: requestedName.trim() || null,
+            requestedDinodiaType: selectedType,
+            requestedHaLabelId: selectedHaLabelId,
+            setupPayload: pairingCode.trim(),
+            manualPairingCode: pairingCode.trim(),
+          }),
+        },
+        'Unable to start commissioning.'
+      );
       const createdSession: SessionPayload = createData.session;
       const accumulatedWarnings: string[] = [...(createData?.warnings ?? [])];
       setSession(createdSession);
       setCurrentStep(4);
 
-      const stepRes = await fetch(`/api/tenant/matter/sessions/${createdSession.id}/step`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          setupPayload: pairingCode.trim(),
-          manualPairingCode: pairingCode.trim(),
-          wifiSsid: wifiSsid.trim(),
-          wifiPassword: wifiPassword,
-        }),
-      });
-      const stepData = await stepRes.json();
+      const stepData = await platformFetchJson<{ session?: SessionPayload; warnings?: string[] }>(
+        `/api/tenant/matter/sessions/${createdSession.id}/step`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            setupPayload: pairingCode.trim(),
+            manualPairingCode: pairingCode.trim(),
+            wifiSsid: wifiSsid.trim(),
+            wifiPassword: wifiPassword,
+          }),
+        },
+        'Home Assistant rejected the pairing details.'
+      );
       setWifiPassword('');
-      if (!stepRes.ok) {
-        setError(stepData?.error || 'Home Assistant rejected the pairing details.');
-        setSession(stepData?.session ?? createdSession);
-        setWarnings(accumulatedWarnings);
-        setCurrentStep(3);
-        setIsSubmitting(false);
-        return;
+      if (!stepData?.session) {
+        throw new Error('Home Assistant rejected the pairing details.');
       }
       const nextSession: SessionPayload = stepData.session;
       setSession(nextSession);
@@ -346,7 +340,7 @@ export default function AddMatterDeviceWizard(props: Props) {
       }
     } catch (err) {
       console.error(err);
-      setError('Something went wrong while starting commissioning.');
+      setError(friendlyUnknownError(err, 'Something went wrong while starting commissioning.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -355,19 +349,18 @@ export default function AddMatterDeviceWizard(props: Props) {
   const cancelSession = async () => {
     if (!session) return;
     try {
-      const res = await fetch(`/api/tenant/matter/sessions/${session.id}/cancel`, {
-        method: 'POST',
-      });
-      const data = await res.json();
-      if (res.ok) {
-        stopPolling();
-        setSession(data.session);
-      } else {
-        setError(data?.error || 'Unable to cancel commissioning right now.');
-      }
+      const data = await platformFetchJson<{ session?: SessionPayload }>(
+        `/api/tenant/matter/sessions/${session.id}/cancel`,
+        {
+          method: 'POST',
+        },
+        'Unable to cancel commissioning right now.'
+      );
+      stopPolling();
+      if (data?.session) setSession(data.session);
     } catch (err) {
       console.error(err);
-      setError('Unable to cancel commissioning right now.');
+      setError(friendlyUnknownError(err, 'Unable to cancel commissioning right now.'));
     }
   };
 

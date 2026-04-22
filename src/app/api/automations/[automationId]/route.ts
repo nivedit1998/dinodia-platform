@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailFromStatus } from '@/lib/apiError';
 import { Role } from '@prisma/client';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getUserWithHaConnection, resolveHaForRequestedMode } from '@/lib/haConnection';
@@ -16,11 +17,11 @@ import { requireTrustedAdminDevice, toTrustedDeviceResponse } from '@/lib/device
 import { prisma } from '@/lib/prisma';
 
 function badRequest(message: string) {
-  return NextResponse.json({ ok: false, error: message }, { status: 400 });
+  return apiFailFromStatus(400, message);
 }
 
 function forbidden(message: string) {
-  return NextResponse.json({ ok: false, error: message }, { status: 403 });
+  return apiFailFromStatus(403, message);
 }
 
 function parseMode(value: string | null): 'home' | 'cloud' | undefined {
@@ -199,10 +200,7 @@ export async function PATCH(
 ) {
   const user = await getCurrentUserFromRequest(req);
   if (!user) {
-    return NextResponse.json(
-      { ok: false, error: 'Your session has ended. Please sign in again.' },
-      { status: 401 }
-    );
+    return apiFailFromStatus(401, 'Your session has ended. Please sign in again.');
   }
 
   const deviceError = await guardAdminDevice(req, user as { id: number; role: Role });
@@ -223,17 +221,8 @@ export async function PATCH(
     const result = await getUserWithHaConnection(user.id);
     haConnectionId = result.haConnection.id;
     ha = resolveHaForRequestedMode(result.haConnection, mode);
-  } catch (err) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Dinodia Hub connection isn’t set up yet for this home.',
-      },
-      { status: 400 }
-    );
+  } catch {
+    return apiFailFromStatus(400, 'Dinodia Hub connection isn’t set up yet for this home.');
   }
 
   const allowedEntities = await getAllowedEntitiesForUser(user.id, user.role as Role, haConnectionId);
@@ -258,10 +247,7 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[api/automations/[id]] Failed to update automation', err);
-    return NextResponse.json(
-      { ok: false, error: 'Failed to update automation in Home Assistant' },
-      { status: 502 }
-    );
+    return apiFailFromStatus(502, 'Dinodia Hub unavailable. Please refresh and try again.');
   }
 }
 
@@ -271,10 +257,7 @@ export async function DELETE(
 ) {
   const user = await getCurrentUserFromRequest(req);
   if (!user) {
-    return NextResponse.json(
-      { ok: false, error: 'Your session has ended. Please sign in again.' },
-      { status: 401 }
-    );
+    return apiFailFromStatus(401, 'Your session has ended. Please sign in again.');
   }
 
   const deviceError = await guardAdminDevice(req, user as { id: number; role: Role });
@@ -290,10 +273,7 @@ export async function DELETE(
     try {
       const { user: me } = await getUserWithHaConnection(user.id);
       if (!me.homeId) {
-        return NextResponse.json(
-          { ok: false, error: 'Dinodia Hub connection isn’t linked to a home.' },
-          { status: 400 }
-        );
+        return apiFailFromStatus(400, 'Dinodia Hub connection isn’t linked to a home.');
       }
       await prisma.automationOwnership.deleteMany({
         where: {
@@ -302,17 +282,8 @@ export async function DELETE(
         },
       });
       return NextResponse.json({ ok: true });
-    } catch (err) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            err instanceof Error
-              ? err.message
-              : 'Failed to delete automation tracking. Please try again.',
-        },
-        { status: 400 }
-      );
+    } catch {
+      return apiFailFromStatus(400, 'Failed to delete automation tracking. Please try again.');
     }
   }
 
@@ -325,17 +296,8 @@ export async function DELETE(
     homeId = result.user.homeId as number;
     if (!homeId) throw new Error('Dinodia Hub connection isn’t linked to a home.');
     ha = resolveHaForRequestedMode(result.haConnection, mode);
-  } catch (err) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Dinodia Hub connection isn’t set up yet for this home.',
-      },
-      { status: 400 }
-    );
+  } catch {
+    return apiFailFromStatus(400, 'Dinodia Hub connection isn’t set up yet for this home.');
   }
 
   const allowedEntities = await getAllowedEntitiesForUser(user.id, user.role as Role, haConnectionId);
@@ -365,9 +327,6 @@ export async function DELETE(
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[api/automations/[id]] Failed to delete automation', err);
-    return NextResponse.json(
-      { ok: false, error: 'Failed to delete automation in Home Assistant' },
-      { status: 502 }
-    );
+    return apiFailFromStatus(502, 'Dinodia Hub unavailable. Please refresh and try again.');
   }
 }
