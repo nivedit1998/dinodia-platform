@@ -68,6 +68,12 @@ enum SupportRequestKind {
   USER_REMOTE_ACCESS
 }
 
+enum SupportAccessScope {
+  VIEW_HOME_STATUS
+  VIEW_CREDENTIALS
+  IMPERSONATE_USER
+}
+
 model Home {
   id                 Int           @id @default(autoincrement())
   status             HomeStatus    @default(ACTIVE)
@@ -445,6 +451,8 @@ model SupportRequest {
   targetUserId    Int?
   installerUserId Int
   authChallengeId String             @unique
+  reason          String?
+  scope           SupportAccessScope?
   createdAt       DateTime           @default(now())
 
   @@index([homeId])

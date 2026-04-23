@@ -4,7 +4,7 @@ import { Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { resolveHaLongLivedToken, resolveHaUiCredentials } from '@/lib/haSecrets';
-import { computeSupportApproval } from '@/lib/supportRequests';
+import { requireActiveHomeAccess, requireActiveUserAccess } from '@/lib/supportRequests';
 import { decryptBootstrapSecret } from '@/lib/hubTokens';
 
 function parseHomeId(raw: string | undefined): number | null {
@@ -28,11 +28,55 @@ export async function GET(
     return apiFailFromStatus(400, 'Invalid home id.');
   }
 
+  const homeSummary = await prisma.home.findUnique({
+    where: { id: homeId },
+    select: {
+      id: true,
+      haConnectionId: true,
+      createdAt: true,
+      hubInstall: {
+        select: {
+          createdAt: true,
+        },
+      },
+    },
+  });
+
+  if (!homeSummary || !homeSummary.haConnectionId) {
+    return apiFailFromStatus(404, 'Home not found.');
+  }
+
+  const installedAt = homeSummary.hubInstall?.createdAt ?? homeSummary.createdAt;
+  const homeAccess = await requireActiveHomeAccess({
+    prisma,
+    homeId,
+    installerUserId: me.id,
+  });
+  const homeAccessApproved = !!homeAccess.active;
+  const homeSupportRequest = homeAccess.latest
+    ? {
+        requestId: homeAccess.latest.requestId,
+        status: homeAccess.latest.status,
+        approvedAt: homeAccess.latest.approvedAt,
+        validUntil: homeAccess.latest.validUntil,
+        expiresAt: homeAccess.latest.expiresAt,
+      }
+    : null;
+
+  if (!homeAccessApproved) {
+    return NextResponse.json({
+      ok: true,
+      homeId: homeSummary.id,
+      installedAt,
+      homeAccessApproved: false,
+      homeSupportRequest,
+    });
+  }
+
   const home = await prisma.home.findUnique({
     where: { id: homeId },
     select: {
       id: true,
-      createdAt: true,
       hubInstall: {
         select: {
           id: true,
@@ -79,39 +123,6 @@ export async function GET(
     return apiFailFromStatus(404, 'Home not found.');
   }
 
-  const installedAt = home.hubInstall?.createdAt ?? home.createdAt;
-
-  const latestHomeRequest = await prisma.supportRequest.findFirst({
-    where: { homeId, installerUserId: me.id, kind: 'HOME_ACCESS' },
-    orderBy: { createdAt: 'desc' },
-    select: { id: true, authChallengeId: true },
-  });
-
-  let homeAccessApproved = false;
-  let homeSupportRequest: {
-    requestId: string;
-    status: string;
-    approvedAt: Date | null;
-    validUntil: Date | null;
-    expiresAt: Date | null;
-  } | null = null;
-
-  if (latestHomeRequest?.authChallengeId) {
-    const challenge = await prisma.authChallenge.findUnique({
-      where: { id: latestHomeRequest.authChallengeId },
-      select: { approvedAt: true, expiresAt: true, consumedAt: true },
-    });
-    const approval = computeSupportApproval(challenge);
-    homeAccessApproved = approval.status === 'APPROVED';
-    homeSupportRequest = {
-      requestId: latestHomeRequest.id,
-      status: approval.status,
-      approvedAt: approval.approvedAt,
-      validUntil: approval.validUntil,
-      expiresAt: approval.expiresAt,
-    };
-  }
-
   let creds: {
     haUsername: string;
     haPassword: string;
@@ -130,7 +141,7 @@ export async function GET(
       cloudUrl: home.haConnection.cloudUrl ?? null,
       longLivedToken,
     };
-    if (homeAccessApproved && home.hubInstall?.bootstrapSecretCiphertext) {
+    if (home.hubInstall?.bootstrapSecretCiphertext) {
       creds.bootstrapSecret = decryptBootstrapSecret(home.hubInstall.bootstrapSecretCiphertext);
     }
   } catch (err) {
@@ -156,46 +167,19 @@ export async function GET(
 
   const users = await Promise.all(
     home.users.map(async (u) => {
-      const latestUserReq = await prisma.supportRequest.findFirst({
-        where: {
-          homeId,
-          installerUserId: me.id,
-          targetUserId: u.id,
-          kind: 'USER_REMOTE_ACCESS',
-        },
-        orderBy: { createdAt: 'desc' },
-        select: { id: true, authChallengeId: true },
+      const userAccess = await requireActiveUserAccess({
+        prisma,
+        homeId,
+        installerUserId: me.id,
+        targetUserId: u.id,
       });
-
-      let supportRequest: {
-        requestId: string;
-        status: string;
-        approvedAt: Date | null;
-        validUntil: Date | null;
-        expiresAt: Date | null;
-      } | null = null;
-
-      if (latestUserReq?.authChallengeId) {
-        const ch = await prisma.authChallenge.findUnique({
-          where: { id: latestUserReq.authChallengeId },
-          select: { approvedAt: true, expiresAt: true, consumedAt: true },
-        });
-        const approval = computeSupportApproval(ch);
-        supportRequest = {
-          requestId: latestUserReq.id,
-          status: approval.status,
-          approvedAt: approval.approvedAt,
-          validUntil: approval.validUntil,
-          expiresAt: approval.expiresAt,
-        };
-      }
 
       return {
         id: u.id,
         username: u.username,
         email: u.email ?? null,
         role: u.role,
-        supportRequest,
+        supportRequest: userAccess.latest,
       };
     })
   );
@@ -219,8 +203,8 @@ export async function GET(
     ok: true,
     homeId: home.id,
     installedAt,
-    homeAccessApproved,
-    credentials: homeAccessApproved ? creds : undefined,
+    homeAccessApproved: true,
+    credentials: creds,
     homeSupportRequest,
     hubStatus,
     homeowners,

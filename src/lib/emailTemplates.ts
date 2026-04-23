@@ -94,6 +94,8 @@ export type BuildSupportApprovalEmailParams = {
   installerUsername: string;
   homeId: number;
   targetUsername?: string;
+  reason?: string;
+  scope?: string;
 };
 
 export function buildSupportApprovalEmail(params: BuildSupportApprovalEmailParams) {

@@ -23,7 +23,7 @@ type HomeDetail = {
     bootstrapSecret?: string;
   };
   homeSupportRequest?: RequestSummary | null;
-  hubStatus: {
+  hubStatus?: {
     serial: string | null;
     lastSeenAt: string | null;
     installedAt: string;
@@ -35,10 +35,10 @@ type HomeDetail = {
     lastReportedLanBaseUrl?: string | null;
     lastReportedLanBaseUrlAt?: string | null;
   } | null;
-  homeowners: { email: string | null; username: string }[];
-  tenants: { email: string | null; username: string; areas: string[] }[];
-  alexaEnabled: { email: string | null; username: string }[];
-  users: { id: number; username: string; email: string | null; role: string; supportRequest?: RequestSummary | null }[];
+  homeowners?: { email: string | null; username: string }[];
+  tenants?: { email: string | null; username: string; areas: string[] }[];
+  alexaEnabled?: { email: string | null; username: string }[];
+  users?: { id: number; username: string; email: string | null; role: string; supportRequest?: RequestSummary | null }[];
 };
 
 type RequestStatus = 'PENDING' | 'APPROVED' | 'EXPIRED' | 'CONSUMED' | 'NOT_FOUND';
@@ -58,6 +58,9 @@ type RequestTracking = {
   approvedAt?: string | null;
   validUntil?: string | null;
 };
+
+const DEFAULT_HOME_ACCESS_REASON = 'Installer requested temporary home troubleshooting access.';
+const DEFAULT_USER_ACCESS_REASON = 'Installer requested temporary user impersonation for troubleshooting.';
 
 function formatDate(value: string | null | undefined) {
   if (!value) return '—';
@@ -178,7 +181,11 @@ export default function HomeSupportClient({ installerName }: { installerName: st
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ homeId }),
+          body: JSON.stringify({
+            homeId,
+            reason: DEFAULT_HOME_ACCESS_REASON,
+            scope: 'VIEW_CREDENTIALS',
+          }),
         },
         'Request failed.'
       );
@@ -227,7 +234,12 @@ export default function HomeSupportClient({ installerName }: { installerName: st
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ homeId, userId }),
+          body: JSON.stringify({
+            homeId,
+            userId,
+            reason: DEFAULT_USER_ACCESS_REASON,
+            scope: 'IMPERSONATE_USER',
+          }),
         },
         'Request failed.'
       );
@@ -493,6 +505,8 @@ export default function HomeSupportClient({ installerName }: { installerName: st
                             )}
                           </section>
 
+                          {detail.homeAccessApproved ? (
+                            <>
                           <section className="rounded-md bg-white p-3 shadow-inner ring-1 ring-slate-200">
                             <p className="text-sm font-semibold text-slate-900">Hub Local connection Status</p>
                             <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -520,8 +534,8 @@ export default function HomeSupportClient({ installerName }: { installerName: st
                           <section className="rounded-md bg-white p-3 shadow-inner ring-1 ring-slate-200">
                             <p className="text-sm font-semibold text-slate-900">Current Homeowner</p>
                             <ul className="mt-2 space-y-1 text-sm text-slate-800">
-                              {detail.homeowners.length === 0 && <li>None</li>}
-                              {detail.homeowners.map((u) => (
+                              {(detail.homeowners ?? []).length === 0 && <li>None</li>}
+                              {(detail.homeowners ?? []).map((u) => (
                                 <li key={u.username}>{u.email ?? 'No email'} ({u.username})</li>
                               ))}
                             </ul>
@@ -530,8 +544,8 @@ export default function HomeSupportClient({ installerName }: { installerName: st
                           <section className="rounded-md bg-white p-3 shadow-inner ring-1 ring-slate-200">
                             <p className="text-sm font-semibold text-slate-900">Tenants</p>
                             <ul className="mt-2 space-y-1 text-sm text-slate-800">
-                              {detail.tenants.length === 0 && <li>None</li>}
-                              {detail.tenants.map((u) => (
+                              {(detail.tenants ?? []).length === 0 && <li>None</li>}
+                              {(detail.tenants ?? []).map((u) => (
                                 <li key={u.username}>
                                   {u.email ?? 'No email'} ({u.username})
                                   {u.areas.length > 0 && (
@@ -545,8 +559,8 @@ export default function HomeSupportClient({ installerName }: { installerName: st
                           <section className="rounded-md bg-white p-3 shadow-inner ring-1 ring-slate-200">
                             <p className="text-sm font-semibold text-slate-900">Alexa Enabled</p>
                             <ul className="mt-2 space-y-1 text-sm text-slate-800">
-                              {detail.alexaEnabled.length === 0 && <li>None</li>}
-                              {detail.alexaEnabled.map((u) => (
+                              {(detail.alexaEnabled ?? []).length === 0 && <li>None</li>}
+                              {(detail.alexaEnabled ?? []).map((u) => (
                                 <li key={u.username}>{u.email ?? 'No email'} ({u.username})</li>
                               ))}
                             </ul>
@@ -555,7 +569,7 @@ export default function HomeSupportClient({ installerName }: { installerName: st
                           <section className="rounded-md bg-white p-3 shadow-inner ring-1 ring-slate-200">
                             <p className="text-sm font-semibold text-slate-900">User Support</p>
                             <div className="mt-2 space-y-3">
-                                {detail.users.map((user) => {
+                                {(detail.users ?? []).map((user) => {
                                   const key = `${home.homeId}:${user.id}`;
                                   const uReq = user.supportRequest
                                     ? {
@@ -612,6 +626,12 @@ export default function HomeSupportClient({ installerName }: { installerName: st
                               })}
                             </div>
                           </section>
+                            </>
+                          ) : (
+                            <p className="text-xs text-slate-600">
+                              Home and resident details stay hidden until homeowner approval is active.
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>

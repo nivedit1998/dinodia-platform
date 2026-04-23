@@ -9,6 +9,23 @@ import { sendEmail } from '@/lib/email';
 import { computeSupportApproval } from '@/lib/supportRequests';
 
 const TTL_MINUTES = 60;
+const MIN_REASON_LENGTH = 8;
+const MAX_REASON_LENGTH = 500;
+const USER_SCOPE = 'IMPERSONATE_USER';
+
+function parseSupportReason(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim();
+  if (value.length < MIN_REASON_LENGTH || value.length > MAX_REASON_LENGTH) return null;
+  return value;
+}
+
+function parseUserScope(raw: unknown): typeof USER_SCOPE | null {
+  if (raw === USER_SCOPE) {
+    return USER_SCOPE;
+  }
+  return null;
+}
 
 export async function POST(req: NextRequest) {
   const me = await getCurrentUserFromRequest(req);
@@ -19,8 +36,16 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const homeId = Number(body?.homeId ?? 0);
   const userId = Number(body?.userId ?? 0);
+  const reason = parseSupportReason(body?.reason);
+  const scope = parseUserScope(body?.scope);
   if (!Number.isInteger(homeId) || homeId <= 0 || !Number.isInteger(userId) || userId <= 0) {
     return apiFailFromStatus(400, 'Invalid home or user id.');
+  }
+  if (!reason) {
+    return apiFailFromStatus(400, 'Support reason must be 8-500 characters.');
+  }
+  if (!scope) {
+    return apiFailFromStatus(400, 'Invalid support scope for user access.');
   }
 
   const targetUser = await prisma.user.findUnique({
@@ -78,6 +103,8 @@ export async function POST(req: NextRequest) {
       targetUserId: targetUser.id,
       installerUserId: me.id,
       authChallengeId: challenge.id,
+      reason,
+      scope,
     },
   });
 
@@ -90,6 +117,8 @@ export async function POST(req: NextRequest) {
     installerUsername: me.username,
     homeId,
     targetUsername: targetUser.username ?? undefined,
+    reason,
+    scope,
   });
 
   await sendEmail({
