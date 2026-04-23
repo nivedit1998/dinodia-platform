@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Role } from '@prisma/client';
+import { Role, SupportAccessScope } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { maskEmailForTenantRoster } from '@/lib/emailMask';
@@ -11,6 +11,10 @@ type SupportMeta = {
   requestId: string;
   approvedAt: string;
   validUntil: string;
+  scope?: SupportAccessScope | null;
+  reason?: string | null;
+  requestedBy?: { id: number; username: string; role: 'INSTALLER' } | null;
+  canRevoke: boolean;
   viaUser?: { id: number; username: string; role: 'ADMIN' | 'TENANT' } | null;
 };
 
@@ -85,13 +89,19 @@ export async function GET(req: NextRequest) {
   });
 
   const supportRequests = await prisma.supportRequest.findMany({
-    where: { homeId: tenant.homeId, kind: { in: ['HOME_ACCESS', 'USER_REMOTE_ACCESS'] } },
+    where: {
+      homeId: tenant.homeId,
+      kind: { in: ['HOME_ACCESS', 'USER_REMOTE_ACCESS'] },
+      revokedAt: null,
+    },
     select: {
       id: true,
       kind: true,
       installerUserId: true,
       targetUserId: true,
       authChallengeId: true,
+      scope: true,
+      reason: true,
       createdAt: true,
     },
   });
@@ -147,6 +157,10 @@ export async function GET(req: NextRequest) {
       requestId: req.id,
       approvedAt: approval.approvedAt?.toISOString() ?? '',
       validUntil: approval.validUntil?.toISOString() ?? '',
+      scope: req.scope,
+      reason: req.reason,
+      requestedBy: { id: installer.id, username: installer.username, role: 'INSTALLER' },
+      canRevoke: true,
       viaUser: req.targetUserId
         ? (() => {
             const target = userById.get(req.targetUserId);

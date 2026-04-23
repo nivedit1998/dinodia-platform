@@ -96,10 +96,11 @@ export type BuildSupportApprovalEmailParams = {
   targetUsername?: string;
   reason?: string;
   scope?: string;
+  revokeUrl?: string;
 };
 
 export function buildSupportApprovalEmail(params: BuildSupportApprovalEmailParams) {
-  const { kind, verifyUrl, appUrl, installerUsername, homeId, targetUsername } = params;
+  const { kind, verifyUrl, appUrl, installerUsername, homeId, targetUsername, reason, scope, revokeUrl } = params;
   const isHome = kind === 'SUPPORT_HOME_ACCESS';
   const subject = isHome
     ? 'Approve installer home support access'
@@ -108,17 +109,38 @@ export function buildSupportApprovalEmail(params: BuildSupportApprovalEmailParam
   const purposeCopy = isHome
     ? `Allow installer "${installerUsername}" to view home credentials for Home #${homeId} to troubleshoot.`
     : `Allow installer "${installerUsername}" to temporarily access your Dinodia dashboard for Home #${homeId}.`;
+  const normalizedReason = typeof reason === 'string' && reason.trim().length > 0 ? reason.trim() : null;
+  const scopeCopy = (() => {
+    if (isHome) {
+      if (scope === 'VIEW_HOME_STATUS') return 'Requested scope: View home status only.';
+      if (scope === 'VIEW_CREDENTIALS') return 'Requested scope: View home status and credentials.';
+      return 'Requested scope: Home support access.';
+    }
+    if (scope === 'IMPERSONATE_USER') {
+      return 'Requested scope: Temporary dashboard access as your account for troubleshooting.';
+    }
+    return 'Requested scope: Remote support access.';
+  })();
+  const safeAppUrl = appUrl.replace(/\/$/, '');
+  const revokeLink = revokeUrl?.trim() || `${safeAppUrl}/tenant/dashboard?panel=access`;
 
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 520px; color: #0f172a;">
       <h2 style="color: #0f172a; margin-bottom: 12px;">Dinodia Smart Living</h2>
       <p style="margin: 0 0 12px 0;">${greeting}</p>
       <p style="margin: 0 0 12px 0;">${purposeCopy}</p>
+      <p style="margin: 0 0 12px 0; color: #334155;">${scopeCopy}</p>
+      ${normalizedReason ? `<p style="margin: 0 0 12px 0; color: #334155;">Reason: ${normalizedReason}</p>` : ''}
       <p style="margin: 0 0 16px 0;">Click to approve this request:</p>
       <p style="margin: 0 0 16px 0;">
         <a href="${verifyUrl}" style="background:#111827;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Approve access</a>
       </p>
       <p style="margin: 0 0 12px 0;">Or open this link: <a href="${verifyUrl}">${verifyUrl}</a></p>
+      <p style="margin: 0 0 12px 0; color: #475569;">Support access is temporary and under your control.</p>
+      <p style="margin: 0 0 16px 0;">
+        <a href="${revokeLink}" style="background:#b91c1c;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Revoke access now</a>
+      </p>
+      <p style="margin: 0 0 12px 0;">Revoke link: <a href="${revokeLink}">${revokeLink}</a></p>
       <p style="margin: 0 0 12px 0; color: #475569;">This approval link expires soon.</p>
       <p style="margin: 0 0 12px 0; color: #475569;">You can return to <a href="${appUrl}">${appUrl}</a> anytime.</p>
     </div>
@@ -129,12 +151,20 @@ export function buildSupportApprovalEmail(params: BuildSupportApprovalEmailParam
     greeting,
     '',
     purposeCopy,
+    scopeCopy,
+    normalizedReason ? `Reason: ${normalizedReason}` : null,
     'Approve access:',
     verifyUrl,
     '',
+    'Support access is temporary and under your control.',
+    'Revoke access now:',
+    revokeLink,
+    '',
     'This approval link expires soon.',
     `Return to ${appUrl} anytime.`,
-  ].join('\n');
+  ]
+    .filter((line): line is string => typeof line === 'string')
+    .join('\n');
 
   return { subject, html, text };
 }
