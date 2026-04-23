@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AuditEventType } from '@prisma/client';
 import { cookies } from 'next/headers';
-import { getJwtClaimsFromRequest, setAuthCookie } from '@/lib/auth';
+import { clearAuthCookie, setAuthCookie } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { getActiveInstallerImpersonation } from '@/lib/installerSupportScope';
 
 const BACKUP_COOKIE_NAME = 'dinodia_installer_backup_token';
 
 export async function GET(req: NextRequest) {
-  const claims = await getJwtClaimsFromRequest(req);
-  const impersonation = claims?.impersonation;
+  const impersonation = await getActiveInstallerImpersonation(req);
 
   const cookieStore = await cookies();
   const backup = cookieStore.get(BACKUP_COOKIE_NAME)?.value ?? null;
@@ -37,6 +37,9 @@ export async function GET(req: NextRequest) {
             targetUserId: supportRequest.targetUserId,
             scope: supportRequest.scope,
             reason: supportRequest.reason,
+            installerDeviceId: impersonation.installerDeviceId,
+            issuedAt: impersonation.issuedAt,
+            expiresAt: impersonation.expiresAt,
             restoredInstallerSession: Boolean(backup),
           },
         },
@@ -45,6 +48,14 @@ export async function GET(req: NextRequest) {
   }
 
   if (!backup) {
+    await clearAuthCookie();
+    cookieStore.set(BACKUP_COOKIE_NAME, '', {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 0,
+    });
     return NextResponse.json({ ok: true, restored: false });
   }
 

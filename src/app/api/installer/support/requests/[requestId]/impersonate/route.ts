@@ -10,10 +10,51 @@ import {
   setAuthCookieWithTtl,
 } from '@/lib/auth';
 import { computeSupportApproval } from '@/lib/supportRequests';
+import { ensureActiveDevice } from '@/lib/deviceRegistry';
+import { readDeviceHeaders } from '@/lib/deviceAuth';
+import {
+  INSTALLER_IMPERSONATION_SCOPE,
+  isScopeAllowedForImpersonation,
+} from '@/lib/installerSupportScope';
 
 const AUTH_COOKIE_NAME = 'dinodia_token';
 const BACKUP_COOKIE_NAME = 'dinodia_installer_backup_token';
-const IMPERSONATION_TTL_SECONDS = 60 * 60; // 60 minutes
+const IMPERSONATION_TTL_SECONDS = 15 * 60; // 15 minutes
+
+async function resolveInstallerDeviceId(req: NextRequest, installerUserId: number): Promise<string | null> {
+  const headerDeviceId = readDeviceHeaders(req).deviceId;
+
+  if (headerDeviceId) {
+    const trustedByHeader = await prisma.trustedDevice.findUnique({
+      where: { userId_deviceId: { userId: installerUserId, deviceId: headerDeviceId } },
+      select: { revokedAt: true },
+    });
+    if (trustedByHeader && !trustedByHeader.revokedAt) {
+      try {
+        await ensureActiveDevice(headerDeviceId);
+        return headerDeviceId;
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  const mostRecentTrusted = await prisma.trustedDevice.findFirst({
+    where: { userId: installerUserId, revokedAt: null },
+    orderBy: { lastSeenAt: 'desc' },
+    select: { deviceId: true },
+  });
+  if (!mostRecentTrusted?.deviceId) {
+    return null;
+  }
+
+  try {
+    await ensureActiveDevice(mostRecentTrusted.deviceId);
+  } catch {
+    return null;
+  }
+  return mostRecentTrusted.deviceId;
+}
 
 export async function POST(
   req: NextRequest,
@@ -47,7 +88,8 @@ export async function POST(
     !supportRequest ||
     supportRequest.installerUserId !== me.id ||
     supportRequest.kind !== 'USER_REMOTE_ACCESS' ||
-    !supportRequest.targetUserId
+    !supportRequest.targetUserId ||
+    !isScopeAllowedForImpersonation(supportRequest.scope)
   ) {
     return apiFailFromStatus(404, 'Support request not found.');
   }
@@ -77,7 +119,12 @@ export async function POST(
     return apiFailFromStatus(401, 'Missing installer session.');
   }
 
-  // Backup installer session for 60 minutes
+  const installerDeviceId = await resolveInstallerDeviceId(req, me.id);
+  if (!installerDeviceId) {
+    return apiFailFromStatus(403, 'This installer device is not trusted for impersonation.');
+  }
+
+  // Backup installer session for 15 minutes
   cookieStore.set(BACKUP_COOKIE_NAME, currentToken, {
     httpOnly: true,
     sameSite: 'lax',
@@ -91,10 +138,14 @@ export async function POST(
     username: targetUser.username,
     role: targetUser.role,
   };
+  const issuedAtIso = new Date().toISOString();
   const expiresAtIso = new Date(Date.now() + IMPERSONATION_TTL_SECONDS * 1000).toISOString();
   const token = createTokenWithExpiry(impersonation, IMPERSONATION_TTL_SECONDS, {
     installerUserId: me.id,
     supportRequestId: supportRequest.id,
+    installerDeviceId,
+    scope: INSTALLER_IMPERSONATION_SCOPE,
+    issuedAt: issuedAtIso,
     expiresAt: expiresAtIso,
   });
 
@@ -119,6 +170,9 @@ export async function POST(
           targetUserId: supportRequest.targetUserId,
           scope: supportRequest.scope,
           reason: supportRequest.reason,
+          installerDeviceId,
+          issuedAt: issuedAtIso,
+          expiresAt: expiresAtIso,
           startedAt: consumedAt.toISOString(),
         },
       },

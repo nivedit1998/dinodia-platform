@@ -13,9 +13,14 @@ export type AuthUser = {
   role: Role;
 };
 
+export type InstallerImpersonationScope = 'IMPERSONATE_USER';
+
 export type ImpersonationMeta = {
   installerUserId: number;
   supportRequestId: string;
+  installerDeviceId: string;
+  scope: InstallerImpersonationScope;
+  issuedAt: string;
   expiresAt: string;
 };
 

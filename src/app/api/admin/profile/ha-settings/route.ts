@@ -6,6 +6,7 @@ import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getUserWithHaConnection } from '@/lib/haConnection';
 import { requireTrustedAdminDevice, toTrustedDeviceResponse } from '@/lib/deviceAuth';
 import { buildEncryptedHaSecrets, hashSecretForLookup } from '@/lib/haSecrets';
+import { getActiveInstallerImpersonation } from '@/lib/installerSupportScope';
 
 function normalizeHaBaseUrl(value: string) {
   const trimmed = value.trim();
@@ -59,11 +60,20 @@ async function guardAdminDevice(req: NextRequest, userId: number) {
   }
 }
 
+async function guardInstallerImpersonation(req: NextRequest) {
+  const impersonation = await getActiveInstallerImpersonation(req);
+  if (!impersonation) return null;
+  return apiFailFromStatus(403, 'Installer impersonation cannot access Home Assistant credential settings.');
+}
+
 export async function GET(req: NextRequest) {
   const me = await getCurrentUserFromRequest(req);
   if (!me || me.role !== Role.ADMIN) {
     return apiFailFromStatus(401, 'Your session has ended. Please sign in again.');
   }
+
+  const impersonationError = await guardInstallerImpersonation(req);
+  if (impersonationError) return impersonationError;
 
   const deviceError = await guardAdminDevice(req, me.id);
   if (deviceError) return deviceError;
@@ -88,6 +98,9 @@ export async function PUT(req: NextRequest) {
   if (!me || me.role !== Role.ADMIN) {
     return apiFailFromStatus(401, 'Your session has ended. Please sign in again.');
   }
+
+  const impersonationError = await guardInstallerImpersonation(req);
+  if (impersonationError) return impersonationError;
 
   const deviceError = await guardAdminDevice(req, me.id);
   if (deviceError) return deviceError;

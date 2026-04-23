@@ -4,11 +4,17 @@ import { getUserWithHaConnection } from '@/lib/haConnection';
 import { requireKioskDeviceSession } from '@/lib/deviceAuth';
 import { prisma } from '@/lib/prisma';
 import { getPublishedHubTokenPlaintext } from '@/lib/hubTokens';
+import { getActiveInstallerImpersonation } from '@/lib/installerSupportScope';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
+    const impersonation = await getActiveInstallerImpersonation(req);
+    if (impersonation) {
+      return apiFailFromStatus(403, 'Installer impersonation cannot access home-mode secrets.');
+    }
+
     const { user } = await requireKioskDeviceSession(req);
     const { haConnection, user: fullUser } = await getUserWithHaConnection(user.id);
     if (!haConnection.baseUrl) {
