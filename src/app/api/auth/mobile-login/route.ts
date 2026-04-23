@@ -14,6 +14,7 @@ import { isDeviceTrusted, touchTrustedDevice, trustDevice } from '@/lib/deviceTr
 import { registerOrValidateDevice, DeviceBlockedError } from '@/lib/deviceRegistry';
 import { checkRateLimit } from '@/lib/rateLimit';
 import { getClientIp } from '@/lib/requestInfo';
+import { hashForLog, safeLog } from '@/lib/safeLogger';
 
 const REPLY_TO = 'niveditgupta@dinodiasmartliving.com';
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -131,10 +132,9 @@ export async function POST(req: NextRequest) {
       type SessionVersionRow = { sessionVersion?: number | null };
       const sessionVersion = (trustedRow as unknown as SessionVersionRow | null)?.sessionVersion ?? 0;
       const token = createKioskToken(sessionUser, resolvedDemoDeviceId, sessionVersion);
-      console.log('[mobile-login] Apple review bypass', {
+      safeLog('info', '[mobile-login] Apple review bypass', {
         userId: user.id,
-        username: user.username,
-        deviceId: resolvedDemoDeviceId,
+        deviceIdHash: hashForLog(resolvedDemoDeviceId),
       });
       return NextResponse.json({ ok: true, token, role: user.role, cloudEnabled });
     }
@@ -245,7 +245,7 @@ export async function POST(req: NextRequest) {
           replyTo: REPLY_TO,
         });
 
-        console.log('[mobile-login] Sent admin email verification challenge', {
+        safeLog('info', '[mobile-login] Sent admin email verification challenge', {
           userId: user.id,
           challengeId: challenge.id,
         });
@@ -292,7 +292,7 @@ export async function POST(req: NextRequest) {
           replyTo: REPLY_TO,
         });
 
-        console.log('[mobile-login] Sent admin new device challenge', {
+        safeLog('info', '[mobile-login] Sent admin new device challenge', {
           userId: user.id,
           challengeId: challenge.id,
         });
@@ -312,7 +312,7 @@ export async function POST(req: NextRequest) {
       type SessionVersionRow = { sessionVersion?: number | null };
       const sessionVersion = (trustedRow as unknown as SessionVersionRow | null)?.sessionVersion ?? 0;
       const token = createKioskToken(sessionUser, deviceId, sessionVersion);
-      console.log('[mobile-login] Admin login successful', { userId: user.id });
+      safeLog('info', '[mobile-login] Admin login successful', { userId: user.id });
       return NextResponse.json({ ok: true, token, role: user.role, cloudEnabled });
     }
 
@@ -374,7 +374,7 @@ export async function POST(req: NextRequest) {
         replyTo: REPLY_TO,
       });
 
-      console.log('[mobile-login] Sent tenant email verification challenge', {
+      safeLog('info', '[mobile-login] Sent tenant email verification challenge', {
         userId: user.id,
         challengeId: challenge.id,
       });
@@ -423,7 +423,7 @@ export async function POST(req: NextRequest) {
         replyTo: REPLY_TO,
       });
 
-      console.log('[mobile-login] Sent tenant new device challenge', {
+      safeLog('info', '[mobile-login] Sent tenant new device challenge', {
         userId: user.id,
         challengeId: challenge.id,
       });
@@ -443,10 +443,10 @@ export async function POST(req: NextRequest) {
     type SessionVersionRow = { sessionVersion?: number | null };
     const sessionVersion = (trustedRow as unknown as SessionVersionRow | null)?.sessionVersion ?? 0;
     const token = createKioskToken(sessionUser, deviceId, sessionVersion);
-    console.log('[mobile-login] Tenant login successful', { userId: user.id });
+    safeLog('info', '[mobile-login] Tenant login successful', { userId: user.id });
     return NextResponse.json({ ok: true, token, role: user.role, cloudEnabled });
   } catch (err) {
-    console.error('[mobile-login] Login error', err);
+    safeLog('error', '[mobile-login] Login error', { error: err });
     return fail(
       500,
       AUTH_ERROR_CODES.INTERNAL_ERROR,
