@@ -8,8 +8,7 @@ import { friendlyErrorFromUnknown, parseApiError } from '@/lib/authClientError';
 type ChallengeStatus = 'PENDING' | 'APPROVED' | 'CONSUMED' | 'EXPIRED' | 'NOT_FOUND' | null;
 
 type PendingLoginState = {
-  username: string;
-  password: string;
+  loginIntentId: string;
   deviceId: string;
   deviceLabel: string;
   challengeId?: string | null;
@@ -69,8 +68,7 @@ export default function TenantSetup2FA() {
       const parsed = JSON.parse(raw) as PendingLoginState;
       if (
         parsed &&
-        parsed.username &&
-        parsed.password &&
+        parsed.loginIntentId &&
         parsed.deviceId &&
         parsed.deviceLabel
       ) {
@@ -162,7 +160,7 @@ export default function TenantSetup2FA() {
       setInfo(null);
       const saved = pending ?? loadPending();
       if (!saved) {
-        setError('Login details missing. Please start from the login page.');
+        setError('Login session missing. Please start from the login page.');
         return;
       }
       if (!email || !confirmEmail) {
@@ -176,15 +174,14 @@ export default function TenantSetup2FA() {
 
       setLoading(true);
       try {
-        const res = await fetch('/api/auth/login', {
+        const res = await fetch(`/api/auth/login-intents/${saved.loginIntentId}/continue`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({
-            username: saved.username,
-            password: saved.password,
             email,
-            deviceId: saved.deviceId,
             deviceLabel: saved.deviceLabel,
+            confirmEmail,
           }),
         });
         const data = await res.json();

@@ -8,8 +8,7 @@ import { friendlyErrorFromUnknown, parseApiError } from '@/lib/authClientError';
 type ChallengeStatus = 'PENDING' | 'APPROVED' | 'CONSUMED' | 'EXPIRED' | 'NOT_FOUND' | null;
 
 type FirstLoginState = {
-  username: string;
-  password: string;
+  loginIntentId: string;
   deviceId: string;
   deviceLabel: string;
 };
@@ -70,7 +69,7 @@ export default function TenantFirstLoginPage() {
       const raw = sessionStorage.getItem(TENANT_FIRST_LOGIN_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw) as FirstLoginState;
-      if (parsed && parsed.username && parsed.password && parsed.deviceId && parsed.deviceLabel) {
+      if (parsed && parsed.loginIntentId && parsed.deviceId && parsed.deviceLabel) {
         return parsed;
       }
       return null;
@@ -167,7 +166,7 @@ export default function TenantFirstLoginPage() {
       setInfo(null);
       const current = state ?? loadState();
       if (!current) {
-        setError('Your session expired. Please log in again.');
+        setError('Your login session expired. Please log in again.');
         return;
       }
 
@@ -190,15 +189,15 @@ export default function TenantFirstLoginPage() {
 
       setLoading(true);
       try {
-        const res = await fetch('/api/auth/login', {
+        const res = await fetch(`/api/auth/login-intents/${current.loginIntentId}/continue`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({
-            username: current.username,
-            password: current.password,
             newPassword,
             confirmNewPassword,
             email,
+            confirmEmail,
             deviceId: current.deviceId,
             deviceLabel: current.deviceLabel,
           }),

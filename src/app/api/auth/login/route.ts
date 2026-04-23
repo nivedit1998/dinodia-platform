@@ -20,6 +20,7 @@ import { ensureInstallerAccount } from '@/lib/installerAccount';
 import { checkRateLimit } from '@/lib/rateLimit';
 import { getClientIp } from '@/lib/requestInfo';
 import { getOrCreateDevice } from '@/lib/deviceRegistry';
+import { createLoginIntent } from '@/lib/loginIntents';
 
 const REPLY_TO = 'niveditgupta@dinodiasmartliving.com';
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -110,6 +111,20 @@ export async function POST(req: NextRequest) {
     };
     const cloudEnabled = Boolean(user.home?.haConnection?.cloudUrl?.trim());
     const appUrl = getAppUrl();
+    let loginIntentId: string | null = null;
+    const getLoginIntentId = async () => {
+      if (loginIntentId) return loginIntentId;
+      if (!deviceId) return null;
+      const intent = await createLoginIntent({
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        deviceId,
+        deviceLabel: typeof deviceLabel === 'string' ? deviceLabel : null,
+      });
+      loginIntentId = intent.id;
+      return loginIntentId;
+    };
 
     if (user.role === Role.ADMIN || user.role === Role.INSTALLER) {
       if (deviceId) {
@@ -125,6 +140,8 @@ export async function POST(req: NextRequest) {
               ok: true,
               requiresEmailVerification: true,
               needsEmailInput: true,
+              role: user.role,
+              loginIntentId: await getLoginIntentId(),
             });
           }
           if (!EMAIL_REGEX.test(email)) {
@@ -181,6 +198,8 @@ export async function POST(req: NextRequest) {
           ok: true,
           requiresEmailVerification: true,
           challengeId: challenge.id,
+          role: user.role,
+          loginIntentId: await getLoginIntentId(),
         });
       }
 
@@ -222,6 +241,8 @@ export async function POST(req: NextRequest) {
           ok: true,
           requiresEmailVerification: true,
           challengeId: challenge.id,
+          role: user.role,
+          loginIntentId: await getLoginIntentId(),
         });
       }
 
@@ -241,6 +262,7 @@ export async function POST(req: NextRequest) {
           role: user.role,
           requiresPasswordChange: true,
           passwordPolicy: { minLength: 8 },
+          loginIntentId: await getLoginIntentId(),
         });
       }
       if (newPassword !== confirmNewPassword) {
@@ -291,6 +313,7 @@ export async function POST(req: NextRequest) {
           requiresEmailVerification: true,
           needsEmailInput: true,
           role: user.role,
+          loginIntentId: await getLoginIntentId(),
         });
       }
 
@@ -323,6 +346,7 @@ export async function POST(req: NextRequest) {
         requiresEmailVerification: true,
         challengeId: challenge.id,
         role: user.role,
+        loginIntentId: await getLoginIntentId(),
       });
     }
 
@@ -366,6 +390,7 @@ export async function POST(req: NextRequest) {
         requiresEmailVerification: true,
         challengeId: challenge.id,
         role: user.role,
+        loginIntentId: await getLoginIntentId(),
       });
     }
 

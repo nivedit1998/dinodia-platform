@@ -34,8 +34,7 @@ export default function LoginPage() {
 
   const persistTenantSetupState = useCallback(
     (state: {
-      username: string;
-      password: string;
+      loginIntentId: string;
       deviceId: string;
       deviceLabel: string;
       challengeId?: string | null;
@@ -56,7 +55,7 @@ export default function LoginPage() {
   );
 
   const persistTenantFirstLoginState = useCallback(
-    (state: { username: string; password: string; deviceId: string; deviceLabel: string }) => {
+    (state: { loginIntentId: string; deviceId: string; deviceLabel: string }) => {
       try {
         sessionStorage.setItem(TENANT_FIRST_LOGIN_KEY, JSON.stringify(state));
       } catch {
@@ -192,13 +191,16 @@ export default function LoginPage() {
     }
 
     if (data.requiresPasswordChange && data.role === 'TENANT') {
+      if (!data.loginIntentId) {
+        setError('Login session missing. Please try again.');
+        return;
+      }
       if (!deviceId || !deviceLabel) {
         setError('Device information is missing. Please try again.');
         return;
       }
       persistTenantFirstLoginState({
-        username,
-        password,
+        loginIntentId: data.loginIntentId,
         deviceId,
         deviceLabel,
       });
@@ -210,13 +212,16 @@ export default function LoginPage() {
       const isTenant = data.role === 'TENANT';
 
       if (isTenant) {
+        if (!data.loginIntentId) {
+          setError('Login session missing. Please try again.');
+          return;
+        }
         if (!deviceId || !deviceLabel) {
           setError('Device information is missing. Please try again.');
           return;
         }
         persistTenantSetupState({
-          username,
-          password,
+          loginIntentId: data.loginIntentId,
           deviceId,
           deviceLabel,
           challengeId: data.challengeId ?? null,

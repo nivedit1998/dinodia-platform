@@ -150,6 +150,7 @@ model User {
   automationOwnerships AutomationOwnership[]
   trustedDevices    TrustedDevice[]
   authChallenges    AuthChallenge[]
+  loginIntents      LoginIntent[]
   stepUpApprovals   StepUpApproval[]
   remoteAccessLeases RemoteAccessLease[]
   actedAuditEvents  AuditEvent[] @relation("AuditEventActor")
@@ -159,6 +160,25 @@ model User {
   updatedAt         DateTime      @updatedAt
 
   @@index([homeId])
+}
+
+model LoginIntent {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      Int
+  username    String
+  role        Role
+  deviceId    String
+  deviceLabel String?
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
 }
 
 model TrustedDevice {
