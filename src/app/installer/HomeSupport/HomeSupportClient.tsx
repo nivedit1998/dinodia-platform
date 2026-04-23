@@ -72,6 +72,9 @@ export default function HomeSupportClient({ installerName }: { installerName: st
   const [homes, setHomes] = useState<HomeSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lookupHomeId, setLookupHomeId] = useState('');
+  const [lookupSerial, setLookupSerial] = useState('');
+  const [hasSearched, setHasSearched] = useState(false);
 
   const [expandedHomeId, setExpandedHomeId] = useState<number | null>(null);
   const [details, setDetails] = useState<Record<number, HomeDetail>>({});
@@ -87,30 +90,50 @@ export default function HomeSupportClient({ installerName }: { installerName: st
     return () => clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function loadHomes() {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await platformFetchJson<{ ok?: boolean; homes?: HomeSummary[] }>(
-          '/api/installer/home-support/homes',
-          undefined,
-          'Failed to load homes.'
-        );
-        if (!data?.ok) throw new Error('Failed to load homes.');
-        if (!cancelled) setHomes(data.homes ?? []);
-      } catch (err) {
-        if (!cancelled) setError(friendlyUnknownError(err, 'Failed to load homes.'));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+  async function lookupHomes(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const homeId = lookupHomeId.trim();
+    const serial = lookupSerial.trim();
+
+    if ((homeId && serial) || (!homeId && !serial)) {
+      setError('Enter either Home ID or Hub Serial.');
+      return;
     }
-    loadHomes();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (homeId && !/^\d+$/.test(homeId)) {
+      setError('Home ID must be a positive number.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setHasSearched(true);
+    try {
+      const params = new URLSearchParams();
+      if (homeId) params.set('homeId', homeId);
+      if (serial) params.set('serial', serial);
+      const data = await platformFetchJson<{ ok?: boolean; homes?: HomeSummary[] }>(
+        `/api/installer/home-support/homes?${params.toString()}`,
+        undefined,
+        'Failed to load homes.'
+      );
+      if (!data?.ok) throw new Error('Failed to load homes.');
+      const nextHomes = data.homes ?? [];
+      setHomes(nextHomes);
+      setExpandedHomeId(null);
+      setDetails({});
+      setDetailLoading({});
+      setDetailError({});
+      setHomeRequests({});
+      setUserRequests({});
+      if (nextHomes.length === 0) {
+        setError('No home found for that Home ID or Hub Serial.');
+      }
+    } catch (err) {
+      setError(friendlyUnknownError(err, 'Failed to load homes.'));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function loadDetail(homeId: number) {
     setDetailError((prev) => ({ ...prev, [homeId]: null }));
@@ -346,7 +369,36 @@ export default function HomeSupportClient({ installerName }: { installerName: st
             </div>
           </div>
 
-          {loading && <p className="mt-4 text-sm text-slate-600">Loading homes…</p>}
+          <form onSubmit={lookupHomes} className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Lookup Home</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <input
+                type="text"
+                value={lookupHomeId}
+                onChange={(e) => setLookupHomeId(e.target.value)}
+                placeholder="Home ID"
+                className="min-w-[140px] flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+              <input
+                type="text"
+                value={lookupSerial}
+                onChange={(e) => setLookupSerial(e.target.value)}
+                placeholder="Hub Serial"
+                className="min-w-[200px] flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+              <button
+                type="submit"
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Find home
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Enter either a Home ID or a Hub Serial. Browsing all homes is disabled.
+            </p>
+          </form>
+
+          {loading && <p className="mt-4 text-sm text-slate-600">Searching homes…</p>}
           {error && <p className="mt-4 text-sm text-rose-600">{error}</p>}
 
           <div className="mt-6 space-y-4">
@@ -569,7 +621,11 @@ export default function HomeSupportClient({ installerName }: { installerName: st
             })}
 
             {!loading && homesSorted.length === 0 && (
-              <p className="text-sm text-slate-600">No homes found for this installer.</p>
+              <p className="text-sm text-slate-600">
+                {hasSearched
+                  ? 'No homes found for that lookup.'
+                  : 'Search using Home ID or Hub Serial to begin.'}
+              </p>
             )}
           </div>
         </div>
