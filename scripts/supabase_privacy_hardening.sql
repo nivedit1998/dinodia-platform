@@ -92,6 +92,16 @@ CREATE TABLE IF NOT EXISTS audit.break_glass_access_log (
   notes TEXT
 );
 
+ALTER TABLE audit.break_glass_access_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS break_glass_migration_only ON audit.break_glass_access_log;
+CREATE POLICY break_glass_migration_only
+ON audit.break_glass_access_log
+FOR ALL
+TO dinodia_migration_role
+USING (true)
+WITH CHECK (true);
+
 CREATE OR REPLACE FUNCTION audit.log_break_glass_access(
   p_actor TEXT,
   p_ticket_id TEXT,
@@ -136,8 +146,8 @@ END $$;
 DO $$
 BEGIN
   BEGIN
-    EXECUTE $$ALTER ROLE dinodia_runtime_role SET pgaudit.log = 'read,write'$$;
-    EXECUTE $$ALTER ROLE dinodia_migration_role SET pgaudit.log = 'ddl,role'$$;
+    EXECUTE 'ALTER ROLE dinodia_runtime_role SET "pgaudit.log" = ''read,write''';
+    EXECUTE 'ALTER ROLE dinodia_migration_role SET "pgaudit.log" = ''ddl,role''';
   EXCEPTION
     WHEN insufficient_privilege OR undefined_object OR invalid_parameter_value THEN
       RAISE NOTICE 'Unable to set pgaudit role parameters in this environment.';
@@ -152,6 +162,8 @@ COMMIT;
 --      CREATE ROLE dinodia_migration_login LOGIN PASSWORD '...';
 --      GRANT dinodia_runtime_role TO dinodia_runtime_login;
 --      GRANT dinodia_migration_role TO dinodia_migration_login;
+--      ALTER ROLE dinodia_runtime_login BYPASSRLS;
+--      ALTER ROLE dinodia_migration_login BYPASSRLS;
 --   2) Rotate app secrets so:
 --      DATABASE_URL uses dinodia_runtime_login
 --      DIRECT_URL uses dinodia_migration_login

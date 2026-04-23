@@ -30,6 +30,8 @@ CREATE ROLE dinodia_runtime_login LOGIN PASSWORD '<strong-runtime-password>';
 CREATE ROLE dinodia_migration_login LOGIN PASSWORD '<strong-migration-password>';
 GRANT dinodia_runtime_role TO dinodia_runtime_login;
 GRANT dinodia_migration_role TO dinodia_migration_login;
+ALTER ROLE dinodia_runtime_login BYPASSRLS;
+ALTER ROLE dinodia_migration_login BYPASSRLS;
 ```
 
 ## 4) Rotate app DB credentials
