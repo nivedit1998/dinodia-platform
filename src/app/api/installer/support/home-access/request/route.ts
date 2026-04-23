@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AuthChallengePurpose, Role } from '@prisma/client';
+import { AuditEventType, AuthChallengePurpose, Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { createAuthChallenge, buildVerifyUrl, getAppUrl } from '@/lib/authChallenges';
@@ -131,6 +131,22 @@ export async function POST(req: NextRequest) {
       authChallengeId: challenge.id,
       reason,
       scope,
+    },
+  });
+
+  await prisma.auditEvent.create({
+    data: {
+      type: AuditEventType.SUPPORT_REQUEST_CREATED,
+      homeId,
+      actorUserId: me.id,
+      metadata: {
+        supportRequestId: supportRequest.id,
+        kind: 'HOME_ACCESS',
+        targetUserId: targetUser.id,
+        authChallengeId: challenge.id,
+        scope,
+        reason,
+      },
     },
   });
 

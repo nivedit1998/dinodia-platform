@@ -41,6 +41,12 @@ enum AuditEventType {
   HOME_RESET
   OWNER_TRANSFERRED
   HOME_CLAIMED
+  SUPPORT_REQUEST_CREATED
+  SUPPORT_REQUEST_APPROVED
+  SUPPORT_REQUEST_REVOKED
+  SUPPORT_CREDENTIALS_VIEWED
+  SUPPORT_IMPERSONATION_STARTED
+  SUPPORT_IMPERSONATION_STOPPED
 }
 
 enum AuthChallengePurpose {
@@ -147,6 +153,8 @@ model User {
   stepUpApprovals   StepUpApproval[]
   remoteAccessLeases RemoteAccessLease[]
   actedAuditEvents  AuditEvent[] @relation("AuditEventActor")
+  approvedSupportRequests SupportRequest[] @relation("SupportRequestApprovedBy")
+  revokedSupportRequests SupportRequest[] @relation("SupportRequestRevokedBy")
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
@@ -453,9 +461,17 @@ model SupportRequest {
   authChallengeId String             @unique
   reason          String?
   scope           SupportAccessScope?
+  approvedByUserId Int?
+  approvedBy      User?              @relation("SupportRequestApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  revokedAt       DateTime?
+  revokedByUserId Int?
+  revokedBy       User?              @relation("SupportRequestRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  consumedAt      DateTime?
   createdAt       DateTime           @default(now())
 
   @@index([homeId])
   @@index([targetUserId])
   @@index([installerUserId])
+  @@index([approvedByUserId])
+  @@index([revokedByUserId])
 }

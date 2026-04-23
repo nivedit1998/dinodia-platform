@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailFromStatus } from '@/lib/apiError';
-import { Role } from '@prisma/client';
+import { AuditEventType, Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { resolveHaLongLivedToken, resolveHaUiCredentials } from '@/lib/haSecrets';
@@ -198,6 +198,36 @@ export async function GET(
         installedAt,
       }
     : { serial: null, lastSeenAt: null, installedAt };
+
+  const activeHomeSupportRequest = homeSupportRequest?.requestId
+    ? await prisma.supportRequest.findUnique({
+        where: { id: homeSupportRequest.requestId },
+        select: {
+          id: true,
+          installerUserId: true,
+          targetUserId: true,
+          scope: true,
+          reason: true,
+        },
+      })
+    : null;
+
+  await prisma.auditEvent.create({
+    data: {
+      type: AuditEventType.SUPPORT_CREDENTIALS_VIEWED,
+      homeId,
+      actorUserId: me.id,
+      metadata: {
+        supportRequestId: activeHomeSupportRequest?.id ?? homeSupportRequest?.requestId ?? null,
+        targetUserId: activeHomeSupportRequest?.targetUserId ?? null,
+        scope: activeHomeSupportRequest?.scope ?? null,
+        reason: activeHomeSupportRequest?.reason ?? null,
+        installerRequestMismatch:
+          activeHomeSupportRequest?.installerUserId != null &&
+          activeHomeSupportRequest.installerUserId !== me.id,
+      },
+    },
+  });
 
   return NextResponse.json({
     ok: true,

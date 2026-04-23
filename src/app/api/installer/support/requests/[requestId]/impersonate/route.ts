@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailFromStatus } from '@/lib/apiError';
-import { Role } from '@prisma/client';
+import { AuditEventType, Role } from '@prisma/client';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import {
@@ -38,6 +38,8 @@ export async function POST(
       targetUserId: true,
       installerUserId: true,
       authChallengeId: true,
+      scope: true,
+      reason: true,
     },
   });
 
@@ -97,6 +99,31 @@ export async function POST(
   });
 
   await setAuthCookieWithTtl(token, IMPERSONATION_TTL_SECONDS);
+
+  const consumedAt = new Date();
+  await prisma.$transaction([
+    prisma.supportRequest.updateMany({
+      where: {
+        id: supportRequest.id,
+        consumedAt: null,
+      },
+      data: { consumedAt },
+    }),
+    prisma.auditEvent.create({
+      data: {
+        type: AuditEventType.SUPPORT_IMPERSONATION_STARTED,
+        homeId: supportRequest.homeId,
+        actorUserId: me.id,
+        metadata: {
+          supportRequestId: supportRequest.id,
+          targetUserId: supportRequest.targetUserId,
+          scope: supportRequest.scope,
+          reason: supportRequest.reason,
+          startedAt: consumedAt.toISOString(),
+        },
+      },
+    }),
+  ]);
 
   const redirectTo = targetUser.role === Role.ADMIN ? '/admin/dashboard' : '/tenant/dashboard';
   return NextResponse.json({ ok: true, redirectTo });
