@@ -41,12 +41,30 @@ enum AuditEventType {
   HOME_RESET
   OWNER_TRANSFERRED
   HOME_CLAIMED
+  HOMEOWNER_POLICY_ACCEPTED
+  HOMEOWNER_POLICY_EMAIL_RESEND_REQUESTED
   SUPPORT_REQUEST_CREATED
   SUPPORT_REQUEST_APPROVED
   SUPPORT_REQUEST_REVOKED
   SUPPORT_CREDENTIALS_VIEWED
   SUPPORT_IMPERSONATION_STARTED
   SUPPORT_IMPERSONATION_STOPPED
+}
+
+enum HomeownerPolicyNotificationRecipientType {
+  HOMEOWNER
+  INSTALLER
+}
+
+enum HomeownerPolicyNotificationDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum HomeownerOnboardingFlowType {
+  SETUP_QR
+  CLAIM_CODE
 }
 
 enum AuthChallengePurpose {
@@ -95,6 +113,9 @@ model Home {
   claimCodeIssuedAt  DateTime?
   claimCodeConsumedAt DateTime?
   auditEvents        AuditEvent[]
+  homeownerPolicyAcceptances HomeownerPolicyAcceptance[]
+  homeownerPolicyNotificationDeliveries HomeownerPolicyNotificationDelivery[]
+  pendingHomeownerOnboardings PendingHomeownerOnboarding[]
   users              User[]
   automationOwnerships AutomationOwnership[]
   hubInstall         HubInstall?   @relation("HomeHubInstall")
@@ -135,6 +156,8 @@ model User {
   email             String?
   emailPending      String?
   emailVerifiedAt   DateTime?
+  homeownerPolicyAcceptedVersion String?
+  homeownerPolicyAcceptedAt DateTime?
   email2faEnabled   Boolean       @default(false)
   role              Role          @default(TENANT)
   home              Home?         @relation(fields: [homeId], references: [id])
@@ -153,6 +176,8 @@ model User {
   loginIntents      LoginIntent[]
   stepUpApprovals   StepUpApproval[]
   remoteAccessLeases RemoteAccessLease[]
+  homeownerPolicyAcceptances HomeownerPolicyAcceptance[]
+  pendingHomeownerOnboardings PendingHomeownerOnboarding[]
   actedAuditEvents  AuditEvent[] @relation("AuditEventActor")
   approvedSupportRequests SupportRequest[] @relation("SupportRequestApprovedBy")
   revokedSupportRequests SupportRequest[] @relation("SupportRequestRevokedBy")
@@ -296,9 +321,83 @@ model HubInstall {
   lastSeenAt                  DateTime?
   home                        Home?      @relation("HomeHubInstall", fields: [homeId], references: [id], onDelete: SetNull)
   homeId                      Int?       @unique
+  pendingHomeownerOnboardings PendingHomeownerOnboarding[]
   hubTokens                   HubToken[]
   createdAt                   DateTime   @default(now())
   updatedAt                   DateTime   @updatedAt
+}
+
+model HomeownerPolicyAcceptance {
+  id                      String   @id @default(uuid())
+  home                    Home     @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  homeId                  Int
+  homeownerUser           User     @relation(fields: [homeownerUserId], references: [id], onDelete: Cascade)
+  homeownerUserId         Int
+  policyVersion           String
+  acceptedAt              DateTime @default(now())
+  signatureName           String
+  acceptedStatements      Json
+  addressReference        String
+  approvedSupportContacts Json?
+  notificationPreference  String?
+  ipHash                  String?
+  deviceFingerprintHash   String?
+  notifications           HomeownerPolicyNotificationDelivery[]
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@unique([homeownerUserId, policyVersion])
+  @@index([homeId])
+}
+
+model HomeownerPolicyNotificationDelivery {
+  id           String                                  @id @default(uuid())
+  acceptance   HomeownerPolicyAcceptance               @relation(fields: [acceptanceId], references: [id], onDelete: Cascade)
+  acceptanceId String
+  home         Home                                    @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  homeId       Int
+  recipientType HomeownerPolicyNotificationRecipientType
+  recipientEmail String
+  status       HomeownerPolicyNotificationDeliveryStatus @default(PENDING)
+  attemptCount Int                                     @default(0)
+  lastAttemptAt DateTime?
+  sentAt       DateTime?
+  lastError    String?
+  createdAt    DateTime                                @default(now())
+  updatedAt    DateTime                                @updatedAt
+
+  @@unique([acceptanceId, recipientType])
+  @@index([homeId, status])
+}
+
+model PendingHomeownerOnboarding {
+  id                   String                    @id @default(cuid())
+  flowType             HomeownerOnboardingFlowType
+  policyVersionRequired String                  @default("2026-V1")
+  claimCodeHash        String?
+  hubInstall           HubInstall?              @relation(fields: [hubInstallId], references: [id], onDelete: SetNull)
+  hubInstallId         String?
+  home                 Home?                    @relation(fields: [homeId], references: [id], onDelete: SetNull)
+  homeId               Int?
+  user                 User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId               Int?
+  proposedUsername     String
+  proposedPasswordHash String
+  proposedEmail        String
+  deviceId             String
+  deviceLabel          String?
+  emailVerifiedAt      DateTime?
+  policyAcceptedAt     DateTime?
+  expiresAt            DateTime
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  @@index([flowType])
+  @@index([expiresAt])
+  @@index([homeId])
+  @@index([userId])
+  @@index([hubInstallId])
+  @@index([claimCodeHash])
 }
 
 enum HubTokenStatus {

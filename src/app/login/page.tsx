@@ -97,6 +97,10 @@ export default function LoginPage() {
         return;
       }
 
+      if (data.role === 'ADMIN' && data.requiresHomeownerPolicyAcceptance) {
+        router.push('/homeowner/policy');
+        return;
+      }
       if (data.role === 'ADMIN') router.push('/admin/dashboard');
       else router.push('/tenant/dashboard');
     },
@@ -251,6 +255,10 @@ export default function LoginPage() {
       return;
     }
 
+      if (data.role === 'ADMIN' && data.requiresHomeownerPolicyAcceptance) {
+        router.push('/homeowner/policy');
+        return;
+      }
       if (data.role === 'ADMIN') router.push('/admin/dashboard');
       else router.push('/tenant/dashboard');
   }

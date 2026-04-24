@@ -21,6 +21,7 @@ import { checkRateLimit } from '@/lib/rateLimit';
 import { getClientIp } from '@/lib/requestInfo';
 import { getOrCreateDevice } from '@/lib/deviceRegistry';
 import { createLoginIntent } from '@/lib/loginIntents';
+import { getHomeownerPolicyStatus } from '@/lib/homeownerPolicy';
 
 const REPLY_TO = 'niveditgupta@dinodiasmartliving.com';
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -248,7 +249,15 @@ export async function POST(req: NextRequest) {
 
       await touchTrustedDevice(user.id, deviceId);
       await createSessionForUser(sessionUser);
-      return NextResponse.json({ ok: true, role: user.role, cloudEnabled });
+      const policy = await getHomeownerPolicyStatus(user.id);
+      return NextResponse.json({
+        ok: true,
+        role: user.role,
+        cloudEnabled,
+        requiresHomeownerPolicyAcceptance: policy?.requiresAcceptance ?? true,
+        homeownerPolicyVersion: policy?.policyVersion ?? '2026-V1',
+        pendingOnboardingId: policy?.pendingOnboardingId ?? null,
+      });
     }
 
     // Tenant

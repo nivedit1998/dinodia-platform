@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AuditEventType, HomeStatus, Prisma, Role } from '@prisma/client';
+import { AuditEventType, HomeownerOnboardingFlowType, HomeStatus, Prisma, Role } from '@prisma/client';
 import { hashPassword } from '@/lib/auth';
 import { hashClaimCode } from '@/lib/claimCode';
 import { createAuthChallenge, buildVerifyUrl, getAppUrl } from '@/lib/authChallenges';
@@ -157,6 +157,7 @@ export async function POST(req: NextRequest) {
   const passwordHash = await hashPassword(password);
 
   let adminId: number;
+  let pendingOnboardingId: string;
   let challengeEmail: string;
   let homeId: number;
   try {
@@ -164,15 +165,17 @@ export async function POST(req: NextRequest) {
       const claimable = await getClaimableHome(tx, claimCodeHash);
       const { home } = claimable;
 
-      const pendingAdminsDeleted = await tx.user.deleteMany({
+      const existingPendingClaim = await tx.pendingHomeownerOnboarding.findFirst({
         where: {
-          role: Role.ADMIN,
           homeId: home.id,
-          haConnectionId: home.haConnectionId,
-          emailVerifiedAt: null,
-          emailPending: { not: null },
+          flowType: HomeownerOnboardingFlowType.CLAIM_CODE,
+          expiresAt: { gt: new Date() },
         },
+        select: { id: true },
       });
+      if (existingPendingClaim) {
+        throw new ClaimFlowError('HOME_HAS_OWNER');
+      }
 
       const admin = await tx.user.create({
         data: {
@@ -181,8 +184,24 @@ export async function POST(req: NextRequest) {
           role: Role.ADMIN,
           emailPending: email,
           emailVerifiedAt: null,
+          homeId: null,
+          haConnectionId: null,
+        },
+      });
+
+      const pending = await tx.pendingHomeownerOnboarding.create({
+        data: {
+          flowType: HomeownerOnboardingFlowType.CLAIM_CODE,
+          policyVersionRequired: '2026-V1',
+          claimCodeHash,
           homeId: home.id,
-          haConnectionId: home.haConnectionId,
+          userId: admin.id,
+          proposedUsername: username,
+          proposedPasswordHash: passwordHash,
+          proposedEmail: email,
+          deviceId,
+          deviceLabel: deviceLabel ?? null,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         },
       });
 
@@ -193,18 +212,19 @@ export async function POST(req: NextRequest) {
           metadata: {
             username,
             email,
-            pendingAdminsDeleted: pendingAdminsDeleted.count,
+            pendingOnboardingId: pending.id,
             statusAtAttempt: home.status,
             haConnectionId: home.haConnectionId,
           },
         },
       });
 
-      return { adminId: admin.id, homeId: home.id };
+      return { adminId: admin.id, homeId: home.id, pendingOnboardingId: pending.id };
     });
 
     adminId = result.adminId;
     homeId = result.homeId;
+    pendingOnboardingId = result.pendingOnboardingId;
     challengeEmail = email;
   } catch (err) {
     const mapped = handleClaimError(err);
@@ -244,6 +264,7 @@ export async function POST(req: NextRequest) {
       requiresEmailVerification: true,
       challengeId: challenge.id,
       homeId,
+      pendingOnboardingId,
     });
   } catch (err) {
     console.error('[api/claim] Failed to send verification email', err);

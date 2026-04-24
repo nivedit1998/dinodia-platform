@@ -104,6 +104,11 @@ export default function ClaimHomePage() {
         return;
       }
 
+      if (data.requiresHomeownerPolicyAcceptance) {
+        router.push('/homeowner/policy');
+        return;
+      }
+
       router.push('/admin/dashboard');
     },
     [deviceId, deviceLabel, resetVerification, router]

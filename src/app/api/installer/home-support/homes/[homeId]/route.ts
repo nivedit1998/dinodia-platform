@@ -6,6 +6,7 @@ import { getCurrentUserFromRequest } from '@/lib/auth';
 import { resolveHaLongLivedToken, resolveHaUiCredentials } from '@/lib/haSecrets';
 import { requireActiveHomeAccess, requireActiveUserAccess } from '@/lib/supportRequests';
 import { decryptBootstrapSecret } from '@/lib/hubTokens';
+import { getPolicyNotificationDeliveryStatus } from '@/lib/homeownerPolicyNotifications';
 
 function parseHomeId(raw: string | undefined): number | null {
   if (!raw) return null;
@@ -62,6 +63,7 @@ export async function GET(
         expiresAt: homeAccess.latest.expiresAt,
       }
     : null;
+  const homeownerPolicyEmail = await getPolicyNotificationDeliveryStatus(homeId);
 
   if (!homeAccessApproved) {
     return NextResponse.json({
@@ -70,6 +72,7 @@ export async function GET(
       installedAt,
       homeAccessApproved: false,
       homeSupportRequest,
+      homeownerPolicyEmail,
     });
   }
 
@@ -241,5 +244,6 @@ export async function GET(
     tenants,
     alexaEnabled,
     users,
+    homeownerPolicyEmail,
   });
 }

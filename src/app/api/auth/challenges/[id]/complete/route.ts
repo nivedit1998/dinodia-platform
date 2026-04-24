@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  AuditEventType,
   AuthChallengePurpose,
-  HomeStatus,
   Role,
   StepUpPurpose,
 } from '@prisma/client';
@@ -12,71 +10,8 @@ import { trustDevice } from '@/lib/deviceTrust';
 import { createKioskToken, createSessionForUser, createTokenForUser } from '@/lib/auth';
 import { createStepUpApproval } from '@/lib/stepUp';
 import { AUTH_ERROR_CODES, type AuthErrorCode } from '@/lib/authErrorCodes';
-
-async function finalizeHomeClaimForAdmin(userId: number, username: string) {
-  const now = new Date();
-  return prisma.$transaction(async (tx) => {
-    const userRecord = await tx.user.findUnique({
-      where: { id: userId },
-      select: {
-        username: true,
-        haConnectionId: true,
-        home: {
-          select: {
-            id: true,
-            status: true,
-            claimCodeHash: true,
-            claimCodeConsumedAt: true,
-            haConnectionId: true,
-            haConnection: { select: { ownerId: true } },
-          },
-        },
-      },
-    });
-
-    const home = userRecord?.home;
-    if (
-      !home ||
-      !home.claimCodeHash ||
-      home.claimCodeConsumedAt ||
-      (home.status !== HomeStatus.UNCLAIMED && home.status !== HomeStatus.TRANSFER_PENDING)
-    ) {
-      return false;
-    }
-
-    if (home.haConnection?.ownerId && home.haConnection.ownerId !== userId) {
-      return false;
-    }
-
-    await tx.haConnection.update({
-      where: { id: home.haConnectionId },
-      data: { ownerId: userId },
-    });
-
-    if (userRecord?.haConnectionId !== home.haConnectionId) {
-      await tx.user.update({
-        where: { id: userId },
-        data: { haConnectionId: home.haConnectionId },
-      });
-    }
-
-    await tx.home.update({
-      where: { id: home.id },
-      data: { status: HomeStatus.ACTIVE, claimCodeConsumedAt: now },
-    });
-
-    await tx.auditEvent.create({
-      data: {
-        type: AuditEventType.HOME_CLAIMED,
-        homeId: home.id,
-        actorUserId: userId,
-        metadata: { userId, username },
-      },
-    });
-
-    return true;
-  });
-}
+import { getHomeownerPolicyStatus } from '@/lib/homeownerPolicy';
+import { markPendingHomeownerEmailVerified } from '@/lib/homeownerOnboardingPending';
 
 export const runtime = 'nodejs';
 
@@ -187,7 +122,7 @@ export async function POST(
         return fail(400, AUTH_ERROR_CODES.VERIFICATION_FAILED, 'No pending admin email to verify.');
       }
 
-      const finalizedClaim = await finalizeHomeClaimForAdmin(user.id, user.username);
+      const pending = await markPendingHomeownerEmailVerified(user.id);
       await trustDevice(user.id, deviceId, deviceLabel);
       const refreshed = await prisma.trustedDevice.findUnique({
         where: { userId_deviceId: { userId: user.id, deviceId } },
@@ -195,12 +130,15 @@ export async function POST(
       });
       const kioskToken = buildKioskToken(Number(refreshed?.sessionVersion ?? sessionVersion));
       await createSessionForUser(sessionUser);
+      const policy = await getHomeownerPolicyStatus(user.id);
       return NextResponse.json({
         ok: true,
         role: user.role,
         token: kioskToken,
         webToken,
-        homeClaimed: finalizedClaim,
+        requiresHomeownerPolicyAcceptance: policy?.requiresAcceptance ?? true,
+        homeownerPolicyVersion: policy?.policyVersion ?? '2026-V1',
+        pendingOnboardingId: pending?.id ?? policy?.pendingOnboardingId ?? null,
         cloudEnabled,
       });
     }
@@ -216,6 +154,19 @@ export async function POST(
       });
       const kioskToken = buildKioskToken(Number(refreshed?.sessionVersion ?? sessionVersion));
       await createSessionForUser(sessionUser);
+      if (user.role === Role.ADMIN) {
+        const policy = await getHomeownerPolicyStatus(user.id);
+        return NextResponse.json({
+          ok: true,
+          role: user.role,
+          token: kioskToken,
+          webToken,
+          cloudEnabled,
+          requiresHomeownerPolicyAcceptance: policy?.requiresAcceptance ?? true,
+          homeownerPolicyVersion: policy?.policyVersion ?? '2026-V1',
+          pendingOnboardingId: policy?.pendingOnboardingId ?? null,
+        });
+      }
       return NextResponse.json({ ok: true, role: user.role, token: kioskToken, webToken, cloudEnabled });
     }
     case AuthChallengePurpose.TENANT_ENABLE_2FA: {

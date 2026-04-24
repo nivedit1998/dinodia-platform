@@ -16,6 +16,7 @@ import { checkRateLimit } from '@/lib/rateLimit';
 import { getClientIp } from '@/lib/requestInfo';
 import { hashForLog, safeLog } from '@/lib/safeLogger';
 import { createLoginIntent } from '@/lib/loginIntents';
+import { getHomeownerPolicyStatus } from '@/lib/homeownerPolicy';
 
 const REPLY_TO = 'niveditgupta@dinodiasmartliving.com';
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -332,7 +333,16 @@ export async function POST(req: NextRequest) {
       const sessionVersion = (trustedRow as unknown as SessionVersionRow | null)?.sessionVersion ?? 0;
       const token = createKioskToken(sessionUser, deviceId, sessionVersion);
       safeLog('info', '[mobile-login] Admin login successful', { userId: user.id });
-      return NextResponse.json({ ok: true, token, role: user.role, cloudEnabled });
+      const policy = await getHomeownerPolicyStatus(user.id);
+      return NextResponse.json({
+        ok: true,
+        token,
+        role: user.role,
+        cloudEnabled,
+        requiresHomeownerPolicyAcceptance: policy?.requiresAcceptance ?? true,
+        homeownerPolicyVersion: policy?.policyVersion ?? '2026-V1',
+        pendingOnboardingId: policy?.pendingOnboardingId ?? null,
+      });
     }
 
     // Tenant

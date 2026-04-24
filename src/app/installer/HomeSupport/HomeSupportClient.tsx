@@ -14,6 +14,17 @@ type HomeDetail = {
   homeId: number;
   installedAt: string;
   homeAccessApproved: boolean;
+  homeownerPolicyEmail?: {
+    acceptanceId: string;
+    policyVersion: string;
+    acceptedAt: string;
+    homeownerUsername: string;
+    homeownerEmail: string | null;
+    homeownerStatus: RequestStatus | 'SENT' | 'FAILED' | null;
+    installerEmail: string | null;
+    installerStatus: RequestStatus | 'SENT' | 'FAILED' | null;
+    canResend: boolean;
+  } | null;
   credentials?: {
     haUsername: string;
     haPassword: string;
@@ -86,6 +97,7 @@ export default function HomeSupportClient({ installerName }: { installerName: st
 
   const [homeRequests, setHomeRequests] = useState<Record<number, RequestTracking>>({});
   const [userRequests, setUserRequests] = useState<Record<string, RequestTracking>>({});
+  const [resendingPolicyEmail, setResendingPolicyEmail] = useState<Record<number, boolean>>({});
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -323,6 +335,35 @@ export default function HomeSupportClient({ installerName }: { installerName: st
     }
   }
 
+  async function resendPolicyConfirmationEmail(homeId: number) {
+    const reason = window.prompt('Reason for resend (required):', 'Homeowner requested policy confirmation resend');
+    if (!reason || !reason.trim()) return;
+
+    setResendingPolicyEmail((prev) => ({ ...prev, [homeId]: true }));
+    try {
+      const data = await platformFetchJson<{
+        ok?: boolean;
+        error?: string;
+        allSent?: boolean;
+      }>(
+        `/api/installer/home-support/homes/${homeId}/policy-email/resend`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: reason.trim() }),
+        },
+        'Failed to resend homeowner policy confirmation email.'
+      );
+      if (!data?.ok) throw new Error(data?.error || 'Failed to resend homeowner policy confirmation email.');
+      await loadDetail(homeId);
+      alert(data.allSent ? 'Homeowner policy confirmation email resent successfully.' : 'Resend attempted. Some recipients still failed.');
+    } catch (err) {
+      alert(friendlyUnknownError(err, 'Failed to resend homeowner policy confirmation email.'));
+    } finally {
+      setResendingPolicyEmail((prev) => ({ ...prev, [homeId]: false }));
+    }
+  }
+
   const homesSorted = useMemo(
     () => [...homes].sort((a, b) => b.homeId - a.homeId),
     [homes]
@@ -453,6 +494,45 @@ export default function HomeSupportClient({ installerName }: { installerName: st
 
                       {detail && (
                         <div className="space-y-4">
+                          <section className="rounded-md bg-white p-3 shadow-inner ring-1 ring-slate-200">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-slate-900">Homeowner Policy Confirmation</p>
+                              {detail.homeownerPolicyEmail?.canResend && (
+                                <button
+                                  onClick={() => resendPolicyConfirmationEmail(home.homeId)}
+                                  disabled={Boolean(resendingPolicyEmail[home.homeId])}
+                                  className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                                >
+                                  {resendingPolicyEmail[home.homeId] ? 'Resending…' : 'Resend confirmation email'}
+                                </button>
+                              )}
+                            </div>
+                            {!detail.homeownerPolicyEmail ? (
+                              <p className="mt-2 text-xs text-slate-600">No homeowner policy acceptance found yet.</p>
+                            ) : (
+                              <div className="mt-2 space-y-1 text-xs text-slate-700">
+                                <p>
+                                  Version: <span className="font-semibold">{detail.homeownerPolicyEmail.policyVersion}</span>
+                                </p>
+                                <p>
+                                  Accepted at: <span className="font-semibold">{formatDate(detail.homeownerPolicyEmail.acceptedAt)}</span>
+                                </p>
+                                <p>
+                                  Homeowner: <span className="font-semibold">{detail.homeownerPolicyEmail.homeownerUsername}</span>
+                                  {detail.homeownerPolicyEmail.homeownerEmail ? ` (${detail.homeownerPolicyEmail.homeownerEmail})` : ''}
+                                </p>
+                                <p>
+                                  Homeowner email status:{' '}
+                                  <span className="font-semibold">{detail.homeownerPolicyEmail.homeownerStatus ?? 'Not sent'}</span>
+                                </p>
+                                <p>
+                                  Installer email status:{' '}
+                                  <span className="font-semibold">{detail.homeownerPolicyEmail.installerStatus ?? 'Not sent'}</span>
+                                </p>
+                              </div>
+                            )}
+                          </section>
+
                           <section className="rounded-md bg-white p-3 shadow-inner ring-1 ring-slate-200">
                             <div className="flex items-center justify-between gap-2">
                               <p className="text-sm font-semibold text-slate-900">Home Support</p>

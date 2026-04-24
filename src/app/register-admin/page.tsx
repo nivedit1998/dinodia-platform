@@ -223,6 +223,10 @@ export default function RegisterAdminPage() {
         resetVerification();
         return;
       }
+      if (data.requiresHomeownerPolicyAcceptance) {
+        router.push('/homeowner/policy');
+        return;
+      }
       router.push('/admin/dashboard');
     },
     [deviceId, deviceLabel, resetVerification, router]

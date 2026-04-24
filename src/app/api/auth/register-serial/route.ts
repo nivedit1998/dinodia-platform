@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Role, HomeStatus } from '@prisma/client';
+import { HomeownerOnboardingFlowType, Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { AUTH_ERROR_CODES, type AuthErrorCode } from '@/lib/authErrorCodes';
@@ -9,6 +9,7 @@ import { sendEmail } from '@/lib/email';
 import { HubInstallError, verifyBootstrapClaim } from '@/lib/hubInstall';
 import { checkRateLimit } from '@/lib/rateLimit';
 import { getClientIp } from '@/lib/requestInfo';
+import { createPendingHomeownerOnboarding } from '@/lib/homeownerOnboardingPending';
 
 const REPLY_TO = 'niveditgupta@dinodiasmartliving.com';
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -108,9 +109,25 @@ export async function POST(req: NextRequest) {
     return fail(409, AUTH_ERROR_CODES.REGISTRATION_BLOCKED, 'This Dinodia Hub is already claimed.');
   }
 
+  const activePending = await prisma.pendingHomeownerOnboarding.findFirst({
+    where: {
+      homeId,
+      flowType: HomeownerOnboardingFlowType.SETUP_QR,
+      expiresAt: { gt: new Date() },
+    },
+    select: { id: true },
+  });
+  if (activePending) {
+    return fail(
+      409,
+      AUTH_ERROR_CODES.REGISTRATION_BLOCKED,
+      'Homeowner setup is already pending for this Dinodia Hub. Ask the homeowner to complete email verification and policy acceptance.'
+    );
+  }
+
   const passwordHash = await hashPassword(password);
 
-  const result = await prisma.$transaction(async (tx) => {
+  const admin = await prisma.$transaction(async (tx) => {
     const admin = await tx.user.create({
       data: {
         username,
@@ -118,26 +135,27 @@ export async function POST(req: NextRequest) {
         role: Role.ADMIN,
         emailPending: email,
         emailVerifiedAt: null,
-        homeId,
-        haConnectionId: home.haConnection.id,
+        homeId: null,
+        haConnectionId: null,
       },
     });
+    return admin;
+  });
 
-    await tx.haConnection.update({
-      where: { id: home.haConnection.id },
-      data: { ownerId: admin.id },
-    });
-
-    await tx.home.update({
-      where: { id: homeId },
-      data: { status: HomeStatus.ACTIVE },
-    });
-
-    return { admin, homeId };
+  const pending = await createPendingHomeownerOnboarding({
+    flowType: HomeownerOnboardingFlowType.SETUP_QR,
+    userId: admin.id,
+    proposedUsername: admin.username,
+    proposedPasswordHash: passwordHash,
+    proposedEmail: email,
+    deviceId,
+    deviceLabel: typeof deviceLabel === 'string' ? deviceLabel : null,
+    homeId,
+    hubInstallId: hubInstall.id,
   });
 
   const challenge = await createAuthChallenge({
-    userId: result.admin.id,
+    userId: admin.id,
     purpose: 'ADMIN_EMAIL_VERIFY',
     email,
     deviceId,
@@ -165,6 +183,7 @@ export async function POST(req: NextRequest) {
     ok: true,
     requiresEmailVerification: true,
     challengeId: challenge.id,
-    homeId: result.homeId,
+    homeId,
+    pendingOnboardingId: pending.id,
   });
 }
