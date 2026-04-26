@@ -23,7 +23,7 @@ export default async function HomeownerPolicyPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10">
+    <div className="min-h-screen bg-gradient-to-br from-surface via-background to-surface-2 px-4 py-10">
       <div className="mx-auto max-w-3xl">
         <HomeownerPolicyForm
           initialPolicyVersion={status.policyVersion}

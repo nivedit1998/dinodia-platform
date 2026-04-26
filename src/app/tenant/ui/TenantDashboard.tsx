@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { UIDevice } from '@/types/device';
 import { getGroupLabel, sortLabels, OTHER_LABEL } from '@/lib/deviceLabels';
 import { isSensorEntity } from '@/lib/deviceSensors';
@@ -17,6 +18,8 @@ import { useDevicesVersionPolling } from '@/lib/useDevicesVersionPolling';
 import TenantAccessRosterDialog from './TenantAccessRosterDialog';
 import { friendlyUnknownError } from '@/lib/clientError';
 import { platformFetchJson } from '@/lib/platformFetchClient';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 type Props = {
   username: string;
@@ -89,6 +92,7 @@ function formatClock(date: Date) {
 
 export default function TenantDashboard(props: Props) {
   const { username } = props;
+  const router = useRouter();
   const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
   const [clock, setClock] = useState(() => formatClock(new Date()));
   const [devices, setDevices] = useState<UIDevice[]>([]);
@@ -297,7 +301,7 @@ export default function TenantDashboard(props: Props) {
             cache: 'no-store',
             credentials: 'include',
           },
-          'Failed to check Alexa devices.'
+          'Unsuccessful - Alexa device status is not available right now.'
         );
         if (!active) return;
         const list = Array.isArray(data.devices) ? data.devices : [];
@@ -456,8 +460,8 @@ export default function TenantDashboard(props: Props) {
       : undefined;
 
   return (
-    <div className="min-h-screen bg-[#f5f5f7] text-slate-900">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-3 pb-16 pt-8 sm:px-4 lg:pt-12">
+    <div className="min-h-screen bg-gradient-to-br from-surface via-background to-surface-2 text-foreground">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-3 pb-16 pt-10 sm:px-4 lg:pt-12">
         <header className="sticky top-4 z-30 flex flex-col gap-3 rounded-2xl border border-white/60 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between sm:rounded-full sm:px-6 sm:py-2.5">
           <div className="flex items-start gap-3 sm:items-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/60 bg-white shadow-sm">
@@ -724,11 +728,21 @@ export default function TenantDashboard(props: Props) {
             );
           })}
 
+          {isLoading && !hasDevices && (
+            <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, index) => (
+                <Skeleton key={`tenant-device-skeleton-${index}`} className="h-[160px] rounded-[24px]" />
+              ))}
+            </section>
+          )}
+
           {sortedLabels.length === 0 && !isLoading && (
-            <p className="rounded-3xl border border-slate-200/70 bg-white/70 px-6 py-10 text-center text-sm text-slate-500">
-              No devices are linked to your account yet. Ask the homeowner who set up
-              Dinodia to confirm your access.
-            </p>
+            <EmptyState
+              title="No devices are visible yet"
+              description="Ask the homeowner to confirm your area access, or add a discovered device to get started."
+              actionLabel="Add discovered device"
+              onAction={() => router.push('/tenant/devices/discovered')}
+            />
           )}
         </div>
       </div>

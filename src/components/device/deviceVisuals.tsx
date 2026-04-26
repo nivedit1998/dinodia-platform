@@ -20,11 +20,11 @@ export type DeviceVisual = {
 const DEFAULT_VISUAL: DeviceVisual = {
   label: 'Device',
   size: 'medium',
-  activeBg: 'bg-white/80',
-  inactiveBg: 'bg-white/70',
-  iconActiveBg: 'bg-slate-900 text-white',
-  iconInactiveBg: 'bg-white/60 text-slate-400',
-  detailAccent: 'from-slate-100 to-white',
+  activeBg: 'bg-gradient-to-br from-indigo-100/80 via-white to-indigo-50/70',
+  inactiveBg: 'bg-white/80',
+  iconActiveBg: 'bg-indigo-600 text-white',
+  iconInactiveBg: 'bg-white/70 text-indigo-500',
+  detailAccent: 'from-indigo-50 to-white',
   icon: (props) => <GenericIcon {...props} />,
 };
 
@@ -32,11 +32,11 @@ const VISUALS: Record<string, DeviceVisual> = {
   Light: {
     label: 'Light',
     size: 'small',
-    activeBg: 'bg-gradient-to-br from-amber-100/90 via-yellow-50/70 to-white',
+    activeBg: 'bg-gradient-to-br from-indigo-100/90 via-violet-50/80 to-white',
     inactiveBg: 'bg-white/80',
-    iconActiveBg: 'bg-amber-400 text-amber-950',
-    iconInactiveBg: 'bg-white/70 text-amber-500',
-    detailAccent: 'from-amber-50 to-white',
+    iconActiveBg: 'bg-indigo-600 text-white',
+    iconInactiveBg: 'bg-white/70 text-indigo-500',
+    detailAccent: 'from-indigo-50 to-white',
     icon: (props) => <LightIcon {...props} />,
   },
   Blind: {
@@ -122,11 +122,11 @@ const VISUALS: Record<string, DeviceVisual> = {
   Speaker: {
     label: 'Speaker',
     size: 'medium',
-    activeBg: 'bg-gradient-to-br from-violet-100/80 to-white',
+    activeBg: 'bg-gradient-to-br from-indigo-100/80 to-white',
     inactiveBg: 'bg-white/80',
-    iconActiveBg: 'bg-purple-500 text-white',
-    iconInactiveBg: 'bg-white/70 text-purple-500',
-    detailAccent: 'from-violet-50 to-white',
+    iconActiveBg: 'bg-indigo-500 text-white',
+    iconInactiveBg: 'bg-white/70 text-indigo-500',
+    detailAccent: 'from-indigo-50 to-white',
     icon: (props) => <SpeakerIcon {...props} />,
   },
 };

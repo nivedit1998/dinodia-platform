@@ -335,7 +335,7 @@ export default function AdminDashboard({ username }: Props) {
       const fromDate = parseDateOnlyUtc(from, false);
       const toDate = parseDateOnlyUtc(to, true);
       if (!fromDate || !toDate) {
-        return { window: null, error: 'Invalid from/to date. Use YYYY-MM-DD.' };
+        return { window: null, error: 'Please use a valid date range in YYYY-MM-DD format.' };
       }
       if (toDate.getTime() < fromDate.getTime()) {
         return { window: null, error: 'From must be on or before to.' };

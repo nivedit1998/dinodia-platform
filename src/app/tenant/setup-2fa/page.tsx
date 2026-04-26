@@ -96,7 +96,7 @@ export default function TenantSetup2FA() {
       setCompleting(false);
 
       if (!res.ok) {
-        const parsed = parseApiError(data, 'Verification failed. Please try again.');
+        const parsed = parseApiError(data, 'Unsuccessful - please try again.');
         setError(parsed.message);
         stopPolling();
         return;

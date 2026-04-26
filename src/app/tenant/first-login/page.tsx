@@ -101,12 +101,12 @@ export default function TenantFirstLoginPage() {
         });
         const data = await res.json();
         if (!res.ok) {
-          throw new Error(parseApiError(data, 'Verification failed. Please try again.').message);
+          throw new Error(parseApiError(data, 'Unsuccessful - please try again.').message);
         }
         clearSavedState();
         router.push('/tenant/dashboard');
       } catch (err) {
-        setError(friendlyErrorFromUnknown(err, 'Verification failed. Please try again.'));
+        setError(friendlyErrorFromUnknown(err, 'Unsuccessful - please try again.'));
       } finally {
         setCompleting(false);
       }

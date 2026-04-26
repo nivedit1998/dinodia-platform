@@ -6,6 +6,9 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { logout as performLogout } from '@/lib/logout';
 import { platformFetch } from '@/lib/platformFetchClient';
 import { friendlyUnknownError } from '@/lib/clientError';
+import { Modal } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/Button';
+import { useToast } from '@/components/ui/Toast';
 
 type Props = {
   username: string;
@@ -60,6 +63,7 @@ const TENANT_LOCKED_MESSAGE =
   'Remote access must be enabled before adding tenants from this portal. To add tenants without paying for remote access you will have to use your iOS/Android phone or the Dinodia Kiosk.';
 
 export default function AdminSettings({ username, mode = 'full' }: Props) {
+  const { pushToast } = useToast();
   const showProfile = mode === 'full';
   const showTenantSections = mode === 'users';
   const showOverrideSection = mode === 'devices';
@@ -233,13 +237,13 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       );
       const data = await res.json();
       if (!res.ok) {
-        throw new Error('Failed to load device overrides.');
+        throw new Error('Unsuccessful - unable to load device settings.');
       }
       setOverrides(Array.isArray(data.devices) ? data.devices : []);
     } catch (err) {
       setOverrideAlert({
         type: 'error',
-        message: friendlyUnknownError(err, 'Failed to load device overrides.'),
+        message: friendlyUnknownError(err, 'Unsuccessful - unable to load device settings.'),
       });
     }
   }, []);
@@ -308,16 +312,21 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       });
       await res.json();
       if (!res.ok) {
-        throw new Error('Failed to save device override.');
+        throw new Error('Unsuccessful - unable to save device settings.');
       }
       setOverrideAlert({ type: 'success', message: 'Device override saved.' });
+      pushToast({
+        kind: 'success',
+        title: 'Device settings saved',
+        message: 'Done - everything looks good.',
+      });
       startNewOverride('');
       void loadOverrides();
       void loadAvailableAreas();
     } catch (err) {
       setOverrideAlert({
         type: 'error',
-        message: friendlyUnknownError(err, 'Failed to save device override.'),
+        message: friendlyUnknownError(err, 'Unsuccessful - unable to save device settings.'),
       });
     }
   }
@@ -358,7 +367,12 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
         return;
       }
 
-      setTenantMsg('Tenant created successfully ✅');
+      setTenantMsg('Tenant created successfully');
+      pushToast({
+        kind: 'success',
+        title: 'Tenant added',
+        message: 'Access has been updated for this home.',
+      });
       setTenantForm(EMPTY_TENANT_FORM);
       setNewAreaInput('');
       if (viewTenantsOpen && !tenantLocked) {
@@ -395,6 +409,11 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
         );
       }
       setPasswordAlert({ type: 'success', message: 'Password updated successfully.' });
+      pushToast({
+        kind: 'success',
+        title: 'Password updated',
+        message: 'Your account is all set.',
+      });
       setPasswordForm(EMPTY_PASSWORD_FORM);
     } catch (err) {
       setPasswordAlert({
@@ -425,7 +444,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       const res = await platformFetch('/api/admin/selling-property', { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error('Failed to load deregister impact preview.');
+        throw new Error('Unsuccessful - unable to load deregister impact preview.');
       }
       setSellingPreview({
         fullReset: data.fullReset,
@@ -522,8 +541,18 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     try {
       await navigator.clipboard.writeText(sellingClaimCode);
       setClaimCopyStatus('Copied');
+      pushToast({
+        kind: 'success',
+        title: 'Claim code copied',
+        message: 'You can now share it with the incoming homeowner.',
+      });
     } catch (err) {
-      setClaimCopyStatus('Copy failed');
+      setClaimCopyStatus('Unsuccessful');
+      pushToast({
+        kind: 'warning',
+        title: 'Unsuccessful',
+        message: 'Please copy the claim code manually.',
+      });
       if (process.env.NODE_ENV !== 'production') {
         console.warn('Clipboard copy failed', err);
       }
@@ -583,7 +612,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       const res = await platformFetch('/api/admin/tenant', { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error('Failed to load tenants.');
+        throw new Error('Unsuccessful - unable to load tenants.');
       }
       const list: TenantInfo[] = Array.isArray(data.tenants)
         ? data.tenants
@@ -612,7 +641,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       });
     } catch (err) {
       setTenantsError(
-        friendlyUnknownError(err, 'Failed to load tenants. Please try again.')
+        friendlyUnknownError(err, 'Unsuccessful - unable to load tenants. Please try again.')
       );
     } finally {
       setTenantsLoading(false);
@@ -634,7 +663,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error('Failed to update tenant areas.');
+        throw new Error('Unsuccessful - unable to update tenant access.');
       }
       const updatedAreas =
         Array.isArray(data.tenant?.areas) && data.tenant.areas.every((a: unknown) => typeof a === 'string')
@@ -645,12 +674,17 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
           tenant.id === tenantId ? { ...tenant, areas: updatedAreas } : tenant
         )
       );
+      pushToast({
+        kind: 'success',
+        title: 'Tenant access updated',
+        message: 'Area permissions were saved.',
+      });
       setTenantAreaInputs((prev) => ({ ...prev, [tenantId]: '' }));
       updateTenantActionState(tenantId, { saving: false, error: null });
     } catch (err) {
       updateTenantActionState(tenantId, {
         saving: false,
-        error: friendlyUnknownError(err, 'Failed to update tenant areas.'),
+        error: friendlyUnknownError(err, 'Unsuccessful - unable to update tenant access.'),
       });
     }
   }
@@ -685,7 +719,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       const res = await platformFetch(`/api/admin/tenant/${targetId}`, { method: 'DELETE' });
       await res.json();
       if (!res.ok) {
-        throw new Error('Failed to delete tenant.');
+        throw new Error('Unsuccessful - unable to remove tenant access.');
       }
       setTenants((prev) => prev.filter((tenant) => tenant.id !== targetId));
       setTenantActions((prev) => {
@@ -699,9 +733,14 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
         return next;
       });
       setTenantToDelete(null);
+      pushToast({
+        kind: 'success',
+        title: 'Tenant removed',
+        message: 'Access has been removed from this home.',
+      });
     } catch (err) {
       setTenantDeleteError(
-        friendlyUnknownError(err, 'Failed to delete tenant. Please try again.')
+        friendlyUnknownError(err, 'Unsuccessful - unable to remove tenant access. Please try again.')
       );
     } finally {
       setTenantDeleteLoading(false);
@@ -1070,7 +1109,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                                   className="inline-flex items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"
                                   disabled={tenantLocked || tenantState.saving}
                                 >
-                                  Delete
+                                  Remove access
                                 </button>
                               </div>
                             </div>
@@ -1577,54 +1616,40 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
           </div>
         </section>
 
-      {tenantToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-semibold">Delete tenant</h3>
-                <p className="text-xs text-slate-500">
-                  Remove tenant access, devices they added via Dinodia, and their automations.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setTenantToDelete(null)}
-                disabled={tenantDeleteLoading}
-                className="text-slate-500 hover:text-slate-700"
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-            <p className="mt-4 text-sm text-slate-700">
-              Are you sure you want to delete{' '}
-              <span className="font-semibold">{tenantToDelete.username}</span>?
+      <Modal
+        open={Boolean(tenantToDelete)}
+        onClose={() => setTenantToDelete(null)}
+        title="Remove tenant access?"
+        description="This will remove this tenant's access and Dinodia-managed automation ownership for this home."
+        width="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Tenant: <span className="font-semibold text-foreground">{tenantToDelete?.username}</span>
+          </p>
+          {tenantDeleteError && (
+            <p className="rounded-lg border border-[color:var(--danger)] bg-[color:var(--danger)]/12 px-3 py-2 text-xs text-foreground">
+              {tenantDeleteError}
             </p>
-            {tenantDeleteError && (
-              <p className="mt-2 text-xs text-red-600">{tenantDeleteError}</p>
-            )}
-            <div className="mt-5 flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-red-700 disabled:opacity-50"
-                onClick={() => void confirmDeleteTenant()}
-                disabled={tenantDeleteLoading}
-              >
-                {tenantDeleteLoading ? 'Deleting…' : 'Delete tenant'}
-              </button>
-              <button
-                type="button"
-                className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                onClick={() => setTenantToDelete(null)}
-                disabled={tenantDeleteLoading}
-              >
-                Cancel
-              </button>
-            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="danger"
+              loading={tenantDeleteLoading}
+              onClick={() => void confirmDeleteTenant()}
+            >
+              Remove access
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => setTenantToDelete(null)}
+              disabled={tenantDeleteLoading}
+            >
+              Cancel
+            </Button>
           </div>
         </div>
-      )}
+      </Modal>
 
       {sellingModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">

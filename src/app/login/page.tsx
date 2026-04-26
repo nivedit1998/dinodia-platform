@@ -1,10 +1,13 @@
 'use client';
 
-import Image from 'next/image';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getDeviceLabel, getOrCreateDeviceId } from '@/lib/clientDevice';
 import { parseApiError } from '@/lib/authClientError';
+import { AuthShell } from '@/components/ui/AuthShell';
+import { Button } from '@/components/ui/Button';
+import { Field } from '@/components/ui/Field';
+import { Card } from '@/components/ui/Card';
 
 type ChallengeStatus = 'PENDING' | 'APPROVED' | 'CONSUMED' | 'EXPIRED' | null;
 
@@ -76,7 +79,7 @@ export default function LoginPage() {
   const completeChallenge = useCallback(
     async (id: string) => {
       if (!deviceId) {
-        setError('Device information missing. Please try again.');
+        setError('We could not verify this device right now. Please try again.');
         resetVerification();
         return;
       }
@@ -91,7 +94,7 @@ export default function LoginPage() {
       setCompleting(false);
 
       if (!res.ok) {
-        const parsed = parseApiError(data, 'Verification failed. Please try again.');
+        const parsed = parseApiError(data, 'Unsuccessful - please try again.');
         setError(parsed.message);
         resetVerification();
         return;
@@ -118,7 +121,7 @@ export default function LoginPage() {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           if (!cancelled) {
-            const parsed = parseApiError(data, 'Verification expired. Please try again.');
+            const parsed = parseApiError(data, 'Verification has timed out. Please try again.');
             setError(parsed.message);
             resetVerification();
           }
@@ -133,7 +136,7 @@ export default function LoginPage() {
         }
 
         if (data.status === 'EXPIRED' || data.status === 'CONSUMED') {
-          setError('Verification expired. Please try again.');
+          setError('Verification has timed out. Please try again.');
           resetVerification();
         }
       } catch {
@@ -155,7 +158,7 @@ export default function LoginPage() {
     setInfo(null);
 
     if (!deviceId) {
-      setError('Preparing your device info. Try again in a moment.');
+      setError('Preparing your secure sign-in details. Please try again in a moment.');
       return;
     }
 
@@ -196,11 +199,11 @@ export default function LoginPage() {
 
     if (data.requiresPasswordChange && data.role === 'TENANT') {
       if (!data.loginIntentId) {
-        setError('Login session missing. Please try again.');
+        setError('We could not continue this sign-in session. Please try again.');
         return;
       }
       if (!deviceId || !deviceLabel) {
-        setError('Device information is missing. Please try again.');
+        setError('We could not verify this device right now. Please try again.');
         return;
       }
       persistTenantFirstLoginState({
@@ -217,11 +220,11 @@ export default function LoginPage() {
 
       if (isTenant) {
         if (!data.loginIntentId) {
-          setError('Login session missing. Please try again.');
+          setError('We could not continue this sign-in session. Please try again.');
           return;
         }
         if (!deviceId || !deviceLabel) {
-          setError('Device information is missing. Please try again.');
+          setError('We could not verify this device right now. Please try again.');
           return;
         }
         persistTenantSetupState({
@@ -276,164 +279,119 @@ export default function LoginPage() {
       setError(parsed.message);
       return;
     }
-    setInfo('We’ve resent the verification email.');
+    setInfo('A fresh verification email is on the way.');
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md bg-white shadow-lg rounded-2xl p-8">
-        <div className="mb-6 flex items-center justify-center">
-          <Image
-            src="/brand/logo-lockup.png"
-            alt="Dinodia Smart Living"
-            width={220}
-            height={64}
-            className="h-auto w-48 sm:w-56"
-            priority
-          />
-        </div>
-        <h1 className="text-2xl font-semibold mb-2 text-center">
-          Dinodia Portal
-        </h1>
-        <p className="text-sm text-slate-500 mb-6 text-center">
-          Login to your Dinodia account
-        </p>
-
-        {error && (
-          <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-            {error}
-          </div>
-        )}
-        {info && (
-          <div className="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-            {info}
-          </div>
-        )}
-
-        {!awaitingVerification && (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Username</label>
-              <input
-                className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Password</label>
-              <input
-                type="password"
-                className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
-            </div>
-
-            {needsEmailInput && (
-              <div className="space-y-3 border-t pt-3">
-                <p className="text-xs text-slate-500">
-                  Admins created before email verification need an email to continue.
-                </p>
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Admin email
-                  </label>
-                  <input
-                    type="email"
-                    className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    autoComplete="email"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Confirm email
-                  </label>
-                  <input
-                    type="email"
-                    className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={confirmEmail}
-                    onChange={(e) => setConfirmEmail(e.target.value)}
-                    autoComplete="email"
-                  />
-                </div>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-2 bg-indigo-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {loading ? 'Working…' : 'Login'}
-            </button>
-            <div className="text-right">
-              <button
-                type="button"
-                className="mt-2 text-xs text-indigo-600 hover:underline"
-                onClick={() => router.push('/forgot-password')}
-              >
-                Forgot password?
-              </button>
-            </div>
-          </form>
-        )}
-
-        {awaitingVerification && (
-          <div className="space-y-3 text-sm">
-            <p className="text-slate-700">
-              Check your email and click the verification link. We’ll complete the login here
-              once you approve this device.
-            </p>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              <div className="font-medium text-slate-700">Status</div>
-              <div>{challengeStatus ?? 'Waiting for approval…'}</div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={handleResend}
-                className="flex-1 rounded-lg border border-slate-200 bg-white py-2 font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Resend email
-              </button>
-              <button
-                onClick={resetVerification}
-                className="flex-1 rounded-lg border border-slate-200 bg-white py-2 font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Start over
-              </button>
-            </div>
-            {completing && (
-              <p className="text-xs text-slate-500">Finishing sign-in…</p>
-            )}
-          </div>
-        )}
-
-        <p className="mt-4 text-xs text-slate-500 text-center">
+    <AuthShell
+      title="Welcome back"
+      subtitle="Sign in to continue managing your Dinodia home."
+      footer={
+        <>
           First time here?{' '}
           <button
-            className="text-indigo-600 hover:underline"
+            className="font-semibold text-[var(--indigo)] hover:underline"
             onClick={() => router.push('/register-admin')}
           >
             Set up this home
           </button>
-        </p>
-        <p className="mt-2 text-xs text-slate-500 text-center">
-          Claim a home (have a code?){' '}
+          <span className="mx-2 text-muted">|</span>
+          Have a claim code?{' '}
           <button
-            className="text-indigo-600 hover:underline"
+            className="font-semibold text-[var(--indigo)] hover:underline"
             onClick={() => router.push('/claim')}
           >
             Go to claim
           </button>
-        </p>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {error && (
+        <Card className="mb-4 rounded-[14px] border-[var(--danger)]/35 bg-[var(--danger)]/12 p-3 text-sm text-foreground">
+          {error}
+        </Card>
+      )}
+      {info && (
+        <Card className="mb-4 rounded-[14px] border-[var(--warning)]/35 bg-[var(--warning)]/12 p-3 text-sm text-foreground">
+          {info}
+        </Card>
+      )}
+
+      {!awaitingVerification ? (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Field
+            label="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoComplete="username"
+            required
+          />
+          <Field
+            label="Password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            required
+          />
+
+          {needsEmailInput ? (
+            <Card surface="muted" className="space-y-3 rounded-[14px] p-3">
+              <p className="text-xs text-muted">
+                Please add your homeowner email to complete secure sign-in.
+              </p>
+              <Field
+                label="Homeowner email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+              />
+              <Field
+                label="Confirm email"
+                type="email"
+                value={confirmEmail}
+                onChange={(e) => setConfirmEmail(e.target.value)}
+                autoComplete="email"
+              />
+            </Card>
+          ) : null}
+
+          <Button type="submit" loading={loading} fullWidth>
+            {loading ? 'Signing you in' : 'Continue'}
+          </Button>
+          <div className="text-right">
+            <button
+              type="button"
+              className="text-xs font-semibold text-[var(--indigo)] hover:underline"
+              onClick={() => router.push('/forgot-password')}
+            >
+              Forgot password?
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="space-y-3 text-sm">
+          <p className="text-foreground">
+            Open your email and approve this device. We will complete sign-in here.
+          </p>
+          <Card surface="muted" className="rounded-[14px] p-3 text-xs text-muted">
+            <div className="font-semibold text-foreground">Status</div>
+            <div>{challengeStatus ?? 'Waiting for approval...'}</div>
+          </Card>
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" className="flex-1" onClick={handleResend}>
+              Resend email
+            </Button>
+            <Button type="button" variant="secondary" className="flex-1" onClick={resetVerification}>
+              Start over
+            </Button>
+          </div>
+          {completing ? (
+            <p className="text-xs text-muted">Finalizing secure sign-in...</p>
+          ) : null}
+        </div>
+      )}
+    </AuthShell>
   );
 }

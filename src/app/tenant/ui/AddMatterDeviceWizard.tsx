@@ -39,7 +39,7 @@ function classNames(...values: Array<string | false | null | undefined>) {
 function buildStatusMessage(session: SessionPayload | null) {
   if (!session) return 'Waiting to start commissioning...';
   if (session.status === 'SUCCEEDED') return 'Commissioning completed';
-  if (session.status === 'FAILED') return session.error || 'Commissioning failed';
+  if (session.status === 'FAILED') return session.error || 'Commissioning was unsuccessful';
   if (session.status === 'CANCELED') return 'Commissioning was canceled';
   const lastStep = session.lastHaStep;
   if (lastStep?.progress_action === 'wait') return 'Home Assistant is configuring the device...';
@@ -250,7 +250,7 @@ export default function AddMatterDeviceWizard(props: Props) {
         const data = await platformFetchJson<{ session: SessionPayload }>(
           `/api/tenant/matter/sessions/${id}`,
           { cache: 'no-store' },
-          'Failed to check commissioning status.'
+          'Unsuccessful - unable to check commissioning progress right now.'
         );
         const nextSession: SessionPayload = data.session;
         setSession(nextSession);
@@ -266,7 +266,9 @@ export default function AddMatterDeviceWizard(props: Props) {
         }
       } catch (err) {
         console.error('Polling session failed', err);
-        setError(friendlyUnknownError(err, 'Failed to check commissioning status.'));
+        setError(
+          friendlyUnknownError(err, 'Unsuccessful - unable to check commissioning progress right now.')
+        );
         stopPolling();
       }
     }, 3000);

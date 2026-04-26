@@ -53,9 +53,15 @@ export function DeviceTile({
   );
   const primaryAction = getPrimaryAction(label, device, actions);
   const batteryDisplay = batteryPercent != null ? formatBatteryForTile(batteryPercent) : null;
+  const stateChipLabel =
+    device.state && device.state.trim()
+      ? device.state.replace(/_/g, ' ')
+      : isActive
+        ? 'on'
+        : 'off';
 
   const baseClasses =
-    'relative w-full max-w-[360px] sm:max-w-none rounded-[26px] p-4 sm:p-6 shadow-[0_20px_40px_rgba(15,23,42,0.08)] transition duration-300 cursor-pointer select-none';
+    'relative w-full max-w-[360px] sm:max-w-none rounded-[26px] p-4 sm:p-6 shadow-[0_18px_40px_rgba(16,22,42,0.16)] transition duration-300 cursor-pointer select-none hover:-translate-y-0.5 active:translate-y-0';
   const bgClass = isActive ? visual.activeBg : visual.inactiveBg;
 
   return (
@@ -93,6 +99,15 @@ export function DeviceTile({
           </p>
           <p className="text-lg font-semibold text-slate-900">{device.name}</p>
           <p className="text-sm text-slate-500">{secondary}</p>
+          <p
+            className={`inline-flex w-fit items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+              isActive
+                ? 'bg-[color:var(--indigo)]/15 text-[color:var(--indigo)]'
+                : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {stateChipLabel}
+          </p>
           {kwhTotal !== null && Number.isFinite(kwhTotal) && (
             <p className="inline-flex w-fit items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
               Energy (Total): {kwhTotal.toFixed(2)} kWh

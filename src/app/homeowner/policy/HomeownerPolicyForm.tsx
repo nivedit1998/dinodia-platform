@@ -65,7 +65,7 @@ export default function HomeownerPolicyForm(props: {
         const res = await fetch('/api/homeowner/policy/status', { cache: 'no-store' });
         const data = (await res.json().catch(() => ({}))) as PolicyStatusResponse;
         if (!res.ok || !data.ok) {
-          throw new Error(data?.error || 'Failed to load homeowner policy status.');
+          throw new Error(data?.error || 'Unsuccessful - unable to load homeowner policy status.');
         }
         if (cancelled) return;
         if (data.requiresAcceptance === false) {
@@ -77,7 +77,10 @@ export default function HomeownerPolicyForm(props: {
         setPendingOnboardingId(data.pendingOnboardingId ?? props.initialPendingOnboardingId ?? null);
       } catch (err) {
         if (!cancelled) {
-          const message = err instanceof Error ? err.message : 'Failed to load homeowner policy status.';
+          const message =
+            err instanceof Error
+              ? err.message
+              : 'Unsuccessful - unable to load homeowner policy status.';
           setError(message);
         }
       } finally {
@@ -102,12 +105,12 @@ export default function HomeownerPolicyForm(props: {
     setInfo(null);
 
     if (!emailVerified) {
-      setError('Verify your email first to continue.');
+      setError('Please verify your email first to continue.');
       return;
     }
 
     if (!iAgree) {
-      setError('You must confirm “I agree” to continue.');
+      setError('Please confirm your agreement to continue.');
       return;
     }
 
@@ -153,7 +156,9 @@ export default function HomeownerPolicyForm(props: {
 
       const acceptData = (await acceptRes.json().catch(() => ({}))) as AcceptResponse;
       if (!acceptRes.ok || !acceptData.ok) {
-        throw new Error(acceptData.error || 'Failed to accept homeowner policy.');
+        throw new Error(
+          acceptData.error || 'Unsuccessful - unable to accept the homeowner policy.'
+        );
       }
 
       const effectivePendingId = acceptData.pendingOnboardingId ?? pendingOnboardingId;
@@ -165,14 +170,20 @@ export default function HomeownerPolicyForm(props: {
         });
         const finalizeData = (await finalizeRes.json().catch(() => ({}))) as FinalizeResponse;
         if (!finalizeRes.ok || !finalizeData.ok) {
-          throw new Error(finalizeData.error || 'Policy accepted but onboarding finalization failed.');
+          throw new Error(
+            finalizeData.error ||
+              'Policy accepted, but onboarding could not be completed right now.'
+          );
         }
       }
 
-      setInfo('Policy accepted successfully. Redirecting…');
+      setInfo('Policy accepted. Taking you to your dashboard...');
       router.replace('/admin/dashboard');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to complete homeowner policy acceptance.';
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Unsuccessful - we could not complete homeowner policy acceptance.';
       setError(message);
     } finally {
       setSubmitting(false);
@@ -192,7 +203,7 @@ export default function HomeownerPolicyForm(props: {
         <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
           {!emailVerified && (
             <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-700">
-              Verify your email from the previous step before accepting this policy.
+              Please verify your email from the previous step before accepting this policy.
             </p>
           )}
 
@@ -321,7 +332,7 @@ export default function HomeownerPolicyForm(props: {
             disabled={submitting || !emailVerified}
             className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
           >
-            {submitting ? 'Submitting…' : 'Accept terms and continue'}
+            {submitting ? 'Saving...' : 'Accept terms and continue'}
           </button>
         </form>
       )}

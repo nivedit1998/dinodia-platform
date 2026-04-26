@@ -53,7 +53,7 @@ function classNames(...values: Array<string | false | null | undefined>) {
 function buildStatusMessage(session: SessionPayload | null) {
   if (!session) return 'Waiting to start setup...';
   if (session.status === 'SUCCEEDED') return 'Device added successfully';
-  if (session.status === 'FAILED') return session.error || 'Setup failed';
+  if (session.status === 'FAILED') return session.error || 'Setup was unsuccessful';
   if (session.status === 'CANCELED') return 'Setup was canceled';
   const lastStep = session.lastHaStep;
   if (lastStep?.type === 'progress' || lastStep?.progress_action === 'wait') {
@@ -240,7 +240,7 @@ export default function DiscoveredDevices(props: Props) {
         const data = await platformFetchJson<{ session: SessionPayload; warnings?: string[] }>(
           `/api/tenant/discovery/sessions/${sessionId}`,
           { cache: 'no-store' },
-          'Failed to refresh session.'
+          'Unsuccessful - unable to refresh setup progress right now.'
         );
         const nextSession = data.session as SessionPayload;
         setSession(nextSession);
@@ -463,7 +463,7 @@ export default function DiscoveredDevices(props: Props) {
     if (session.status === 'FAILED') {
       return (
         <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {session.error || 'Setup failed. Please try again.'}
+          {session.error || 'Setup was unsuccessful. Please try again.'}
         </div>
       );
     }

@@ -7,6 +7,11 @@ import type { UIDevice } from '@/types/device';
 import { isDetailState } from '@/lib/deviceSensors';
 import { friendlyUnknownError } from '@/lib/clientError';
 import { platformFetchJson } from '@/lib/platformFetchClient';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { Modal } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/Button';
+import { useToast } from '@/components/ui/Toast';
 import {
   DeviceActionSpec,
   DeviceTriggerSpec,
@@ -326,6 +331,7 @@ function renderTriggerInput(
 }
 
 export default function TenantAutomations() {
+  const { pushToast } = useToast();
   const [automations, setAutomations] = useState<AutomationListItem[]>([]);
   const [loadingAutomations, setLoadingAutomations] = useState(false);
   const [loadingDevices, setLoadingDevices] = useState(false);
@@ -335,6 +341,7 @@ export default function TenantAutomations() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [automationToDelete, setAutomationToDelete] = useState<AutomationListItem | null>(null);
 
   const actionDevice = devices.find((d) => d.entityId === form.actionEntityId);
   const triggerDevice = devices.find((d) => d.entityId === form.triggerEntityId);
@@ -357,14 +364,14 @@ export default function TenantAutomations() {
       const data = await platformFetchJson<{ automations?: AutomationListItem[] }>(
         url,
         { credentials: 'include' },
-        'Failed to fetch automations.'
+        'Unsuccessful - we could not load automations right now.'
       );
       const list: AutomationListItem[] = Array.isArray(data.automations)
         ? data.automations
         : [];
       setAutomations(list);
     } catch (err) {
-      setError(friendlyUnknownError(err, 'Failed to load automations.'));
+      setError(friendlyUnknownError(err, 'Unsuccessful - we could not load automations right now.'));
     } finally {
       setLoadingAutomations(false);
     }
@@ -381,12 +388,12 @@ export default function TenantAutomations() {
         const data = await platformFetchJson<{ devices?: UIDevice[] }>(
           '/api/devices?fresh=1',
           { credentials: 'include' },
-          'Failed to load devices.'
+          'Unsuccessful - we could not load devices right now.'
         );
         const list: UIDevice[] = Array.isArray(data.devices) ? data.devices : [];
         setDevices(list);
       } catch (err) {
-        setError(friendlyUnknownError(err, 'Failed to load devices.'));
+        setError(friendlyUnknownError(err, 'Unsuccessful - we could not load devices right now.'));
       } finally {
         setLoadingDevices(false);
       }
@@ -517,12 +524,17 @@ export default function TenantAutomations() {
           body: JSON.stringify(payload),
           credentials: 'include',
         },
-        'Failed to save automation.'
+        'Unsuccessful - we could not save this automation.'
       );
       setForm({ ...defaultFormState });
       await fetchAndSetAutomations(selectedEntityId);
+      pushToast({
+        kind: 'success',
+        title: 'Automation saved',
+        message: 'Done - everything looks good.',
+      });
     } catch (err) {
-      setError(friendlyUnknownError(err, 'Failed to save automation.'));
+      setError(friendlyUnknownError(err, 'Unsuccessful - we could not save this automation.'));
     } finally {
       setSaving(false);
     }
@@ -538,13 +550,19 @@ export default function TenantAutomations() {
           method: 'DELETE',
           credentials: 'include',
         },
-        'Failed to delete automation.'
+        'Unsuccessful - we could not remove this automation.'
       );
       await fetchAndSetAutomations(selectedEntityId);
+      pushToast({
+        kind: 'success',
+        title: 'Automation removed',
+        message: 'Your home rules are up to date.',
+      });
     } catch (err) {
-      setError(friendlyUnknownError(err, 'Failed to delete automation.'));
+      setError(friendlyUnknownError(err, 'Unsuccessful - we could not remove this automation.'));
     } finally {
       setDeletingId(null);
+      setAutomationToDelete(null);
     }
   }
 
@@ -618,9 +636,17 @@ export default function TenantAutomations() {
           {loadingAutomations && <span className="text-xs text-slate-500">Loading…</span>}
         </div>
         {automations.length === 0 && !loadingAutomations && (
-          <p className="text-sm text-slate-500">
-            No Dinodia-managed automations are available for your assigned areas.
-          </p>
+          <EmptyState
+            title="No automations yet"
+            description="Create your first automation to keep your home running exactly how you prefer."
+          />
+        )}
+        {loadingAutomations && automations.length === 0 && (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <Skeleton key={`automation-skeleton-${index}`} className="h-40 rounded-[16px]" />
+            ))}
+          </div>
         )}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {automations.map((auto) => {
@@ -646,10 +672,10 @@ export default function TenantAutomations() {
                     <button
                       type="button"
                       className="rounded-lg border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
-                      onClick={() => void handleDelete(auto.id)}
+                      onClick={() => setAutomationToDelete(auto)}
                       disabled={deletingId === auto.id || auto.canEdit === false}
                     >
-                      Delete
+                      Remove
                     </button>
                   </div>
                 </div>
@@ -955,6 +981,43 @@ export default function TenantAutomations() {
           </div>
         </form>
       </section>
+
+      <Modal
+        open={Boolean(automationToDelete)}
+        onClose={() => setAutomationToDelete(null)}
+        title="Remove this automation?"
+        description="This will stop this automation from running for your home."
+        width="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Automation:{' '}
+            <span className="font-semibold text-foreground">
+              {automationToDelete?.alias}
+            </span>
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="danger"
+              className="flex-1"
+              loading={deletingId === automationToDelete?.id}
+              onClick={() => {
+                if (!automationToDelete) return;
+                void handleDelete(automationToDelete.id);
+              }}
+            >
+              Remove automation
+            </Button>
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setAutomationToDelete(null)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

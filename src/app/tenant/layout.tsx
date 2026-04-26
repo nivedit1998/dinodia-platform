@@ -3,21 +3,11 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Role } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth';
-import { getHomeownerPolicyStatus } from '@/lib/homeownerPolicy';
 
-export default async function AdminLayout({ children }: { children: ReactNode }) {
+export default async function TenantLayout({ children }: { children: ReactNode }) {
   const user = await getCurrentUser();
-  if (!user) {
-    redirect('/login');
-  }
-  if (user.role !== Role.ADMIN) {
-    redirect('/');
-  }
-
-  const policy = await getHomeownerPolicyStatus(user.id);
-  if (policy?.requiresAcceptance) {
-    redirect('/homeowner/policy');
-  }
+  if (!user) redirect('/login');
+  if (user.role !== Role.TENANT) redirect('/admin/settings');
 
   return (
     <div className="min-h-screen">
@@ -25,29 +15,23 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         <div className="sticky top-4 z-40 flex flex-wrap items-center justify-between gap-3 rounded-full border border-border bg-surface/85 px-4 py-2 shadow-sm backdrop-blur">
           <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted">
             <span className="inline-block h-2 w-2 rounded-full bg-[var(--indigo)]" />
-            Homeowner Dashboard
+            Tenant Control
           </div>
           <nav className="flex flex-wrap items-center gap-1 text-sm">
             <Link
-              href="/admin/dashboard"
+              href="/tenant/dashboard"
               className="rounded-full px-3 py-1.5 font-medium text-foreground hover:bg-surface-2"
             >
-              Overview
+              Dashboard
             </Link>
             <Link
-              href="/admin/manage-users"
+              href="/tenant/automations"
               className="rounded-full px-3 py-1.5 font-medium text-foreground hover:bg-surface-2"
             >
-              Users
+              Automations
             </Link>
             <Link
-              href="/admin/manage-devices"
-              className="rounded-full px-3 py-1.5 font-medium text-foreground hover:bg-surface-2"
-            >
-              Devices
-            </Link>
-            <Link
-              href="/admin/settings"
+              href="/tenant/settings"
               className="rounded-full px-3 py-1.5 font-medium text-foreground hover:bg-surface-2"
             >
               Settings
