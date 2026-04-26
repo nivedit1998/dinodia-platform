@@ -10,6 +10,7 @@ import {
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { Role } from '@prisma/client';
 import { bumpDevicesVersion } from '@/lib/devicesVersion';
+import { getTenantOwnedTargetsForHome, getTenantOwnedTargetsForUser } from '@/lib/tenantOwnership';
 
 export async function POST(req: NextRequest) {
   const me = await getCurrentUserFromRequest(req);
@@ -55,12 +56,23 @@ export async function POST(req: NextRequest) {
     if (user.role === Role.TENANT) {
       const allowedAreas = new Set(user.accessRules.map((r) => r.area));
       const devices = await getDevicesForHaConnection(haConnection.id, { bypassCache: true });
-      const allowedEntityIds = new Set(
+      const [tenantOwnedForHome, tenantOwnedForUser] = await Promise.all([
+        getTenantOwnedTargetsForHome(user.homeId!, haConnection.id),
+        getTenantOwnedTargetsForUser(user.id, haConnection.id),
+      ]);
+      const allTenantOwnedEntityIds = new Set(tenantOwnedForHome.entityIds);
+      const ownTenantOwnedEntityIds = new Set(tenantOwnedForUser.entityIds);
+      const allowedByAreaEntityIds = new Set(
         devices
-          .filter((d) => d.areaName && allowedAreas.has(d.areaName))
-          .map((d) => d.entityId)
+          .filter((device) => device.areaName && allowedAreas.has(device.areaName))
+          .map((device) => device.entityId)
       );
-      if (!allowedEntityIds.has(entityId)) {
+
+      const canAccess =
+        ownTenantOwnedEntityIds.has(entityId) ||
+        (!allTenantOwnedEntityIds.has(entityId) && allowedByAreaEntityIds.has(entityId));
+
+      if (!canAccess) {
         return apiFailFromStatus(403, 'You are not allowed to control that device.');
       }
     }

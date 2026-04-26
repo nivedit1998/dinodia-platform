@@ -5,6 +5,7 @@ import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { Role } from '@prisma/client';
 import { logApiHit } from '@/lib/requestLog';
 import { safeLog } from '@/lib/safeLogger';
+import { getTenantOwnedTargetsForHome, getTenantOwnedTargetsForUser } from '@/lib/tenantOwnership';
 
 export async function GET(req: NextRequest) {
   logApiHit(req, '/api/devices', { fresh: req.nextUrl.searchParams.get('fresh') === '1' });
@@ -49,15 +50,23 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Filter for tenants by allowed areas
-  const result =
-    user.role === Role.TENANT
-      ? devices.filter(
-          (d) =>
-            d.areaName !== null &&
-            user?.accessRules.some((r) => r.area === d.areaName)
-        )
-      : devices;
+  const tenantOwnedForHome = await getTenantOwnedTargetsForHome(user.homeId!, haConnection.id);
+  const tenantOwnedForUser = await getTenantOwnedTargetsForUser(user.id, haConnection.id);
+  const allTenantOwnedEntityIds = new Set(tenantOwnedForHome.entityIds);
+  const ownTenantOwnedEntityIds = new Set(tenantOwnedForUser.entityIds);
+  const allowedAreas = new Set((user.accessRules ?? []).map((rule) => rule.area));
+
+  const result = devices.filter((device) => {
+    if (ownTenantOwnedEntityIds.has(device.entityId)) {
+      return true;
+    }
+
+    if (allTenantOwnedEntityIds.has(device.entityId)) {
+      return false;
+    }
+
+    return Boolean(device.areaName && allowedAreas.has(device.areaName));
+  });
 
   if (process.env.NODE_ENV !== 'production') {
     const interestingLabels = new Set(['Motion Sensor', 'TV', 'Spotify']);

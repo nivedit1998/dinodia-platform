@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AuditEventType, HomeownerOnboardingFlowType, HomeStatus, Prisma, Role } from '@prisma/client';
+import { AuditEventType, HomeownerOnboardingFlowType, Prisma, Role } from '@prisma/client';
 import { hashPassword } from '@/lib/auth';
 import { hashClaimCode } from '@/lib/claimCode';
 import { createAuthChallenge, buildVerifyUrl, getAppUrl } from '@/lib/authChallenges';
@@ -20,7 +20,6 @@ const REPLY_TO = 'niveditgupta@dinodiasmartliving.com';
 type ClaimErrorCode =
   | 'HOME_NOT_FOUND'
   | 'CLAIM_CONSUMED'
-  | 'HOME_ACTIVE'
   | 'HOME_HAS_OWNER';
 
 class ClaimFlowError extends Error {
@@ -50,7 +49,6 @@ async function getClaimableHome(
 
   if (!home || !home.haConnection) throw new ClaimFlowError('HOME_NOT_FOUND');
   if (home.claimCodeConsumedAt) throw new ClaimFlowError('CLAIM_CONSUMED');
-  if (home.status === HomeStatus.ACTIVE) throw new ClaimFlowError('HOME_ACTIVE');
   if (home.haConnection.ownerId) throw new ClaimFlowError('HOME_HAS_OWNER');
 
   return { home };
@@ -67,8 +65,6 @@ function handleClaimError(err: unknown) {
           409,
           AUTH_ERROR_CODES.CLAIM_INVALID
         );
-      case 'HOME_ACTIVE':
-        return errorResponse('This home is already active with an owner.', 409, AUTH_ERROR_CODES.CLAIM_INVALID);
       case 'HOME_HAS_OWNER':
         return errorResponse(
           'Another owner is already linked to this Dinodia Hub.',
