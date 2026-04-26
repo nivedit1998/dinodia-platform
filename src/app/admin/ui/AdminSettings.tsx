@@ -33,6 +33,19 @@ type DeviceOverride = {
   blindTravelSeconds?: number | null;
 };
 type OverrideForm = { entityId: string; name: string; area: string; label: string; blindTravelSeconds: string };
+type SellingPreview = {
+  fullReset?: {
+    haTargets?: {
+      tenantOwnedDeviceIds?: string[];
+      tenantOwnedEntityIds?: string[];
+      tenantAutomationIds?: string[];
+    };
+    dbCounts?: Record<string, number>;
+  };
+  ownerTransfer?: {
+    dbCounts?: Record<string, number>;
+  };
+};
 
 const EMPTY_TENANT_FORM: TenantForm = { username: '', password: '', areas: [] };
 const EMPTY_PASSWORD_FORM = {
@@ -96,6 +109,8 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
   const [sellingError, setSellingError] = useState<string | null>(null);
   const [sellingClaimCode, setSellingClaimCode] = useState<string | null>(null);
   const [claimCopyStatus, setClaimCopyStatus] = useState<string | null>(null);
+  const [sellingPreview, setSellingPreview] = useState<SellingPreview | null>(null);
+  const [sellingPreviewLoading, setSellingPreviewLoading] = useState(false);
 
   const [overrides, setOverrides] = useState<DeviceOverride[]>([]);
   const allowedLabelOptions = useMemo(
@@ -403,6 +418,53 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       setSellingMode(null);
     }
   }
+
+  const loadSellingPreview = useCallback(async () => {
+    setSellingPreviewLoading(true);
+    try {
+      const res = await platformFetch('/api/admin/selling-property', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error('Failed to load deregister impact preview.');
+      }
+      setSellingPreview({
+        fullReset: data.fullReset,
+        ownerTransfer: data.ownerTransfer,
+      });
+    } catch (err) {
+      setSellingError(
+        friendlyUnknownError(err, 'We couldn’t load the deregister impact preview. Please try again.')
+      );
+    } finally {
+      setSellingPreviewLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showDeregister) return;
+    void loadSellingPreview();
+  }, [showDeregister, loadSellingPreview]);
+
+  useEffect(() => {
+    if (!showDeregister) return;
+    const syncKey = 'dinodia_admin_automation_sync_once_v1';
+    if (typeof window === 'undefined') return;
+    if (window.localStorage.getItem(syncKey) === 'done') return;
+    void (async () => {
+      try {
+        await platformFetch('/api/admin/automations/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } catch (err) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('Automation sync backfill call failed', err);
+        }
+      } finally {
+        window.localStorage.setItem(syncKey, 'done');
+      }
+    })();
+  }, [showDeregister]);
 
   function closeSellingModal() {
     setSellingModalOpen(false);
@@ -1470,9 +1532,39 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
               </p>
             )}
             <p className="mt-3 text-xs text-slate-600">
-              Choose if everyone is leaving or if tenants stay. We’ll guide you through issuing the
-              claim code and sign you out once you confirm.
+              Choose if everyone is leaving or if tenants stay. FULL_RESET removes all users, tenant-owned
+              devices/entities and tenant-created automations, telemetry, onboarding/support artifacts, and
+              scrubs the property address to UNCLAIMED. OWNER_TRANSFER removes only you and keeps the home active.
             </p>
+            {sellingPreviewLoading && (
+              <p className="mt-2 text-xs text-slate-500">Loading deregister impact preview…</p>
+            )}
+            {sellingPreview?.fullReset && (
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
+                <p className="font-semibold text-slate-800">FULL_RESET impact preview</p>
+                <p>
+                  Tenant devices: {sellingPreview.fullReset.haTargets?.tenantOwnedDeviceIds?.length ?? 0} ·
+                  Tenant entities: {sellingPreview.fullReset.haTargets?.tenantOwnedEntityIds?.length ?? 0} ·
+                  Tenant automations: {sellingPreview.fullReset.haTargets?.tenantAutomationIds?.length ?? 0}
+                </p>
+                <p>
+                  Users: {sellingPreview.fullReset.dbCounts?.users ?? 0} ·
+                  Monitoring readings: {sellingPreview.fullReset.dbCounts?.monitoringReadings ?? 0} ·
+                  Boiler readings: {sellingPreview.fullReset.dbCounts?.boilerTemperatureReadings ?? 0} ·
+                  Pending onboarding: {sellingPreview.fullReset.dbCounts?.pendingHomeownerOnboardings ?? 0}
+                </p>
+              </div>
+            )}
+            {sellingPreview?.ownerTransfer && (
+              <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
+                <p className="font-semibold text-slate-800">OWNER_TRANSFER impact preview</p>
+                <p>
+                  Users removed: {sellingPreview.ownerTransfer.dbCounts?.users ?? 0} ·
+                  Trusted devices: {sellingPreview.ownerTransfer.dbCounts?.trustedDevices ?? 0} ·
+                  Auth challenges: {sellingPreview.ownerTransfer.dbCounts?.authChallenges ?? 0}
+                </p>
+              </div>
+            )}
             {sellingClaimCode && (
               <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
                 A claim code has already been generated for this home. Share it with the incoming
@@ -1541,7 +1633,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
               <div>
                 <h3 className="text-lg font-semibold">Deregister Property</h3>
                 <p className="text-xs text-slate-500">
-                  Generate the claim code for the next homeowner.
+                  Review impact and confirm how you want to deregister this property.
                 </p>
               </div>
               <button
@@ -1637,8 +1729,8 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                     <p className="text-sm font-semibold">Please confirm</p>
                     <p className="mt-2 text-sm">
                       {sellingMode === 'FULL_RESET'
-                        ? 'This will remove all tenant devices, automations, alexa links and accounts and fully reset your Dinodia home for the new homeowner and tenants'
-                        : 'This will remove your property but keep all tenants added devices, automations, alexa links and accounts'}
+                        ? 'This will remove all users, tenant-created devices/entities and automations, tenant Alexa links, monitoring + boiler telemetry, support/onboarding records, and scrub home address fields to UNCLAIMED.'
+                        : 'This will remove only your homeowner account, keep tenants and the home active, and generate a claim code for the incoming homeowner.'}
                     </p>
                     <p className="mt-3 text-xs font-semibold uppercase tracking-wide">Is this ok?</p>
                     <div className="mt-3 flex flex-wrap gap-2">

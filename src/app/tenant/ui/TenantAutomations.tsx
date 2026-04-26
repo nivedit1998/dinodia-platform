@@ -561,8 +561,7 @@ export default function TenantAutomations() {
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold leading-tight text-slate-900">Home Automations</h1>
         <p className="text-sm text-slate-500">
-          Manage Home Assistant automations over Nabu Casa. Automations run instantly inside your Home Assistant; this page
-          only edits them.
+          You only see Dinodia-managed automations for devices in your assigned areas.
         </p>
       </div>
 
@@ -614,12 +613,14 @@ export default function TenantAutomations() {
       <section className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900">
-            {selectedEntityId ? 'Automations affecting this device' : 'All automations'}
+            {selectedEntityId ? 'Automations affecting this device' : 'Your automations'}
           </h2>
           {loadingAutomations && <span className="text-xs text-slate-500">Loading…</span>}
         </div>
         {automations.length === 0 && !loadingAutomations && (
-          <p className="text-sm text-slate-500">No automations found for this device.</p>
+          <p className="text-sm text-slate-500">
+            No Dinodia-managed automations are available for your assigned areas.
+          </p>
         )}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {automations.map((auto) => {
@@ -646,7 +647,7 @@ export default function TenantAutomations() {
                       type="button"
                       className="rounded-lg border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
                       onClick={() => void handleDelete(auto.id)}
-                      disabled={deletingId === auto.id}
+                      disabled={deletingId === auto.id || auto.canEdit === false}
                     >
                       Delete
                     </button>
@@ -670,11 +671,6 @@ export default function TenantAutomations() {
                   {auto.hasTemplates && (
                     <span className="max-w-full rounded-full bg-amber-100 px-2 py-0.5 text-amber-800 break-words">
                       Template detected (view only)
-                    </span>
-                  )}
-                  {!auto.canEdit && (
-                    <span className="max-w-full rounded-full bg-amber-50 px-2 py-0.5 text-amber-700 break-words">
-                      Read-only (outside your areas or templated)
                     </span>
                   )}
                 </div>

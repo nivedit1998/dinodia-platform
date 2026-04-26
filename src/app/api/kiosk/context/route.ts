@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
     tenantVisibleAutomationIds,
     tenantOwnedEntityIds: fullUser.role === Role.TENANT ? ownTenantTargets.entityIds : [],
     tenantOwnedDeviceIds: fullUser.role === Role.TENANT ? ownTenantTargets.deviceIds : [],
-    allTenantOwnedEntityIds: fullUser.role === Role.ADMIN ? allTenantTargets.entityIds : [],
-    allTenantOwnedDeviceIds: fullUser.role === Role.ADMIN ? allTenantTargets.deviceIds : [],
+    allTenantOwnedEntityIds: allTenantTargets.entityIds,
+    allTenantOwnedDeviceIds: allTenantTargets.deviceIds,
   });
 }
