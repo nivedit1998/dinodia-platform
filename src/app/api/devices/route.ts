@@ -6,6 +6,8 @@ import { Role } from '@prisma/client';
 import { logApiHit } from '@/lib/requestLog';
 import { safeLog } from '@/lib/safeLogger';
 import { getTenantOwnedTargetsForHome, getTenantOwnedTargetsForUser } from '@/lib/tenantOwnership';
+import { getServicesForTargetWs } from '@/lib/homeAssistant';
+import type { HaConnectionLike } from '@/lib/homeAssistant';
 
 export async function GET(req: NextRequest) {
   logApiHit(req, '/api/devices', { fresh: req.nextUrl.searchParams.get('fresh') === '1' });
@@ -27,6 +29,9 @@ export async function GET(req: NextRequest) {
 
   const fresh = req.nextUrl.searchParams.get('fresh');
   const bypassCache = fresh === '1';
+
+  const debugServicesForTarget = req.nextUrl.searchParams.get('debug_services_for_target') === '1';
+  const debugEntityId = String(req.nextUrl.searchParams.get('debug_entity_id') || '').trim();
 
   let user;
   let haConnection;
@@ -67,6 +72,62 @@ export async function GET(req: NextRequest) {
 
     return Boolean(device.areaName && allowedAreas.has(device.areaName));
   });
+
+  if (debugServicesForTarget && debugEntityId) {
+    const isAccessible = result.some((d) => d.entityId === debugEntityId);
+    if (!isAccessible) {
+      safeLog('warn', '[api/devices] debug_services_for_target skipped (entity not accessible)', {
+        entityId: debugEntityId,
+        resultCount: result.length,
+      });
+    } else {
+      const normalizeUrl = (url: string) => url.trim().replace(/\/+$/, '');
+      const candidates: Array<{ endpoint: 'cloud' | 'base'; ha: HaConnectionLike }> = [];
+
+      const cloudUrl =
+        typeof haConnection.cloudUrl === 'string' ? normalizeUrl(haConnection.cloudUrl) : '';
+      const baseUrl = normalizeUrl(haConnection.baseUrl);
+
+      if (cloudUrl) {
+        candidates.push({
+          endpoint: 'cloud',
+          ha: { baseUrl: cloudUrl, longLivedToken: haConnection.longLivedToken },
+        });
+      }
+      candidates.push({
+        endpoint: 'base',
+        ha: { baseUrl, longLivedToken: haConnection.longLivedToken },
+      });
+
+      let lastError: unknown = null;
+      for (const candidate of candidates) {
+        try {
+          const services = await getServicesForTargetWs(candidate.ha, debugEntityId);
+          safeLog('info', '[api/devices] get_services_for_target', {
+            entityId: debugEntityId,
+            endpoint: candidate.endpoint,
+            serviceCount: services.length,
+            servicesPreview: services.slice(0, 25).join(', '),
+          });
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err;
+          safeLog('warn', '[api/devices] get_services_for_target failed', {
+            entityId: debugEntityId,
+            endpoint: candidate.endpoint,
+            error: err,
+          });
+        }
+      }
+
+      if (lastError) {
+        safeLog('warn', '[api/devices] get_services_for_target exhausted candidates', {
+          entityId: debugEntityId,
+        });
+      }
+    }
+  }
 
   if (process.env.NODE_ENV !== 'production') {
     const interestingLabels = new Set(['Motion Sensor', 'TV', 'Spotify']);

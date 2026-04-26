@@ -208,6 +208,30 @@ export async function getEntityRegistryMap(ha: HaConnectionLike) {
   return map;
 }
 
+export async function getServicesForTargetWs(
+  ha: HaConnectionLike,
+  entityId: string
+): Promise<string[]> {
+  const normalizedEntityId = String(entityId || '').trim();
+  if (!normalizedEntityId) return [];
+
+  const client = await HaWsClient.connect(ha);
+  try {
+    const result = await client.call<unknown>('get_services_for_target', {
+      target: { entity_id: [normalizedEntityId] },
+      expand_group: true,
+    });
+
+    if (!Array.isArray(result)) return [];
+
+    return result.filter(
+      (item): item is string => typeof item === 'string' && item.trim() !== ''
+    );
+  } finally {
+    client.close();
+  }
+}
+
 export async function getDevicesWithMetadata(
   ha: HaConnectionLike
 ): Promise<EnrichedDevice[]> {
