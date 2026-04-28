@@ -423,7 +423,32 @@ function renderLightControls({
   sendCommand: (payload: ControlPayload) => Promise<void>;
 }) {
   const hasPowerCommands = !!powerOn || !!powerOff || !!toggle;
-  const isOn = isPowerOn('Light', device.state);
+  const deviceLabel = getPrimaryLabel(device);
+  const isOn = isPowerOn(deviceLabel, device.state);
+  const isPowerOnly = hasPowerCommands && !brightnessAction;
+  const powerOnlyCommand = isPowerOnly
+    ? isOn
+      ? powerOff ?? toggle ?? powerOn
+      : powerOn ?? toggle ?? powerOff
+    : null;
+  const powerOnlyLabel = powerOnlyCommand
+    ? powerOnlyCommand === toggle
+      ? isOn
+        ? 'Turn off'
+        : 'Turn on'
+      : powerOnlyCommand.endsWith('/turn_off')
+        ? 'Turn off'
+        : 'Turn on'
+    : null;
+  const powerOnlyIntent = powerOnlyLabel
+    ? powerOnlyLabel === 'Turn off'
+      ? isOn
+        ? 'active'
+        : 'neutral'
+      : !isOn
+        ? 'active'
+        : 'neutral'
+    : 'neutral';
 
   if (!hasPowerCommands && !brightnessAction) {
     return (
@@ -436,47 +461,65 @@ function renderLightControls({
   return (
     <ControlSectionCard title="Controls">
       {hasPowerCommands ? (
-        <ControlsGrid>
-          {powerOn ? (
-            <ControlButton
-              label="Turn on"
-              intent={!isOn ? 'active' : 'neutral'}
-              onClick={() =>
-                void sendCommand({
-                  entityId: device.entityId,
-                  command: powerOn,
-                })
-              }
-              disabled={pendingCommand !== null}
-            />
-          ) : null}
-          {powerOff ? (
-            <ControlButton
-              label="Turn off"
-              intent={isOn ? 'active' : 'neutral'}
-              onClick={() =>
-                void sendCommand({
-                  entityId: device.entityId,
-                  command: powerOff,
-                })
-              }
-              disabled={pendingCommand !== null}
-            />
-          ) : null}
-          {!powerOn && !powerOff && toggle ? (
-            <ControlButton
-              label={isOn ? 'Turn off' : 'Turn on'}
-              intent="active"
-              onClick={() =>
-                void sendCommand({
-                  entityId: device.entityId,
-                  command: toggle,
-                })
-              }
-              disabled={pendingCommand !== null}
-            />
-          ) : null}
-        </ControlsGrid>
+        isPowerOnly ? (
+          <ControlsGrid>
+            {powerOnlyCommand && powerOnlyLabel ? (
+              <ControlButton
+                label={powerOnlyLabel}
+                intent={powerOnlyIntent}
+                onClick={() =>
+                  void sendCommand({
+                    entityId: device.entityId,
+                    command: powerOnlyCommand,
+                  })
+                }
+                disabled={pendingCommand !== null}
+              />
+            ) : null}
+          </ControlsGrid>
+        ) : (
+          <ControlsGrid>
+            {powerOn ? (
+              <ControlButton
+                label="Turn on"
+                intent={!isOn ? 'active' : 'neutral'}
+                onClick={() =>
+                  void sendCommand({
+                    entityId: device.entityId,
+                    command: powerOn,
+                  })
+                }
+                disabled={pendingCommand !== null}
+              />
+            ) : null}
+            {powerOff ? (
+              <ControlButton
+                label="Turn off"
+                intent={isOn ? 'active' : 'neutral'}
+                onClick={() =>
+                  void sendCommand({
+                    entityId: device.entityId,
+                    command: powerOff,
+                  })
+                }
+                disabled={pendingCommand !== null}
+              />
+            ) : null}
+            {!powerOn && !powerOff && toggle ? (
+              <ControlButton
+                label={isOn ? 'Turn off' : 'Turn on'}
+                intent="active"
+                onClick={() =>
+                  void sendCommand({
+                    entityId: device.entityId,
+                    command: toggle,
+                  })
+                }
+                disabled={pendingCommand !== null}
+              />
+            ) : null}
+          </ControlsGrid>
+        )
       ) : null}
 
       {device.domain === 'light' && brightnessAction ? (
