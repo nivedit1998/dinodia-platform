@@ -163,26 +163,49 @@ export function DeviceTile({
 
 type PrimaryAction = { command: DeviceCommandId; value?: number } | null;
 
+function getCommandActionId(actions: DeviceActionSpec[], predicate: (id: string) => boolean) {
+  const match = actions.find(
+    (action): action is Extract<DeviceActionSpec, { kind: 'command' }> =>
+      action.kind === 'command' && predicate(action.id)
+  );
+  return match?.id as DeviceCommandId | undefined;
+}
+
 function getPrimaryAction(
   label: string,
   device: UIDevice,
   actions: DeviceActionSpec[]
 ): PrimaryAction {
-  const powerOn = actions.find(
-    (action) => action.kind === 'command' && action.id.endsWith('/turn_on')
-  )?.id as DeviceCommandId | undefined;
-  const powerOff = actions.find(
-    (action) => action.kind === 'command' && action.id.endsWith('/turn_off')
-  )?.id as DeviceCommandId | undefined;
+  const toggle = getCommandActionId(actions, (id) => id === 'light/toggle');
+  const powerOn = getCommandActionId(actions, (id) => id.endsWith('/turn_on'));
+  const powerOff = getCommandActionId(actions, (id) => id.endsWith('/turn_off'));
+  const blindOpen = getCommandActionId(actions, (id) => id === 'blind/open');
+  const blindClose = getCommandActionId(actions, (id) => id === 'blind/close');
+
+  if (powerOn || powerOff || toggle) {
+    const isOn =
+      device.state.toLowerCase() === 'on' ||
+      (device.domain === 'media_player' &&
+        device.state.toLowerCase() !== 'off' &&
+        device.state.toLowerCase() !== 'standby');
+    return { command: isOn ? powerOff ?? toggle! : powerOn ?? toggle! };
+  }
+
+  const playPause = actions.find(
+    (action): action is Extract<DeviceActionSpec, { kind: 'command' }> =>
+      action.kind === 'command' && action.id === 'media/play_pause'
+  );
+  if (playPause) {
+    return { command: playPause.id as DeviceCommandId };
+  }
+
+  if (blindOpen || blindClose) {
+    const normalized = device.state.toLowerCase();
+    const isOpen = normalized === 'open' || normalized === 'opening' || normalized === 'on';
+    return { command: isOpen ? blindClose ?? blindOpen! : blindOpen ?? blindClose! };
+  }
 
   switch (label) {
-    case 'Light': {
-      if (powerOn && powerOff) {
-        const isOn = device.state.toLowerCase() === 'on';
-        return { command: isOn ? powerOff : powerOn };
-      }
-      break;
-    }
     case 'Blind': {
       const sliderAction = actions.find(
         (action) => action.kind === 'slider' && action.id === 'blind/set_position'
@@ -198,7 +221,7 @@ function getPrimaryAction(
           : normalized === 'open' || normalized === 'opening' || normalized === 'on';
       if (sliderAction) {
         return {
-          command: sliderAction.id,
+          command: sliderAction.id as DeviceCommandId,
           value: isOpen ? 0 : 100,
         };
       }
@@ -207,23 +230,8 @@ function getPrimaryAction(
           ? fixedAction.positions.find((p) => p.value === 0)
           : fixedAction.positions.find((p) => p.value === 100);
         if (target) {
-          return { command: fixedAction.id, value: target.value };
+          return { command: fixedAction.id as DeviceCommandId, value: target.value };
         }
-      }
-      break;
-    }
-    case 'Spotify': {
-      const playPause = actions.find(
-        (action) => action.kind === 'command' && action.id === 'media/play_pause'
-      );
-      if (playPause) return { command: playPause.id };
-      break;
-    }
-    case 'TV':
-    case 'Speaker': {
-      if (powerOn && powerOff) {
-        const isOn = device.state.toLowerCase() !== 'off' && device.state.toLowerCase() !== 'standby';
-        return { command: isOn ? powerOff : powerOn };
       }
       break;
     }
