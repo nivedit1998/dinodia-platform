@@ -29,6 +29,8 @@ export async function GET(req: NextRequest) {
 
   const fresh = req.nextUrl.searchParams.get('fresh');
   const bypassCache = fresh === '1';
+  const includeServicesForTarget =
+    req.nextUrl.searchParams.get('include_services_for_target') === '1';
 
   const debugServicesForTarget = req.nextUrl.searchParams.get('debug_services_for_target') === '1';
   const debugEntityId = String(req.nextUrl.searchParams.get('debug_entity_id') || '').trim();
@@ -46,7 +48,11 @@ export async function GET(req: NextRequest) {
 
   let devices: Awaited<ReturnType<typeof getDevicesForHaConnection>>;
   try {
-    devices = await getDevicesForHaConnection(haConnection.id, { bypassCache });
+    devices = await getDevicesForHaConnection(haConnection.id, {
+      bypassCache,
+      labelsOnly: true,
+      includeServicesForTarget,
+    });
   } catch (err) {
     safeLog('error', '[api/devices] Failed to fetch devices from HA', { error: err });
     return NextResponse.json(
