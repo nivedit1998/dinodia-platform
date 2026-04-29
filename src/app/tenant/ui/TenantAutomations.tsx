@@ -372,7 +372,7 @@ export default function TenantAutomations() {
       setLoadingDevices(true);
       try {
         const data = await platformFetchJson<{ devices?: UIDevice[] }>(
-          '/api/devices?fresh=1',
+          '/api/devices?fresh=1&include_services_for_target=1',
           { credentials: 'include' },
           'Unsuccessful - we could not load devices right now.'
         );

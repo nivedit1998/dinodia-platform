@@ -156,7 +156,9 @@ export default function TenantDashboard(props: Props) {
       abortControllerRef.current = controller;
 
       try {
-        const endpoint = force ? '/api/devices?fresh=1' : '/api/devices';
+        const endpoint = force
+          ? '/api/devices?fresh=1&include_services_for_target=1'
+          : '/api/devices?include_services_for_target=1';
         const data = await platformFetchJson<{ devices?: UIDevice[] }>(
           endpoint,
           { signal: controller.signal },
