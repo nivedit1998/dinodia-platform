@@ -19,6 +19,7 @@ import {
   getActionsForDevice,
   getEligibleDevicesForAutomations,
   getTriggersForDevice,
+  getCapabilitiesForDevice,
 } from '@/lib/deviceCapabilities';
 
 type AutomationListItem = {
@@ -93,6 +94,7 @@ const defaultFormState: CreateFormState = {
 
 type DeviceOptions = {
   tile: { value: string; label: string }[];
+  all: { value: string; label: string }[];
   triggerDevices: { value: string; label: string }[];
 };
 
@@ -103,12 +105,16 @@ function buildLabel(d: UIDevice) {
 
 function buildDeviceOptions(devices: UIDevice[]): DeviceOptions {
   const baseEligible = getEligibleDevicesForAutomations(devices);
-  const tileEligible = baseEligible.filter((d) => !isDetailState(d.state));
+  const tileEligible = baseEligible.filter((d) => {
+    const cap = getCapabilitiesForDevice(d);
+    return !isDetailState(d.state) || cap.label === 'Motion Sensor';
+  });
 
   const tile = tileEligible.map((d) => ({ value: d.entityId, label: buildLabel(d) }));
+  const all = baseEligible.map((d) => ({ value: d.entityId, label: buildLabel(d) }));
   const triggerDevices = baseEligible.map((d) => ({ value: d.entityId, label: buildLabel(d) }));
 
-  return { tile, triggerDevices };
+  return { tile, all, triggerDevices };
 }
 
 function renderActionInput(
@@ -508,26 +514,35 @@ export default function TenantAutomations() {
           </div>
           <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
             <label className="text-xs font-medium text-slate-600">Device / Entity</label>
-            <select
-              value={selectedEntityId}
-              onChange={(e) => setSelectedEntityId(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 sm:w-72"
-              disabled={loadingDevices || devices.length === 0}
-            >
-              <option value="">None</option>
-              {deviceOptions.tile.length > 0 && (
-                <optgroup label="Primary devices">
-                  {deviceOptions.tile.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-          </div>
-        </div>
-      </section>
+                <select
+                  value={selectedEntityId}
+                  onChange={(e) => setSelectedEntityId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 sm:w-72"
+                  disabled={loadingDevices || devices.length === 0}
+                >
+                  <option value="">None</option>
+                  {deviceOptions.tile.length > 0 && (
+                    <optgroup label="Primary devices">
+                      {deviceOptions.tile.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {deviceOptions.all.length > 0 && (
+                    <optgroup label="All eligible devices">
+                      {deviceOptions.all.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
+            </div>
+          </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
@@ -802,6 +817,15 @@ export default function TenantAutomations() {
                   {deviceOptions.tile.length > 0 && (
                     <optgroup label="Primary devices">
                       {deviceOptions.tile.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {deviceOptions.all.length > 0 && (
+                    <optgroup label="All eligible devices">
+                      {deviceOptions.all.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {opt.label}
                         </option>
