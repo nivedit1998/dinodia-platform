@@ -4,6 +4,7 @@ import { apiFailFromStatus } from '@/lib/apiError';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getUserWithHaConnection, resolveHaForRequestedMode } from '@/lib/haConnection';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
+import { summarizeAutomation } from '@/lib/automationSummaries';
 import {
   AutomationDraft,
   buildHaAutomationConfigFromDraft,
@@ -309,19 +310,30 @@ export async function GET(req: NextRequest) {
             )));
       if (!matchesFilter) return null;
 
+      const cleanedDescription = stripDinodiaManagedMarker(config.description ?? '');
+      const cleanRaw = {
+        ...config,
+        description: cleanedDescription,
+      };
+      const summary = summarizeAutomation({ raw: cleanRaw }, devices);
+      const basicSummary = cleanedDescription.trim() || config.alias;
+
       return {
         id: normalizeAutomationId(config.id),
         entityId: config.entityId ?? `automation.${normalizeAutomationId(config.id)}`,
         alias: config.alias,
-        description: stripDinodiaManagedMarker(config.description ?? ''),
+        description: cleanedDescription,
         mode: config.mode ?? 'single',
         entities: actionList,
         actionDeviceIds: actionDeviceList,
         hasTemplates,
         canEdit: !hasTemplates,
+        basicSummary,
+        triggerSummary: summary.triggerSummary,
+        actionSummary: summary.actionSummary,
+        primaryName: summary.primaryName,
         raw: {
-          ...config,
-          description: stripDinodiaManagedMarker(config.description ?? ''),
+          ...cleanRaw,
         },
         enabled: config.enabled ?? true,
       };

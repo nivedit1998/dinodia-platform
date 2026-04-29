@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
+import { summarizeAutomation } from '@/lib/automationSummaries';
 import {
   DeviceActionSpec,
   DeviceTriggerSpec,
@@ -31,6 +32,10 @@ type AutomationListItem = {
   hasTemplates: boolean;
   canEdit: boolean;
   enabled?: boolean;
+  basicSummary?: string;
+  triggerSummary?: string;
+  actionSummary?: string;
+  primaryName?: string;
   raw?: {
     triggers?: unknown[];
     trigger?: unknown[];
@@ -104,110 +109,6 @@ function buildDeviceOptions(devices: UIDevice[]): DeviceOptions {
   const triggerDevices = baseEligible.map((d) => ({ value: d.entityId, label: buildLabel(d) }));
 
   return { tile, triggerDevices };
-}
-
-function toArray<T>(val: T | T[] | undefined | null): T[] {
-  if (Array.isArray(val)) return val;
-  if (val === undefined || val === null) return [];
-  return [val];
-}
-
-type HaLikeObject = Record<string, unknown>;
-
-function getTriggerSummary(trigger: unknown, devices: UIDevice[]): string {
-  if (!trigger || typeof trigger !== 'object') return 'Custom trigger';
-  const t = trigger as HaLikeObject;
-  const entityCandidate = t.entity_id ?? t.entityId;
-  const entity = toArray<string>(
-    typeof entityCandidate === 'string' || Array.isArray(entityCandidate)
-      ? (entityCandidate as string | string[])
-      : undefined
-  )[0];
-  const friendly =
-    devices.find((d) => d.entityId === entity)?.name || entity || 'Unknown entity';
-  const platform = typeof t.platform === 'string' ? t.platform : (t.trigger as string | undefined);
-  if (platform === 'time') {
-    const at = typeof t.at === 'string' ? t.at : '';
-    const weekdayValue = t.weekday;
-    const weekdays = toArray<string>(
-      Array.isArray(weekdayValue) || typeof weekdayValue === 'string'
-        ? (weekdayValue as string | string[])
-        : undefined
-    ).join(', ');
-    return `Time: ${at}${weekdays ? ` on ${weekdays}` : ''}`;
-  }
-  if (platform === 'state') {
-    const to = (t.to as string | undefined) ?? (t.state as string | undefined);
-    return `State: ${friendly}${to ? ` → ${to}` : ''}`;
-  }
-  return 'Custom trigger';
-}
-
-function getActionEntity(action: unknown): string | null {
-  if (!action || typeof action !== 'object') return null;
-  const target = (action as HaLikeObject).target as HaLikeObject | undefined;
-  const candidate = target?.entity_id ?? (action as HaLikeObject).entity_id ?? null;
-  if (Array.isArray(candidate)) return candidate[0] ?? null;
-  return typeof candidate === 'string' ? candidate : null;
-}
-
-function getActionSummary(
-  action: unknown,
-  devices: UIDevice[]
-): { summary: string; primaryName?: string } {
-  if (!action || typeof action !== 'object') return { summary: 'Custom action' };
-  const a = action as HaLikeObject;
-  const service = typeof a.service === 'string' ? a.service : undefined;
-  const data = (a.data && typeof a.data === 'object' ? a.data : {}) as HaLikeObject;
-  const entityId = getActionEntity(a);
-  const friendly =
-    devices.find((d) => d.entityId === entityId)?.name || entityId || 'Unknown device';
-
-  if (!service) return { summary: `Custom action on ${friendly}`, primaryName: friendly };
-
-  if (service === 'cover.set_cover_position') {
-    const pos = data.position ?? data.percentage;
-    return { summary: `Set ${friendly} to ${pos}%`, primaryName: friendly };
-  }
-  if (service === 'climate.set_temperature') {
-    return { summary: `Set ${friendly} temperature to ${data.temperature ?? ''}`, primaryName: friendly };
-  }
-  if (service === 'light.turn_on') {
-    if (data.brightness_pct !== undefined) {
-      return { summary: `Set ${friendly} brightness to ${data.brightness_pct}%`, primaryName: friendly };
-    }
-    return { summary: `Turn on ${friendly}`, primaryName: friendly };
-  }
-  if (service === 'homeassistant.turn_on') {
-    return { summary: `Turn on ${friendly}`, primaryName: friendly };
-  }
-  if (service === 'homeassistant.turn_off' || service === 'light.turn_off') {
-    return { summary: `Turn off ${friendly}`, primaryName: friendly };
-  }
-  if (service === 'homeassistant.toggle') {
-    return { summary: `Toggle ${friendly}`, primaryName: friendly };
-  }
-  if (service === 'media_player.volume_set') {
-    const vol = data.volume_level ? Math.round(Number(data.volume_level) * 100) : undefined;
-    return { summary: `Set ${friendly} volume to ${vol ?? ''}%`, primaryName: friendly };
-  }
-  if (service === 'media_player.media_play_pause') {
-    return { summary: `Play/Pause ${friendly}`, primaryName: friendly };
-  }
-  return { summary: `${service} on ${friendly}`, primaryName: friendly };
-}
-
-function summarizeAutomation(auto: AutomationListItem, devices: UIDevice[]) {
-  const raw = auto.raw ?? {};
-  const triggers = toArray(raw.triggers ?? raw.trigger);
-  const actions = toArray(raw.actions ?? raw.action);
-  const triggerSummary = triggers.length > 0 ? getTriggerSummary(triggers[0], devices) : '—';
-  const actionSummary = actions.length > 0 ? getActionSummary(actions[0], devices) : { summary: '—' };
-  return {
-    triggerSummary,
-    actionSummary: actionSummary.summary,
-    primaryName: actionSummary.primaryName,
-  };
 }
 
 function renderActionInput(
@@ -650,7 +551,12 @@ export default function TenantAutomations() {
         )}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {automations.map((auto) => {
-            const summary = summarizeAutomation(auto, devices);
+            const fallback = summarizeAutomation({ raw: auto.raw }, devices);
+            const summary = {
+              triggerSummary: auto.triggerSummary ?? fallback.triggerSummary,
+              actionSummary: auto.actionSummary ?? fallback.actionSummary,
+              primaryName: auto.primaryName ?? fallback.primaryName,
+            };
             return (
               <div
                 key={auto.id}
@@ -681,17 +587,9 @@ export default function TenantAutomations() {
                 </div>
                 <p className="mt-1 text-xs text-slate-600 break-words">{auto.description}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                  <span className="max-w-full rounded-full bg-slate-100 px-2 py-0.5 break-words">
-                    Mode: {auto.mode}
-                  </span>
                   {summary.primaryName && (
                     <span className="max-w-full rounded-full bg-slate-100 px-2 py-0.5 break-words">
                       Target: {summary.primaryName}
-                    </span>
-                  )}
-                  {auto.entities.length > 0 && (
-                    <span className="max-w-full rounded-full bg-slate-100 px-2 py-0.5 break-words">
-                      Entities: {auto.entities.join(', ')}
                     </span>
                   )}
                   {auto.hasTemplates && (
