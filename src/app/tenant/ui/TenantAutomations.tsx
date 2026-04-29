@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import Link from 'next/link';
 import type { UIDevice } from '@/types/device';
-import { isDetailState } from '@/lib/deviceSensors';
 import { friendlyUnknownError } from '@/lib/clientError';
 import { platformFetchJson } from '@/lib/platformFetchClient';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -15,11 +14,12 @@ import { useToast } from '@/components/ui/Toast';
 import { summarizeAutomation } from '@/lib/automationSummaries';
 import {
   DeviceActionSpec,
+  DeviceServiceSpec,
   DeviceTriggerSpec,
-  getActionsForDevice,
-  getEligibleDevicesForAutomations,
-  getTriggersForDevice,
-  getCapabilitiesForDevice,
+  getTenantDashboardDevices,
+  getPrimaryAutomationActions,
+  getAdvancedAutomationServices,
+  getDashboardLevelTriggers,
 } from '@/lib/deviceCapabilities';
 
 type AutomationListItem = {
@@ -60,8 +60,11 @@ type CreateFormState = {
   scheduleAt: string;
   scheduleWeekdays: string[];
   actionEntityId: string;
+  actionKind: 'device_command' | 'ha_service';
   actionCommand: string;
   actionValue: string | number | '';
+  actionServiceId: string;
+  actionServiceValue: string | number | '';
   enabled: boolean;
 };
 
@@ -87,34 +90,54 @@ const defaultFormState: CreateFormState = {
   scheduleAt: '',
   scheduleWeekdays: weekdayOptions.map((d) => d.value),
   actionEntityId: '',
+  actionKind: 'device_command',
   actionCommand: '',
   actionValue: '',
+  actionServiceId: '',
+  actionServiceValue: '',
   enabled: true,
 };
 
 type DeviceOptions = {
-  tile: { value: string; label: string }[];
-  all: { value: string; label: string }[];
+  actionDevices: { value: string; label: string }[];
   triggerDevices: { value: string; label: string }[];
 };
 
-function buildLabel(d: UIDevice) {
+function buildNameCounts(devices: UIDevice[]) {
+  const counts = new Map<string, number>();
+  devices.forEach((d) => {
+    const key = (d.name ?? '').trim();
+    if (!key) return;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  });
+  return counts;
+}
+
+function buildLabel(d: UIDevice, nameCounts: Map<string, number>) {
+  const base = (d.name ?? '').trim() || d.entityId;
+  const dupCount = nameCounts.get(base) ?? 0;
+  if (dupCount <= 1) return base;
   const areaName = (d.area ?? d.areaName ?? '').trim();
-  return areaName ? `${d.name} (${areaName})` : d.name;
+  return areaName ? `${base} (${areaName})` : base;
 }
 
 function buildDeviceOptions(devices: UIDevice[]): DeviceOptions {
-  const baseEligible = getEligibleDevicesForAutomations(devices);
-  const tileEligible = baseEligible.filter((d) => {
-    const cap = getCapabilitiesForDevice(d);
-    return !isDetailState(d.state) || cap.label === 'Motion Sensor';
-  });
+  const dashboardDevices = getTenantDashboardDevices(devices);
+  const nameCounts = buildNameCounts(dashboardDevices);
 
-  const tile = tileEligible.map((d) => ({ value: d.entityId, label: buildLabel(d) }));
-  const all = baseEligible.map((d) => ({ value: d.entityId, label: buildLabel(d) }));
-  const triggerDevices = baseEligible.map((d) => ({ value: d.entityId, label: buildLabel(d) }));
+  const actionDevices = dashboardDevices
+    .filter((d) => {
+      const primary = getPrimaryAutomationActions(d).length > 0;
+      const advanced = getAdvancedAutomationServices(d).length > 0;
+      return primary || advanced;
+    })
+    .map((d) => ({ value: d.entityId, label: buildLabel(d, nameCounts) }));
 
-  return { tile, all, triggerDevices };
+  const triggerDevices = dashboardDevices
+    .filter((d) => getDashboardLevelTriggers(d).length > 0)
+    .map((d) => ({ value: d.entityId, label: buildLabel(d, nameCounts) }));
+
+  return { actionDevices, triggerDevices };
 }
 
 function renderActionInput(
@@ -167,6 +190,58 @@ function renderActionInput(
     default:
       return null;
   }
+}
+
+function renderServiceInput(
+  spec: DeviceServiceSpec | null,
+  value: string | number | '',
+  onChange: (v: string | number | '') => void
+) {
+  if (!spec) return null;
+  if (spec.uiKind === 'button') {
+    return <p className="text-sm text-slate-500">No additional input required.</p>;
+  }
+  if (spec.uiKind === 'slider' && spec.sliderSpec) {
+    const numeric = typeof value === 'number' ? value : spec.sliderSpec.min;
+    return (
+      <div className="flex items-center gap-3">
+        <input
+          type="range"
+          min={spec.sliderSpec.min}
+          max={spec.sliderSpec.max}
+          step={spec.sliderSpec.step}
+          value={numeric}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="flex-1 accent-indigo-600"
+        />
+        <input
+          type="number"
+          min={spec.sliderSpec.min}
+          max={spec.sliderSpec.max}
+          step={spec.sliderSpec.step}
+          value={numeric}
+          onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+          className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+      </div>
+    );
+  }
+  if (spec.uiKind === 'select' && spec.selectSpec) {
+    return (
+      <select
+        value={typeof value === 'string' ? value : spec.selectSpec.options[0] ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+      >
+        {(spec.selectSpec.options ?? []).map((opt) => (
+          <option key={opt} value={opt}>
+            {opt.replace(/_/g, ' ')}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  return null;
 }
 
 function renderTriggerInput(
@@ -256,11 +331,15 @@ export default function TenantAutomations() {
   const deviceOptions = useMemo(() => buildDeviceOptions(devices), [devices]);
 
   const triggerSpecs = useMemo(
-    () => (triggerDevice ? getTriggersForDevice(triggerDevice, 'automation') : []),
+    () => (triggerDevice ? getDashboardLevelTriggers(triggerDevice) : []),
     [triggerDevice]
   );
-  const actionSpecs = useMemo(
-    () => (actionDevice ? getActionsForDevice(actionDevice, 'automation') : []),
+  const primaryActionSpecs = useMemo(
+    () => (actionDevice ? getPrimaryAutomationActions(actionDevice) : []),
+    [actionDevice]
+  );
+  const advancedServiceSpecs = useMemo(
+    () => (actionDevice ? getAdvancedAutomationServices(actionDevice) : []),
     [actionDevice]
   );
 
@@ -311,9 +390,10 @@ export default function TenantAutomations() {
   function resetActionFields(specs: DeviceActionSpec[]) {
     const first = specs[0];
     if (!first) {
-      setForm((prev) => ({ ...prev, actionCommand: '', actionValue: '' }));
+      setForm((prev) => ({ ...prev, actionKind: 'device_command', actionCommand: '', actionValue: '' }));
       return;
     }
+    setForm((prev) => ({ ...prev, actionKind: 'device_command' }));
     if (first.kind === 'slider') {
       setForm((prev) => ({
         ...prev,
@@ -330,6 +410,33 @@ export default function TenantAutomations() {
     } else if (first.kind === 'command') {
       setForm((prev) => ({ ...prev, actionCommand: first.id, actionValue: '' }));
     }
+  }
+
+  function resetServiceFields(services: DeviceServiceSpec[]) {
+    const first = services[0];
+    if (!first) {
+      setForm((prev) => ({ ...prev, actionServiceId: '', actionServiceValue: '' }));
+      return;
+    }
+    if (first.uiKind === 'slider' && first.sliderSpec) {
+      const sliderSpec = first.sliderSpec;
+      setForm((prev) => ({
+        ...prev,
+        actionServiceId: first.serviceId,
+        actionServiceValue: sliderSpec.min,
+      }));
+      return;
+    }
+    if (first.uiKind === 'select' && first.selectSpec) {
+      const selectSpec = first.selectSpec;
+      setForm((prev) => ({
+        ...prev,
+        actionServiceId: first.serviceId,
+        actionServiceValue: selectSpec.options[0] ?? '',
+      }));
+      return;
+    }
+    setForm((prev) => ({ ...prev, actionServiceId: first.serviceId, actionServiceValue: '' }));
   }
 
   function resetTriggerFields(specs: DeviceTriggerSpec[]) {
@@ -379,7 +486,8 @@ export default function TenantAutomations() {
       if (!form.scheduleAt) throw new Error('Schedule time is required');
     }
     if (!form.actionEntityId) throw new Error('Action entity is required');
-    if (!form.actionCommand) throw new Error('Choose an action');
+    if (form.actionKind === 'device_command' && !form.actionCommand) throw new Error('Choose an action');
+    if (form.actionKind === 'ha_service' && !form.actionServiceId) throw new Error('Choose an advanced action');
 
     const payload: Record<string, unknown> = {
       alias: form.alias.trim(),
@@ -407,12 +515,35 @@ export default function TenantAutomations() {
       };
     }
 
-    payload.action = {
-      type: 'device_command',
-      entityId: form.actionEntityId,
-      command: form.actionCommand,
-      value: form.actionValue === '' ? undefined : form.actionValue,
-    };
+    if (form.actionKind === 'device_command') {
+      payload.action = {
+        type: 'device_command',
+        entityId: form.actionEntityId,
+        command: form.actionCommand,
+        value: form.actionValue === '' ? undefined : form.actionValue,
+      };
+    } else {
+      const selectedService =
+        advancedServiceSpecs.find((s) => s.serviceId === form.actionServiceId) ?? null;
+      if (!selectedService) throw new Error('Choose an advanced action');
+      let serviceData: Record<string, unknown> = {};
+      if (selectedService.uiKind === 'slider' && selectedService.sliderSpec) {
+        serviceData = { [selectedService.sliderSpec.key]: Number(form.actionServiceValue) };
+      } else if (selectedService.uiKind === 'select' && selectedService.selectSpec) {
+        serviceData = {
+          [selectedService.selectSpec.key]:
+            typeof form.actionServiceValue === 'string'
+              ? form.actionServiceValue
+              : selectedService.selectSpec.options[0] ?? '',
+        };
+      }
+      payload.action = {
+        type: 'ha_service',
+        entityId: form.actionEntityId,
+        serviceId: selectedService.serviceId,
+        serviceData,
+      };
+    }
 
     return payload;
   }
@@ -478,8 +609,9 @@ export default function TenantAutomations() {
   }, [form.triggerEntityId, triggerSpecs]);
 
   useEffect(() => {
-    resetActionFields(actionSpecs);
-  }, [form.actionEntityId, actionSpecs]);
+    resetActionFields(primaryActionSpecs);
+    resetServiceFields(advancedServiceSpecs);
+  }, [form.actionEntityId, primaryActionSpecs, advancedServiceSpecs]);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
@@ -521,18 +653,9 @@ export default function TenantAutomations() {
                   disabled={loadingDevices || devices.length === 0}
                 >
                   <option value="">None</option>
-                  {deviceOptions.tile.length > 0 && (
-                    <optgroup label="Primary devices">
-                      {deviceOptions.tile.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {deviceOptions.all.length > 0 && (
-                    <optgroup label="All eligible devices">
-                      {deviceOptions.all.map((opt) => (
+                  {deviceOptions.actionDevices.length > 0 && (
+                    <optgroup label="Devices">
+                      {deviceOptions.actionDevices.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {opt.label}
                         </option>
@@ -814,18 +937,9 @@ export default function TenantAutomations() {
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="">None</option>
-                  {deviceOptions.tile.length > 0 && (
-                    <optgroup label="Primary devices">
-                      {deviceOptions.tile.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {deviceOptions.all.length > 0 && (
-                    <optgroup label="All eligible devices">
-                      {deviceOptions.all.map((opt) => (
+                  {deviceOptions.actionDevices.length > 0 && (
+                    <optgroup label="Devices">
+                      {deviceOptions.actionDevices.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {opt.label}
                         </option>
@@ -834,38 +948,124 @@ export default function TenantAutomations() {
                   )}
                 </select>
               </div>
-              {actionDevice && actionSpecs.length > 0 && (
+              {actionDevice && (
                 <>
                   <div>
                     <label className="mb-1 block text-xs">Action</label>
                     <select
-                      value={form.actionCommand}
-                      onChange={(e) => updateForm('actionCommand', e.target.value)}
+                      value={form.actionKind === 'device_command' ? form.actionCommand : ''}
+                      onChange={(e) => {
+                        const nextId = e.target.value;
+                        const spec = primaryActionSpecs.find((s) => s.id === nextId) ?? null;
+                        setForm((prev) => {
+                          const next: CreateFormState = {
+                            ...prev,
+                            actionKind: 'device_command',
+                            actionCommand: nextId,
+                          };
+                          if (!spec) return next;
+                          if (spec.kind === 'slider') {
+                            next.actionValue = spec.min;
+                          } else if (spec.kind === 'fixed-position') {
+                            next.actionValue = spec.positions[0]?.value ?? '';
+                          } else {
+                            next.actionValue = '';
+                          }
+                          return next;
+                        });
+                      }}
                       className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                      disabled={primaryActionSpecs.length === 0}
                     >
                       <option value="">Select action</option>
-                      {actionSpecs.map((spec) => (
-                        <option key={spec.id} value={spec.id}>
-                          {spec.kind === 'fixed-position'
-                            ? 'Set position'
-                            : spec.label ?? spec.id}
+                      {primaryActionSpecs.map((spec) => (
+                        <option key={`${spec.kind}:${spec.id}`} value={spec.id}>
+                          {spec.kind === 'fixed-position' ? 'Set position' : spec.label ?? spec.id}
                         </option>
                       ))}
                     </select>
+                    {primaryActionSpecs.length === 0 ? (
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        No dashboard actions available for this device.
+                      </p>
+                    ) : null}
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs">Change state to</label>
-                    {renderActionInput(
-                      actionSpecs.find((s) => s.id === form.actionCommand) ??
-                        actionSpecs.find((s) => s.id) ??
-                        null,
-                      form.actionValue,
-                      (v) => updateForm('actionValue', v)
-                    )}
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Uses dashboard-aligned controls (brightness, position, power, etc.).
-                    </p>
-                  </div>
+
+                  {form.actionKind === 'device_command' && primaryActionSpecs.length > 0 ? (
+                    <div>
+                      <label className="mb-1 block text-xs">Change state to</label>
+                      {renderActionInput(
+                        primaryActionSpecs.find((s) => s.id === form.actionCommand) ??
+                          primaryActionSpecs[0] ??
+                          null,
+                        form.actionValue,
+                        (v) => updateForm('actionValue', v)
+                      )}
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Matches the device controls shown on the tenant dashboard card.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <details className="rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
+                    <summary className="cursor-pointer text-xs font-semibold text-slate-700">
+                      Advanced services
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      {advancedServiceSpecs.length > 0 ? (
+                        <div>
+                          <label className="mb-1 block text-xs">Service</label>
+                          <select
+                            value={form.actionKind === 'ha_service' ? form.actionServiceId : ''}
+                            onChange={(e) => {
+                              const nextId = e.target.value;
+                              const svc = advancedServiceSpecs.find((s) => s.serviceId === nextId) ?? null;
+                              setForm((prev) => {
+                                const next: CreateFormState = {
+                                  ...prev,
+                                  actionKind: 'ha_service',
+                                  actionServiceId: nextId,
+                                };
+                                if (!svc) return next;
+                                if (svc.uiKind === 'slider' && svc.sliderSpec) {
+                                  next.actionServiceValue = svc.sliderSpec.min;
+                                } else if (svc.uiKind === 'select' && svc.selectSpec) {
+                                  next.actionServiceValue = svc.selectSpec.options[0] ?? '';
+                                } else {
+                                  next.actionServiceValue = '';
+                                }
+                                return next;
+                              });
+                            }}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                          >
+                            <option value="">Select service</option>
+                            {advancedServiceSpecs.map((svc) => (
+                              <option key={svc.serviceId} value={svc.serviceId}>
+                                {svc.displayLabel}
+                              </option>
+                            ))}
+                          </select>
+
+                          {form.actionKind === 'ha_service' && form.actionServiceId ? (
+                            <div className="mt-2">
+                              <label className="mb-1 block text-xs">Service input</label>
+                              {renderServiceInput(
+                                advancedServiceSpecs.find((s) => s.serviceId === form.actionServiceId) ?? null,
+                                form.actionServiceValue,
+                                (v) => updateForm('actionServiceValue', v)
+                              )}
+                            </div>
+                          ) : null}
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            Advanced services are service-name based, matching the device card “Advanced actions”.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-500">No advanced services available.</p>
+                      )}
+                    </div>
+                  </details>
                 </>
               )}
               <div className="flex items-center gap-2 pt-1">

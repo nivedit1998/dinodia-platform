@@ -12,7 +12,7 @@ import { DeviceDetailSheet } from '@/components/device/DeviceDetailSheet';
 import { subscribeToRefresh } from '@/lib/refreshBus';
 import { logout as performLogout } from '@/lib/logout';
 import Image from 'next/image';
-import { getTileEligibleDevicesForTenantDashboard } from '@/lib/deviceCapabilities';
+import { getTenantDashboardDevices } from '@/lib/deviceCapabilities';
 import { buildBatteryPercentByDeviceGroup, getBatteryPercentForDevice } from '@/lib/deviceBattery';
 import { useDevicesVersionPolling } from '@/lib/useDevicesVersionPolling';
 import TenantAccessRosterDialog from './TenantAccessRosterDialog';
@@ -343,7 +343,7 @@ export default function TenantDashboard(props: Props) {
 
   const areaOptions = useMemo(() => {
     const set = new Set<string>();
-    const eligible = getTileEligibleDevicesForTenantDashboard(devices);
+    const eligible = getTenantDashboardDevices(devices);
     for (const d of eligible) {
       const areaName = (d.area ?? d.areaName ?? '').trim();
       if (areaName) set.add(areaName);
@@ -365,10 +365,7 @@ export default function TenantDashboard(props: Props) {
     }
   }, [resolvedSelectedArea]);
 
-  const eligibleDevices = useMemo(
-    () => getTileEligibleDevicesForTenantDashboard(devices),
-    [devices]
-  );
+  const eligibleDevices = useMemo(() => getTenantDashboardDevices(devices), [devices]);
 
   const usersByArea: UsersByArea = useMemo(() => {
     if (!roster) return {};

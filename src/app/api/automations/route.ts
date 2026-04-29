@@ -18,7 +18,7 @@ import {
   stripDinodiaManagedMarker,
 } from '@/lib/homeAssistantAutomations';
 import type { DeviceCommandId } from '@/lib/deviceCapabilities';
-import { isDeviceCommandId } from '@/lib/deviceCapabilities';
+import { getAdvancedServicesForDevice, isDeviceCommandId } from '@/lib/deviceCapabilities';
 import { requireTrustedAdminDevice, toTrustedDeviceResponse } from '@/lib/deviceAuth';
 import { prisma } from '@/lib/prisma';
 import { getTenantOwnedTargetsForHome, getTenantOwnedTargetsForUser } from '@/lib/tenantOwnership';
@@ -150,6 +150,16 @@ function parseDraft(body: unknown): AutomationDraft | null {
         : undefined;
     if (!entityId || !command) return null;
     action = { type: 'device_command', entityId, command, value };
+  } else if (actionRaw.type === 'ha_service') {
+    const entityId = typeof actionRaw.entityId === 'string' ? (actionRaw.entityId as string) : null;
+    const serviceId = typeof actionRaw.serviceId === 'string' ? (actionRaw.serviceId as string).trim() : '';
+    const rawData = actionRaw.serviceData as unknown;
+    const serviceData =
+      rawData && typeof rawData === 'object' && !Array.isArray(rawData)
+        ? (rawData as Record<string, unknown>)
+        : {};
+    if (!entityId || !serviceId) return null;
+    action = { type: 'ha_service', entityId, serviceId, serviceData };
   }
 
   if (!action) return null;
@@ -493,6 +503,18 @@ export async function POST(req: NextRequest) {
   const allAllowed = Array.from(combined).every((entityId) => allowedEntities.has(entityId));
   if (!allAllowed) {
     return forbidden('You cannot create an automation that controls a device outside your areas.');
+  }
+
+  if (draft.action.type === 'ha_service') {
+    const devices = await getDevicesForHaConnection(haConnectionId, { bypassCache: true });
+    const device = devices.find((d) => d.entityId === draft.action.entityId) ?? null;
+    if (!device) {
+      return badRequest('Unknown action entity');
+    }
+    const allowedServiceIds = new Set(getAdvancedServicesForDevice(device).map((s) => s.serviceId));
+    if (!allowedServiceIds.has(draft.action.serviceId)) {
+      return badRequest('Unsupported advanced service for this device');
+    }
   }
 
   try {
