@@ -3,6 +3,9 @@ import { captureBoilerTempSnapshotForAllConnections } from '@/lib/boilerMonitori
 import { captureDailyMonitoringSnapshotForAllConnections } from '@/lib/monitoring';
 import { cleanupMonitoringReadings } from '@/lib/monitoringCleanup';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 const EXPECTED_SECRET = process.env.CRON_SECRET;
 const DISABLE_QUERY_SECRET =
   (process.env.DISABLE_CRON_QUERY_SECRET ?? 'true').toLowerCase() === 'true';
