@@ -29,6 +29,8 @@ export const DEVICE_COMMANDS = [
   'speaker/turn_on',
   'speaker/turn_off',
   'speaker/toggle_power',
+  'boiler/turn_on',
+  'boiler/turn_off',
   'boiler/temp_up',
   'boiler/temp_down',
   'boiler/set_temperature',
