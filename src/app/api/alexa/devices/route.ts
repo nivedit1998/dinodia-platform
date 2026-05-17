@@ -37,7 +37,9 @@ export async function GET(req: NextRequest) {
     const { user, haConnection } = await getUserWithHaConnection(authUser.id);
     const devices = await getDevicesForHaConnection(haConnection.id, {
       logSample: true,
-      includeServicesForTarget: true,
+      // Keep Alexa discovery fast: only fetch labeled entities (same idea as `/api/devices?fresh=1`)
+      // and avoid per-entity `get_services_for_target` calls during discovery.
+      labelsOnly: true,
       cacheTtlMs: 60_000,
     });
 
