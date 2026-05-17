@@ -123,27 +123,61 @@ export function buildAlexaPropertiesForDevice(
       return properties;
     }
     case 'climate': {
-      const temperature = getNumericTemperature(device);
-      const properties: AlexaProperty[] = [];
-      if (temperature !== null) {
-        const attrs = device.attributes ?? {};
+      const attrs = device.attributes ?? {};
+
+      const hvacMode = String(attrs['hvac_mode'] ?? device.state ?? '').toLowerCase();
+      const thermostatMode = hvacMode === 'off' ? 'OFF' : 'HEAT';
+
+      const target = getNumericAttribute(attrs, [
+        'temperature',
+        'target_temperature',
+        'target_temp',
+        'targetTemperature',
+      ]);
+      const current = getNumericAttribute(attrs, [
+        'current_temperature',
+        'currentTemperature',
+      ]);
+
+      const properties: AlexaProperty[] = [
+        {
+          namespace: 'Alexa.ThermostatController',
+          name: 'thermostatMode',
+          value: { value: thermostatMode },
+          timeOfSample: sampleTime,
+          uncertaintyInMilliseconds: DEFAULT_UNCERTAINTY_MS,
+        },
+        {
+          namespace: 'Alexa.EndpointHealth',
+          name: 'connectivity',
+          value: { value: 'OK' },
+          timeOfSample: sampleTime,
+          uncertaintyInMilliseconds: DEFAULT_UNCERTAINTY_MS,
+        },
+      ];
+
+      if (target !== null) {
         const minTemp = typeof attrs.min_temp === 'number' ? Number(attrs.min_temp) : 10;
         const maxTemp = typeof attrs.max_temp === 'number' ? Number(attrs.max_temp) : 35;
         properties.push({
-          namespace: 'Alexa.RangeController',
-          instance: 'Boiler.Temperature',
-          name: 'rangeValue',
-          value: clamp(Math.round(temperature), minTemp, maxTemp),
+          namespace: 'Alexa.ThermostatController',
+          name: 'targetSetpoint',
+          value: { value: clamp(Math.round(target), minTemp, maxTemp), scale: 'CELSIUS' },
           timeOfSample: sampleTime,
           uncertaintyInMilliseconds: DEFAULT_UNCERTAINTY_MS,
         });
       }
-      properties.push(
-        buildPowerProperty({
-          isOn: isActiveState(normalizedState),
-          sampleTime,
-        })
-      );
+
+      if (current !== null) {
+        properties.push({
+          namespace: 'Alexa.TemperatureSensor',
+          name: 'temperature',
+          value: { value: Math.round(current), scale: 'CELSIUS' },
+          timeOfSample: sampleTime,
+          uncertaintyInMilliseconds: DEFAULT_UNCERTAINTY_MS,
+        });
+      }
+
       return properties;
     }
     case 'media_player': {
@@ -251,16 +285,6 @@ function buildDetectionProperty({
     timeOfSample: sampleTime,
     uncertaintyInMilliseconds: DEFAULT_UNCERTAINTY_MS,
   };
-}
-
-function getNumericTemperature(device: AlexaDeviceStateLike): number | null {
-  const fromState = parseNumber(device.state);
-  if (fromState !== null) return fromState;
-  return getNumericAttribute(device.attributes, [
-    'temperature',
-    'current_temperature',
-    'currentTemperature',
-  ]);
 }
 
 function getNumericAttribute(attributes: Record<string, unknown>, keys: string[]) {
