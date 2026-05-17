@@ -28,11 +28,17 @@ export async function POST(req: NextRequest) {
   let entityId: string;
   let command: string;
   let value: number | undefined;
+  let payload: Record<string, unknown> | undefined;
   try {
     const parsed = parseEntityId((body as Record<string, unknown> | null)?.entityId);
     entityId = parsed.entityId;
     command = (body as Record<string, unknown> | null)?.command as string;
     value = (body as Record<string, unknown> | null)?.value as number | undefined;
+    const rawPayload = (body as Record<string, unknown> | null)?.payload;
+    payload =
+      rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)
+        ? (rawPayload as Record<string, unknown>)
+        : undefined;
   } catch (err) {
     const status = err instanceof EntityAccessError ? err.status : 400;
     const message = err instanceof Error ? err.message : 'Invalid body';
@@ -78,7 +84,7 @@ export async function POST(req: NextRequest) {
       source: 'alexa',
       userId: authUser.id,
       haConnectionId: haConnection.id,
-    });
+    }, payload);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[api/alexa/device-control] error', err);

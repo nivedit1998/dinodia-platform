@@ -34,7 +34,11 @@ export async function GET(req: NextRequest) {
     }
 
     const { user, haConnection } = await getUserWithHaConnection(authUser.id);
-    const devices = await getDevicesForHaConnection(haConnection.id, { logSample: true });
+    const devices = await getDevicesForHaConnection(haConnection.id, {
+      logSample: true,
+      includeServicesForTarget: true,
+      cacheTtlMs: 60_000,
+    });
 
     const filteredDevices =
       user.role === Role.TENANT

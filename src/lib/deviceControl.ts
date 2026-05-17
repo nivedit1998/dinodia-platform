@@ -49,6 +49,8 @@ const ALEXA_REPORTABLE_COMMANDS: Record<string, { label: string }> = {
   'light/turn_on': { label: 'light' },
   'light/turn_off': { label: 'light' },
   'light/set_brightness': { label: 'light' },
+  'light/set_color': { label: 'light' },
+  'light/set_color_temperature': { label: 'light' },
   'blind/set_position': { label: 'blind' },
   'blind/open': { label: 'blind' },
   'blind/close': { label: 'blind' },
@@ -104,7 +106,8 @@ export async function executeDeviceCommand(
   entityId: string,
   command: string,
   value?: number,
-  options?: DeviceCommandOptions
+  options?: DeviceCommandOptions,
+  payload?: Record<string, unknown>
 ) {
   const source: DeviceCommandSource = options?.source ?? 'app';
   const haConnectionId = options?.haConnectionId;
@@ -211,6 +214,47 @@ export async function executeDeviceCommand(
         brightness_pct: clamp(value ?? 0, 0, 100),
       });
       break;
+    case 'light/set_color': {
+      if (domain !== 'light') throw new Error('Color supported only for lights');
+      const hue = typeof payload?.hue === 'number' ? payload.hue : null;
+      const saturation = typeof payload?.saturation === 'number' ? payload.saturation : null;
+      const brightness = typeof payload?.brightness === 'number' ? payload.brightness : null;
+      if (hue === null || saturation === null) {
+        throw new Error('Missing color payload (hue/saturation)');
+      }
+      const hueDeg = clamp(hue, 0, 360);
+      const satPct = clamp(saturation <= 1 ? saturation * 100 : saturation, 0, 100);
+      const brightnessPct =
+        brightness === null
+          ? undefined
+          : clamp(brightness <= 1 ? brightness * 100 : brightness, 0, 100);
+
+      await callHaService(haConnection, 'light', 'turn_on', {
+        entity_id: entityId,
+        hs_color: [hueDeg, satPct],
+        ...(typeof brightnessPct === 'number' ? { brightness_pct: brightnessPct } : {}),
+      });
+      break;
+    }
+    case 'light/set_color_temperature': {
+      if (domain !== 'light') throw new Error('Color temperature supported only for lights');
+      const kelvin =
+        typeof payload?.kelvin === 'number'
+          ? payload.kelvin
+          : typeof payload?.colorTemperatureInKelvin === 'number'
+            ? payload.colorTemperatureInKelvin
+            : null;
+      if (kelvin === null) {
+        throw new Error('Missing color temperature payload (kelvin)');
+      }
+      const safeKelvin = clamp(kelvin, 1000, 10000);
+      const mireds = Math.round(1_000_000 / safeKelvin);
+      await callHaService(haConnection, 'light', 'turn_on', {
+        entity_id: entityId,
+        color_temp: mireds,
+      });
+      break;
+    }
     case 'blind/set_position': {
       const target = clamp(value ?? 0, 0, 100);
       const travelSeconds = await resolveBlindTravelSeconds(entityId, haConnectionId);
