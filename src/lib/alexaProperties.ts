@@ -143,7 +143,7 @@ export function buildAlexaPropertiesForDevice(
         {
           namespace: 'Alexa.ThermostatController',
           name: 'thermostatMode',
-          value: { value: thermostatMode },
+          value: thermostatMode,
           timeOfSample: sampleTime,
           uncertaintyInMilliseconds: DEFAULT_UNCERTAINTY_MS,
         },
