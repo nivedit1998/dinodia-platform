@@ -42,6 +42,7 @@ type DeviceCommandOptions = {
   source?: DeviceCommandSource;
   userId?: number;
   haConnectionId?: number;
+  skipStatePrefetch?: boolean;
 };
 
 const ALEXA_REPORTABLE_COMMANDS: Record<string, { label: string }> = {
@@ -65,6 +66,7 @@ const ALEXA_REPORTABLE_COMMANDS: Record<string, { label: string }> = {
   'boiler/temp_up': { label: 'boiler' },
   'boiler/temp_down': { label: 'boiler' },
   'boiler/set_temperature': { label: 'boiler' },
+  'boiler/set_hvac_mode': { label: 'boiler' },
 };
 
 function getAlexaLabelForCommand(command: string): string | null {
@@ -117,16 +119,27 @@ export async function executeDeviceCommand(
     source,
     alexaLabel: getAlexaLabelForCommand(command) ?? null,
   });
-  const state = await fetchHaState(haConnection, entityId);
-  const currentState = String(state.state ?? '');
+  const shouldSkipPrefetch =
+    options?.skipStatePrefetch === true ||
+    (source === 'alexa' &&
+      (command === 'boiler/turn_on' ||
+        command === 'boiler/turn_off' ||
+        command === 'boiler/set_hvac_mode' ||
+        command === 'boiler/set_temperature' ||
+        command === 'boiler/temp_up' ||
+        command === 'boiler/temp_down'));
+
+  const state = shouldSkipPrefetch ? null : await fetchHaState(haConnection, entityId);
+  const currentState = String(state?.state ?? '');
   const domain = entityId.split('.')[0];
-  const attrs = (state.attributes ?? {}) as Record<string, unknown>;
+  const attrs = (state?.attributes ?? {}) as Record<string, unknown>;
   const alexaLabel =
     (await resolveAlexaLabelForEntity(entityId, attrs, haConnectionId)) ?? getAlexaLabelForCommand(command);
+
   const previousSnapshot: AlexaChangeReportSnapshot | null = alexaLabel
     ? {
         entityId,
-        state: currentState,
+        state: currentState || 'unknown',
         attributes: attrs,
         label: alexaLabel,
       }
@@ -153,7 +166,14 @@ export async function executeDeviceCommand(
     options?: { swallow?: boolean }
   ) => {
     try {
-      await callHaService(haConnection, serviceDomain, service, data);
+      await callHaService(
+        haConnection,
+        serviceDomain,
+        service,
+        data,
+        // Alexa control latency budget is tight; use a shorter timeout when we skip prefetch.
+        source === 'alexa' && shouldSkipPrefetch ? 3500 : 6000
+      );
       return true;
     } catch (err) {
       if (!options?.swallow) throw err;
@@ -162,7 +182,7 @@ export async function executeDeviceCommand(
   };
 
   const ensureBoilerOn = async () => {
-    if (!isBoilerOff) return;
+    if (!shouldSkipPrefetch && !isBoilerOff) return;
     const mode = pickBoilerOnMode();
     // Try setting hvac mode first; if unavailable on the HA side, fall back.
     const ok =
@@ -323,6 +343,31 @@ export async function executeDeviceCommand(
     case 'boiler/turn_off':
       await turnBoilerOff();
       break;
+    case 'boiler/set_hvac_mode': {
+      const hvacModeRaw =
+        typeof payload?.hvac_mode === 'string'
+          ? payload.hvac_mode
+          : typeof payload?.hvacMode === 'string'
+            ? payload.hvacMode
+            : typeof payload?.mode === 'string'
+              ? payload.mode
+              : null;
+      const hvacModeNormalized = hvacModeRaw ? hvacModeRaw.toLowerCase().trim() : '';
+      if (!hvacModeNormalized) {
+        throw new Error('Missing hvac_mode for boiler/set_hvac_mode');
+      }
+      await callHaService(
+        haConnection,
+        'climate',
+        'set_hvac_mode',
+        {
+          entity_id: entityId,
+          hvac_mode: hvacModeNormalized,
+        },
+        source === 'alexa' && shouldSkipPrefetch ? 3500 : 6000
+      );
+      break;
+    }
     case 'boiler/temp_up':
     case 'boiler/temp_down': {
       await ensureBoilerOn();
@@ -362,10 +407,16 @@ export async function executeDeviceCommand(
         typeof step === 'number' && Number.isFinite(step) && step > 0
           ? Math.round(clamped / step) * step
           : clamped;
-      await callHaService(haConnection, 'climate', 'set_temperature', {
-        entity_id: entityId,
-        temperature: quantized,
-      });
+      await callHaService(
+        haConnection,
+        'climate',
+        'set_temperature',
+        {
+          entity_id: entityId,
+          temperature: quantized,
+        },
+        source === 'alexa' && shouldSkipPrefetch ? 3500 : 6000
+      );
       break;
     }
     case 'tv/turn_on':

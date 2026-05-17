@@ -35,12 +35,15 @@ export async function GET(req: NextRequest) {
     }
 
     const { user, haConnection } = await getUserWithHaConnection(authUser.id);
+    const includeServicesForTarget =
+      req.nextUrl.searchParams.get('include_services_for_target') === '1';
     const devices = await getDevicesForHaConnection(haConnection.id, {
       logSample: true,
       // Keep Alexa discovery fast: only fetch labeled entities (same idea as `/api/devices?fresh=1`)
       // and avoid per-entity `get_services_for_target` calls during discovery.
       labelsOnly: true,
-      cacheTtlMs: 60_000,
+      includeServicesForTarget,
+      cacheTtlMs: includeServicesForTarget ? 300_000 : 60_000,
     });
 
     const tenantOwnedForHome = await getTenantOwnedTargetsForHome(user.homeId!, haConnection.id);

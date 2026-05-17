@@ -70,7 +70,9 @@ export async function POST(req: NextRequest) {
         accessRules: user.accessRules ?? [],
         haConnectionId: haConnection.id,
         entityId,
-        options: { bypassCache: true, notFoundStatus: 404 },
+        // Alexa requires fast responses (< ~8s). Avoid forcing a full HA refresh here.
+        // Device access rules don't need ultra-fresh metadata.
+        options: { bypassCache: false, cacheTtlMs: 60_000, labelsOnly: true, notFoundStatus: 404 },
       });
     } catch (err) {
       if (err instanceof EntityAccessError) {
@@ -84,6 +86,7 @@ export async function POST(req: NextRequest) {
       source: 'alexa',
       userId: authUser.id,
       haConnectionId: haConnection.id,
+      skipStatePrefetch: true,
     }, payload);
     return NextResponse.json({ ok: true });
   } catch (err) {
