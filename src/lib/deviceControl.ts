@@ -9,6 +9,7 @@ import { callHaService, fetchHaState, HaConnectionLike } from '@/lib/homeAssista
 import { prisma } from '@/lib/prisma';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { getGroupLabel } from '@/lib/deviceLabels';
+import { normalizeAlexaEndpointId } from '@/lib/alexaEndpointId';
 
 const BLIND_GLOBAL_CONTROLLER_SCRIPT_ENTITY_ID =
   process.env.HA_BLIND_GLOBAL_CONTROLLER_SCRIPT_ENTITY_ID ||
@@ -737,11 +738,14 @@ export async function scheduleAlexaChangeReport(
   }
 
   try {
+    const endpointIdForAlexa = normalizeAlexaEndpointId(snapshot.entityId);
+    const uniqueNamespaces = Array.from(new Set(nextProperties.map((p) => p.namespace)));
     console.log('AlexaChangeReport: sending', {
-      endpointId: snapshot.entityId,
+      endpointId: endpointIdForAlexa,
+      entityId: snapshot.entityId,
       label: snapshot.label,
       causeType,
-      namespaces: nextProperties.map((p) => p.namespace),
+      namespaces: uniqueNamespaces,
     });
     await sendAlexaChangeReportForHaConnection(
       haConnectionId,

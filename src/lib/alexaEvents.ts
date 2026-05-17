@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { AlexaProperty } from '@/lib/alexaProperties';
+import { normalizeAlexaEndpointId } from '@/lib/alexaEndpointId';
 
 type AlexaEventTokenPayload = {
   accessToken: string;
@@ -133,19 +134,22 @@ export async function sendAlexaChangeReport(
     return;
   }
 
+  const normalizedEndpointId = normalizeAlexaEndpointId(endpointId);
+
   if (!properties || properties.length === 0) {
-    console.warn('[alexaEvents] No properties provided for ChangeReport', endpointId);
+    console.warn('[alexaEvents] No properties provided for ChangeReport', normalizedEndpointId);
     return;
   }
 
   const gateway = getGatewayEndpoint();
   const token = await getAlexaEventAccessTokenForUser(userId);
 
+  const namespaces = Array.from(new Set(properties.map((p) => p.namespace)));
   console.log('[alexaEvents] ChangeReport POST', {
     endpoint: gateway,
-    endpointId,
+    endpointId: normalizedEndpointId,
     causeType,
-    namespaces: properties.map((p) => p.namespace),
+    namespaces,
   });
 
   const changePayload = {
@@ -157,7 +161,7 @@ export async function sendAlexaChangeReport(
         payloadVersion: '3',
       },
       endpoint: {
-        endpointId,
+        endpointId: normalizedEndpointId,
       },
       payload: {
         change: {
@@ -185,7 +189,7 @@ export async function sendAlexaChangeReport(
   const text = await res.text().catch(() => '');
 
   console.log('[alexaEvents] ChangeReport response', {
-    endpointId,
+    endpointId: normalizedEndpointId,
     status: res.status,
     ok: res.ok,
     bodySnippet: text.slice(0, 200),
@@ -194,14 +198,14 @@ export async function sendAlexaChangeReport(
   if (!res.ok) {
     console.error(
       '[alexaEvents] ChangeReport failed',
-      endpointId,
+      normalizedEndpointId,
       res.status,
       text
     );
     return;
   }
 
-  console.log('[alexaEvents] ChangeReport sent', endpointId, causeType);
+  console.log('[alexaEvents] ChangeReport sent', normalizedEndpointId, causeType);
 }
 
 export async function sendAlexaChangeReportForHaConnection(
