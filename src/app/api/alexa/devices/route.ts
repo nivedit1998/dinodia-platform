@@ -4,6 +4,7 @@ import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { Role } from '@prisma/client';
 import { resolveAlexaAuthUser } from '@/app/api/alexa/auth';
 import { checkRateLimit } from '@/lib/rateLimit';
+import { getTenantOwnedTargetsForHome, getTenantOwnedTargetsForUser } from '@/lib/tenantOwnership';
 
 export async function GET(req: NextRequest) {
   const authUser = await resolveAlexaAuthUser(req);
@@ -40,13 +41,27 @@ export async function GET(req: NextRequest) {
       cacheTtlMs: 60_000,
     });
 
+    const tenantOwnedForHome = await getTenantOwnedTargetsForHome(user.homeId!, haConnection.id);
+    const tenantOwnedForUser = await getTenantOwnedTargetsForUser(user.id, haConnection.id);
+    const allTenantOwnedEntityIds = new Set(tenantOwnedForHome.entityIds);
+    const ownTenantOwnedEntityIds = new Set(tenantOwnedForUser.entityIds);
+
     const filteredDevices =
       user.role === Role.TENANT
-        ? devices.filter(
-            (device) =>
-              device.areaName !== null &&
-              user.accessRules.some((rule) => rule.area === device.areaName)
-          )
+        ? (() => {
+            const allowedAreas = new Set((user.accessRules ?? []).map((rule) => rule.area));
+            return devices.filter((device) => {
+              if (ownTenantOwnedEntityIds.has(device.entityId)) {
+                return true;
+              }
+
+              if (allTenantOwnedEntityIds.has(device.entityId)) {
+                return false;
+              }
+
+              return Boolean(device.areaName && allowedAreas.has(device.areaName));
+            });
+          })()
         : devices;
 
     return NextResponse.json({ devices: filteredDevices });
