@@ -3,7 +3,7 @@ import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { getGroupLabel } from '@/lib/deviceLabels';
 import { getCurrentTemperature, getTargetTemperature } from '@/lib/deviceCapabilities';
 
-const BOILER_LABEL = 'Boiler';
+const HEAT_LABELS = new Set(['Boiler', 'Radiator']);
 const MIN_INTERVAL_MS = 2 * 60 * 60 * 1000;
 const MAX_ERROR_LENGTH = 300;
 
@@ -27,7 +27,7 @@ function normalizeErrorMessage(err: unknown): string {
 
 export async function captureBoilerTempSnapshotForConnection(haConnectionId: number, now = new Date()) {
   const devices = await getDevicesForHaConnection(haConnectionId);
-  const boilerDevices = devices.filter((d) => getGroupLabel(d) === BOILER_LABEL);
+  const boilerDevices = devices.filter((d) => HEAT_LABELS.has(getGroupLabel(d)));
 
   const readings = boilerDevices
     .map((d) => {

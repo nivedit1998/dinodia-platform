@@ -79,6 +79,16 @@ const VISUALS: Record<string, DeviceVisual> = {
     detailAccent: 'from-orange-50 to-white',
     icon: (props) => <BoilerIcon {...props} />,
   },
+  Radiator: {
+    label: 'Radiator',
+    size: 'medium',
+    activeBg: 'bg-gradient-to-br from-orange-100/90 via-amber-50/70 to-white',
+    inactiveBg: 'bg-white/80',
+    iconActiveBg: 'bg-orange-500 text-white',
+    iconInactiveBg: 'bg-white/70 text-orange-500',
+    detailAccent: 'from-orange-50 to-white',
+    icon: (props) => <BoilerIcon {...props} />,
+  },
   Sockets: {
     label: 'Sockets',
     size: 'small',
