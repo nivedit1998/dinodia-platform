@@ -798,6 +798,7 @@ const SUPPORTED_ALEXA_LABELS = new Set([
   'tv',
   'speaker',
   'boiler',
+  'radiator',
   'motion sensor',
   'doorbell',
   'home security',
