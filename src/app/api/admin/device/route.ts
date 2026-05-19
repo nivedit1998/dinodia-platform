@@ -4,6 +4,7 @@ import { getCurrentUserFromRequest } from '@/lib/auth';
 import { Role } from '@prisma/client';
 import { getUserWithHaConnection } from '@/lib/haConnection';
 import { requireTrustedAdminDevice, toTrustedDeviceResponse } from '@/lib/deviceAuth';
+import { sendAlexaAddOrUpdateReportForHaConnection } from '@/lib/alexaEvents';
 
 export async function POST(req: NextRequest) {
   const me = await getCurrentUserFromRequest(req);
@@ -103,6 +104,15 @@ export async function POST(req: NextRequest) {
       blindTravelSeconds: blindTravelSecondsValue,
     },
   });
+
+  try {
+    await sendAlexaAddOrUpdateReportForHaConnection({
+      haConnectionId,
+      restrictEntityIds: [entityId],
+    });
+  } catch (err) {
+    console.warn('[api/admin/device] AddOrUpdateReport failed', { entityId, err });
+  }
 
   return NextResponse.json({ ok: true, device });
 }

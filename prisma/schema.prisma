@@ -178,6 +178,7 @@ model User {
   alexaAuthCodes    AlexaAuthCode[]
   alexaRefreshTokens AlexaRefreshToken[]
   alexaEventToken   AlexaEventToken?
+  alexaSkillUserLinks AlexaSkillUserLink[]
   newDeviceCommissioningSessions NewDeviceCommissioningSession[]
   automationOwnerships AutomationOwnership[]
   homeAutomationsCreated HomeAutomation[] @relation("HomeAutomationCreatedBy")
@@ -522,7 +523,27 @@ model AlexaRefreshToken {
   clientId  String
   revoked   Boolean  @default(false)
   revokedAt DateTime?
+  lastUsedAt DateTime @default(now())
   createdAt DateTime @default(now())
+}
+
+model AlexaSkillUserLink {
+  id              Int      @id @default(autoincrement())
+  alexaUserId     String   @unique
+  user            User     @relation(fields: [userId], references: [id])
+  userId          Int
+  skillId         String?
+  marketplace     String?
+  locale          String?
+  linkedAt        DateTime @default(now())
+  disabledAt      DateTime?
+  disabledReason  String?
+  lastEventAt     DateTime?
+  lastEventRequestId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model AlexaEventToken {
