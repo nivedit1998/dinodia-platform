@@ -58,7 +58,7 @@ const formatDateTime = (date: Date) =>
   });
 
 const isValidTargetTemp = (value: number | null): value is number =>
-  typeof value === 'number' && Number.isFinite(value) && value > 0;
+  typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
 function findNearestDate(points: Array<{ date: Date }>, target: Date) {
   if (points.length === 0) return null;
@@ -191,10 +191,11 @@ export function BoilerTemperatureBandChart({
   }, [allPoints]);
 
   const xDomain = extent(allPoints, (d) => d.date);
-  const yValues = allPoints.flatMap((point) => {
-    if (!isValidTargetTemp(point.targetTemperature)) return [point.currentTemperature];
-    return [point.currentTemperature, point.targetTemperature];
-  });
+  const yValues = allPoints.flatMap((point) =>
+    isValidTargetTemp(point.targetTemperature)
+      ? [point.currentTemperature, point.targetTemperature]
+      : [point.currentTemperature]
+  );
   const yMinRaw = yValues.length > 0 ? Math.min(...yValues) : 0;
   const yMaxRaw = yValues.length > 0 ? Math.max(...yValues) : 1;
   const yPadding = Math.max(0.8, (yMaxRaw - yMinRaw) * 0.12);
@@ -332,7 +333,7 @@ export function BoilerTemperatureBandChart({
                           {row.point?.targetTemperature == null
                             ? 'Unknown'
                             : row.point.targetTemperature === 0
-                            ? 'Off'
+                            ? formatTemp(0)
                             : formatTemp(row.point.targetTemperature)}
                         </span>
                       </div>

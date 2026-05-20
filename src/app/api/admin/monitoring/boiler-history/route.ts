@@ -400,27 +400,7 @@ export async function GET(req: NextRequest) {
       return a.entityId.localeCompare(b.entityId);
     });
 
-  const shouldCarryTarget = requestedLabel === 'Radiator';
-  const seriesTemperatureByEntityWithCarry = shouldCarryTarget
-    ? seriesTemperatureByEntity.map((series) => {
-        let lastTarget: number | null = null;
-        const points = series.points.map((point) => {
-          const rawTarget = isFiniteNumber(point.targetTemperature) ? point.targetTemperature : null;
-          if (rawTarget === 0) {
-            lastTarget = null;
-            return { ...point, targetTemperature: 0 };
-          }
-          if (rawTarget == null) {
-            return { ...point, targetTemperature: lastTarget };
-          }
-          lastTarget = rawTarget;
-          return { ...point, targetTemperature: rawTarget };
-        });
-        return { ...series, points };
-      })
-    : seriesTemperatureByEntity;
-
-  const seriesHeatingStateByEntity = seriesTemperatureByEntityWithCarry.map((series) => ({
+  const seriesHeatingStateByEntity = seriesTemperatureByEntity.map((series) => ({
     entityId: series.entityId,
     name: series.name,
     area: series.area,
@@ -467,7 +447,7 @@ export async function GET(req: NextRequest) {
     points: groupByArea ? [] : points,
     seriesByArea,
     seriesByEntity,
-    seriesTemperatureByEntity: seriesTemperatureByEntityWithCarry,
+    seriesTemperatureByEntity,
     seriesHeatingStateByEntity,
     meta: {
       label: requestedLabel,
