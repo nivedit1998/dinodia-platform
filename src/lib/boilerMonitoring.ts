@@ -5,6 +5,7 @@ import { getCurrentTemperature, getTargetTemperature } from '@/lib/deviceCapabil
 
 const HEAT_LABELS = new Set(['Boiler', 'Radiator']);
 const MIN_INTERVAL_MS = 2 * 60 * 60 * 1000;
+const MAX_DELTA_SECONDS = 3 * 60 * 60;
 const MAX_ERROR_LENGTH = 300;
 
 type ConnectionSnapshotFailure = {
@@ -29,8 +30,23 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
   const devices = await getDevicesForHaConnection(haConnectionId);
   const boilerDevices = devices.filter((d) => HEAT_LABELS.has(getGroupLabel(d)));
 
-  const readings = boilerDevices
-    .map((d) => {
+  type HeatGroupLabel = 'Boiler' | 'Radiator';
+  type SnapshotReading = {
+    haConnectionId: number;
+    entityId: string;
+    groupLabel: HeatGroupLabel;
+    numericValue: number;
+    currentTemperature: number;
+    targetTemperature: number | null;
+    unit: string;
+    capturedAt: Date;
+  };
+
+  const baseReadings = boilerDevices
+    .map((d): SnapshotReading | null => {
+      const groupLabelRaw = getGroupLabel(d);
+      if (groupLabelRaw !== 'Boiler' && groupLabelRaw !== 'Radiator') return null;
+      const groupLabel: HeatGroupLabel = groupLabelRaw;
       const attrs = d.attributes ?? {};
       const current = getCurrentTemperature(attrs);
       if (typeof current !== 'number' || !Number.isFinite(current)) return null;
@@ -46,6 +62,7 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
       return {
         haConnectionId,
         entityId: d.entityId,
+        groupLabel,
         numericValue: current,
         currentTemperature: current,
         targetTemperature: typeof target === 'number' && Number.isFinite(target) ? target : null,
@@ -53,9 +70,9 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
         capturedAt: now,
       };
     })
-    .filter((r): r is NonNullable<typeof r> => r !== null);
+    .filter((r): r is SnapshotReading => r !== null);
 
-  if (readings.length === 0) {
+  if (baseReadings.length === 0) {
     return { haConnectionId, totalDevices: devices.length, boilerCount: 0, insertedCount: 0 };
   }
 
@@ -63,20 +80,150 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
   const recent = await prisma.boilerTemperatureReading.findMany({
     where: {
       haConnectionId,
-      entityId: { in: readings.map((r) => r.entityId) },
+      entityId: { in: baseReadings.map((r) => r.entityId) },
       capturedAt: { gte: cutoff },
     },
     select: { entityId: true },
   });
   const recentSet = new Set(recent.map((r) => r.entityId));
-  const data = readings.filter((r) => !recentSet.has(r.entityId));
+  const toInsert = baseReadings.filter((r) => !recentSet.has(r.entityId));
 
-  const inserted = data.length ? await prisma.boilerTemperatureReading.createMany({ data }) : { count: 0 };
+  const boilerEntityIds = toInsert.filter((r) => r.groupLabel === 'Boiler').map((r) => r.entityId);
+  const radiatorEntityIds = toInsert.filter((r) => r.groupLabel === 'Radiator').map((r) => r.entityId);
+
+  const [boilerAccumulators, radiatorAccumulators] = await Promise.all([
+    boilerEntityIds.length
+      ? prisma.boilerUsageAccumulator.findMany({
+          where: { haConnectionId, entityId: { in: boilerEntityIds } },
+          select: {
+            entityId: true,
+            onSeconds: true,
+            offSeconds: true,
+            lastSnapshotOnSeconds: true,
+            lastSnapshotOffSeconds: true,
+          },
+        })
+      : Promise.resolve([]),
+    radiatorEntityIds.length
+      ? prisma.radiatorUsageAccumulator.findMany({
+          where: { haConnectionId, entityId: { in: radiatorEntityIds } },
+          select: {
+            entityId: true,
+            onSeconds: true,
+            offSeconds: true,
+            lastSnapshotOnSeconds: true,
+            lastSnapshotOffSeconds: true,
+          },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const boilerAccMap = new Map(boilerAccumulators.map((a) => [a.entityId, a]));
+  const radiatorAccMap = new Map(radiatorAccumulators.map((a) => [a.entityId, a]));
+
+  const cursorUpdates: Array<{
+    groupLabel: 'Boiler' | 'Radiator';
+    entityId: string;
+    onSeconds: number;
+    offSeconds: number;
+    onForSeconds: number | null;
+    offForSeconds: number | null;
+  }> = [];
+
+  const data = toInsert.map((reading) => {
+    const acc = reading.groupLabel === 'Boiler' ? boilerAccMap.get(reading.entityId) : radiatorAccMap.get(reading.entityId);
+    if (!acc) {
+      return {
+        haConnectionId: reading.haConnectionId,
+        entityId: reading.entityId,
+        numericValue: reading.numericValue,
+        currentTemperature: reading.currentTemperature,
+        targetTemperature: reading.targetTemperature,
+        onForSeconds: null,
+        offForSeconds: null,
+        unit: reading.unit,
+        capturedAt: reading.capturedAt,
+      };
+    }
+
+    const onSeconds = Math.max(0, Math.floor(Number(acc.onSeconds ?? 0)));
+    const offSeconds = Math.max(0, Math.floor(Number(acc.offSeconds ?? 0)));
+    const cursorOn = acc.lastSnapshotOnSeconds;
+    const cursorOff = acc.lastSnapshotOffSeconds;
+
+    let onForSeconds: number | null = null;
+    let offForSeconds: number | null = null;
+
+    if (typeof cursorOn === 'number' && Number.isFinite(cursorOn) && typeof cursorOff === 'number' && Number.isFinite(cursorOff)) {
+      const rawOn = onSeconds - cursorOn;
+      const rawOff = offSeconds - cursorOff;
+      if (rawOn >= 0 && rawOff >= 0) {
+        onForSeconds = Math.min(MAX_DELTA_SECONDS, Math.floor(rawOn));
+        offForSeconds = Math.min(MAX_DELTA_SECONDS, Math.floor(rawOff));
+      }
+    }
+
+    cursorUpdates.push({
+      groupLabel: reading.groupLabel,
+      entityId: reading.entityId,
+      onSeconds,
+      offSeconds,
+      onForSeconds,
+      offForSeconds,
+    });
+
+    return {
+      haConnectionId: reading.haConnectionId,
+      entityId: reading.entityId,
+      numericValue: reading.numericValue,
+      currentTemperature: reading.currentTemperature,
+      targetTemperature: reading.targetTemperature,
+      onForSeconds,
+      offForSeconds,
+      unit: reading.unit,
+      capturedAt: reading.capturedAt,
+    };
+  });
+
+  const inserted = data.length
+    ? await prisma.$transaction(async (tx) => {
+        const created = await tx.boilerTemperatureReading.createMany({ data });
+
+        if (cursorUpdates.length > 0) {
+          const boilerUpdates = cursorUpdates.filter((u) => u.groupLabel === 'Boiler');
+          const radiatorUpdates = cursorUpdates.filter((u) => u.groupLabel === 'Radiator');
+
+          for (const update of boilerUpdates) {
+            await tx.boilerUsageAccumulator.update({
+              where: { haConnectionId_entityId: { haConnectionId, entityId: update.entityId } },
+              data: {
+                lastSnapshotOnSeconds: update.onSeconds,
+                lastSnapshotOffSeconds: update.offSeconds,
+                lastSnapshotAt: now,
+              },
+            });
+          }
+
+          for (const update of radiatorUpdates) {
+            await tx.radiatorUsageAccumulator.update({
+              where: { haConnectionId_entityId: { haConnectionId, entityId: update.entityId } },
+              data: {
+                lastSnapshotOnSeconds: update.onSeconds,
+                lastSnapshotOffSeconds: update.offSeconds,
+                lastSnapshotAt: now,
+              },
+            });
+          }
+        }
+
+        return created;
+      })
+    : { count: 0 };
 
   return {
     haConnectionId,
     totalDevices: devices.length,
-    boilerCount: readings.length,
+    boilerCount: baseReadings.length,
     insertedCount: inserted.count,
   };
 }

@@ -8,6 +8,7 @@ import { logout as performLogout } from '@/lib/logout';
 import { friendlyUnknownError } from '@/lib/clientError';
 import { MultiLineChart, MultiSeriesTrend } from './charts/LineAreaChart';
 import { BoilerHeatingStateChart, BoilerTemperatureBandChart, HeatingStateSeries } from './charts/BoilerCharts';
+import { HeatingUsageStackedBarChart, UsageSeries } from './charts/HeatingUsageCharts';
 
 type HistoryBucket = 'daily' | 'weekly' | 'monthly';
 type Preset = '7' | '30' | '90' | 'all' | 'custom';
@@ -32,6 +33,15 @@ type BoilerHeatingPoint = { bucketStart: string; label: string; state: number | 
 type BoilerEntitySeries = { entityId: string; name: string; area: string; points: BoilerHistoryPoint[] };
 type BoilerTemperatureSeries = { entityId: string; name: string; area: string; points: BoilerTemperaturePoint[] };
 type BoilerHeatingSeries = { entityId: string; name: string; area: string; points: BoilerHeatingPoint[] };
+type HeatingUsagePoint = { ts: string; onMinutes: number | null; offMinutes: number | null };
+type HeatingUsageEntitySeries = { entityId: string; name: string; area: string; label?: string | null; points: HeatingUsagePoint[] };
+type HeatingUsageResponse = {
+  ok: boolean;
+  unit: string;
+  seriesByEntity: HeatingUsageEntitySeries[];
+  meta?: { label?: string | null; from?: string; to?: string };
+  error?: string;
+};
 
 type SummaryResponse = {
   ok: boolean;
@@ -318,6 +328,8 @@ export default function AdminDashboard({ username }: Props) {
   const [selectedBoilerEntities, setSelectedBoilerEntities] = useState<string[]>([]);
   const [radiatorTemperatureSeriesAll, setRadiatorTemperatureSeriesAll] = useState<BoilerTemperatureSeries[]>([]);
   const [boilerHeatingSeriesAll, setBoilerHeatingSeriesAll] = useState<BoilerHeatingSeries[]>([]);
+  const [radiatorUsageSeriesAll, setRadiatorUsageSeriesAll] = useState<UsageSeries[]>([]);
+  const [boilerUsageSeriesAll, setBoilerUsageSeriesAll] = useState<UsageSeries[]>([]);
   const [boilerMeta, setBoilerMeta] = useState<BoilerHistoryResponse['meta'] | null>(null);
   const [boilerLoading, setBoilerLoading] = useState(false);
   const [boilerError, setBoilerError] = useState<string | null>(null);
@@ -624,6 +636,48 @@ export default function AdminDashboard({ username }: Props) {
       .filter((series) => series.points.length > 0);
   }, [boilerHeatingSeriesAll, selectedAreas, selectedBoilerEntities, preset, from, to, rangeState.window]);
 
+  const radiatorUsageSeriesFiltered = useMemo(() => {
+    const radiatorEntitySet = new Set(selectedRadiatorEntities);
+    const hasRadiatorEntityFilter = radiatorEntitySet.size > 0;
+    const rangeWindow = rangeState.window;
+    const rangeReady = preset !== 'custom' || (from && to);
+
+    return radiatorUsageSeriesAll
+      .filter((series) => {
+        if (hasRadiatorEntityFilter && !radiatorEntitySet.has(series.id)) return false;
+        return true;
+      })
+      .map((series) => ({
+        ...series,
+        points: series.points.filter((p) => {
+          if (!rangeWindow || !rangeReady) return true;
+          return p.date >= rangeWindow.from && p.date <= rangeWindow.to;
+        }),
+      }))
+      .filter((series) => series.points.length > 0);
+  }, [radiatorUsageSeriesAll, selectedRadiatorEntities, preset, from, to, rangeState.window]);
+
+  const boilerUsageSeriesFiltered = useMemo(() => {
+    const boilerEntitySet = new Set(selectedBoilerEntities);
+    const hasBoilerEntityFilter = boilerEntitySet.size > 0;
+    const rangeWindow = rangeState.window;
+    const rangeReady = preset !== 'custom' || (from && to);
+
+    return boilerUsageSeriesAll
+      .filter((series) => {
+        if (hasBoilerEntityFilter && !boilerEntitySet.has(series.id)) return false;
+        return true;
+      })
+      .map((series) => ({
+        ...series,
+        points: series.points.filter((p) => {
+          if (!rangeWindow || !rangeReady) return true;
+          return p.date >= rangeWindow.from && p.date <= rangeWindow.to;
+        }),
+      }))
+      .filter((series) => series.points.length > 0);
+  }, [boilerUsageSeriesAll, selectedBoilerEntities, preset, from, to, rangeState.window]);
+
   const radiatorTemperatureSeriesByEntity = useMemo(
     () =>
       radiatorTemperatureSeriesFiltered.map((series) => ({
@@ -795,7 +849,18 @@ export default function AdminDashboard({ username }: Props) {
     setBoilerLoading(true);
     setBoilerError(null);
     try {
-      const [radiatorRes, boilerRes] = await Promise.all([
+      const buildUsageParams = (label: 'Boiler' | 'Radiator', entityIds: string[]) => {
+        const params = new URLSearchParams();
+        params.set('days', 'all');
+        params.set('label', label);
+        for (const id of entityIds) params.append('entityIds', id);
+        return params.toString();
+      };
+
+      const radiatorUsageEntityIds = radiatorEntities.map((e) => e.entityId);
+      const boilerUsageEntityIds = boilerEntities.map((e) => e.entityId);
+
+      const [radiatorRes, boilerRes, radiatorUsageRes, boilerUsageRes] = await Promise.all([
         platformFetch(`/api/admin/monitoring/boiler-history?${buildRadiatorParams()}`, {
           cache: 'no-store',
           credentials: 'include',
@@ -804,6 +869,18 @@ export default function AdminDashboard({ username }: Props) {
           cache: 'no-store',
           credentials: 'include',
         }),
+        radiatorUsageEntityIds.length
+          ? platformFetch(
+              `/api/admin/monitoring/heating-usage-history?${buildUsageParams('Radiator', radiatorUsageEntityIds)}`,
+              { cache: 'no-store', credentials: 'include' }
+            )
+          : Promise.resolve(new Response(JSON.stringify({ ok: true, unit: 'min', seriesByEntity: [] }), { status: 200 })),
+        boilerUsageEntityIds.length
+          ? platformFetch(`/api/admin/monitoring/heating-usage-history?${buildUsageParams('Boiler', boilerUsageEntityIds)}`, {
+              cache: 'no-store',
+              credentials: 'include',
+            })
+          : Promise.resolve(new Response(JSON.stringify({ ok: true, unit: 'min', seriesByEntity: [] }), { status: 200 })),
       ]);
 
       const radiatorData = (await radiatorRes.json().catch(() => null)) as BoilerHistoryResponse | null;
@@ -844,19 +921,55 @@ export default function AdminDashboard({ username }: Props) {
         ? boilerData.seriesHeatingStateByEntity
         : [];
 
+      const radiatorUsageData = (await radiatorUsageRes.json().catch(() => null)) as HeatingUsageResponse | null;
+      if (!radiatorUsageRes.ok || !radiatorUsageData?.ok) {
+        const message =
+          radiatorUsageData && typeof radiatorUsageData.error === 'string' && radiatorUsageData.error.length > 0
+            ? radiatorUsageData.error
+            : 'Unable to load radiator usage trend.';
+        throw new Error(message);
+      }
+
+      const boilerUsageData = (await boilerUsageRes.json().catch(() => null)) as HeatingUsageResponse | null;
+      if (!boilerUsageRes.ok || !boilerUsageData?.ok) {
+        const message =
+          boilerUsageData && typeof boilerUsageData.error === 'string' && boilerUsageData.error.length > 0
+            ? boilerUsageData.error
+            : 'Unable to load boiler usage trend.';
+        throw new Error(message);
+      }
+
+      const toUsageSeries = (data: HeatingUsageResponse): UsageSeries[] =>
+        Array.isArray(data.seriesByEntity)
+          ? data.seriesByEntity.map((s) => ({
+              id: s.entityId,
+              label: s.name || s.entityId,
+              points: (s.points || []).map((p) => ({
+                date: new Date(p.ts),
+                label: new Date(p.ts).toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }),
+                onMinutes: typeof p.onMinutes === 'number' ? p.onMinutes : null,
+                offMinutes: typeof p.offMinutes === 'number' ? p.offMinutes : null,
+              })),
+            }))
+          : [];
+
       setRadiatorTemperatureSeriesAll(temperatureSeries);
       setBoilerHeatingSeriesAll(heatingSeries);
+      setRadiatorUsageSeriesAll(toUsageSeries(radiatorUsageData));
+      setBoilerUsageSeriesAll(toUsageSeries(boilerUsageData));
       setBoilerMeta(boilerData.meta ?? null);
     } catch (err) {
       console.error('Failed to load heating trends', err);
       setBoilerError(friendlyUnknownError(err, 'Unable to load heating trends.'));
       setRadiatorTemperatureSeriesAll([]);
       setBoilerHeatingSeriesAll([]);
+      setRadiatorUsageSeriesAll([]);
+      setBoilerUsageSeriesAll([]);
       setBoilerMeta(null);
     } finally {
       setBoilerLoading(false);
     }
-  }, [buildBoilerParams, buildRadiatorParams]);
+  }, [buildBoilerParams, buildRadiatorParams, boilerEntities, radiatorEntities]);
 
   useEffect(() => {
     void loadSummary();
@@ -1220,6 +1333,54 @@ export default function AdminDashboard({ username }: Props) {
                   title="Boiler ON/OFF (derived from target > current)"
                   series={boilerHeatingSeriesByEntity}
                   emptyLabel="No heating state samples in this window."
+                />
+              )}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+            <div>
+              {boilerError ? (
+                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
+                  {boilerError}
+                </div>
+              ) : boilerLoading ? (
+                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
+                  Loading boiler usage trend…
+                </div>
+              ) : boilerUsageSeriesFiltered.length === 0 ? (
+                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
+                  No boiler usage snapshots in this window.
+                </div>
+              ) : (
+                <HeatingUsageStackedBarChart
+                  id="boiler-usage-snapshots"
+                  title="Boiler usage (minutes ON/OFF per snapshot)"
+                  series={boilerUsageSeriesFiltered}
+                  emptyLabel="No boiler usage snapshots in this window."
+                />
+              )}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+            <div>
+              {boilerError ? (
+                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
+                  {boilerError}
+                </div>
+              ) : boilerLoading ? (
+                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
+                  Loading radiator usage trend…
+                </div>
+              ) : radiatorUsageSeriesFiltered.length === 0 ? (
+                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
+                  No radiator usage snapshots in this window.
+                </div>
+              ) : (
+                <HeatingUsageStackedBarChart
+                  id="radiator-usage-snapshots"
+                  title="Radiator usage (minutes ON/OFF per snapshot)"
+                  series={radiatorUsageSeriesFiltered}
+                  emptyLabel="No radiator usage snapshots in this window."
                 />
               )}
             </div>

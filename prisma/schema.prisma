@@ -498,6 +498,8 @@ model BoilerTemperatureReading {
   numericValue   Float
   currentTemperature Float
   targetTemperature  Float?
+  onForSeconds   Int?
+  offForSeconds  Int?
   unit           String       @default("°C")
   capturedAt     DateTime     @default(now())
 
@@ -514,6 +516,9 @@ model BoilerUsageAccumulator {
   offSeconds     Int          @default(0)
   lastSeenAt     DateTime?
   lastWasOn      Boolean?
+  lastSnapshotOnSeconds  Int?
+  lastSnapshotOffSeconds Int?
+  lastSnapshotAt         DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -530,6 +535,9 @@ model RadiatorUsageAccumulator {
   offSeconds     Int          @default(0)
   lastSeenAt     DateTime?
   lastWasOn      Boolean?
+  lastSnapshotOnSeconds  Int?
+  lastSnapshotOffSeconds Int?
+  lastSnapshotAt         DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
