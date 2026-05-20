@@ -19,6 +19,167 @@ function isUniqueConstraintError(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
+type HeatingUsageDeviceLabel = 'Boiler' | 'Radiator';
+
+type HeatingUsageDeviceUpdate = {
+  label: HeatingUsageDeviceLabel;
+  entityId: string;
+  onSeconds: number;
+  offSeconds: number;
+  lastSeenAt: string;
+  lastWasOn: boolean | null;
+};
+
+type HeatingUsageUpload = {
+  schemaVersion: number;
+  capturedAt?: string;
+  devices?: unknown;
+};
+
+function parseIsoDate(value: unknown): Date | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
+function asNonNegativeInt(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isFinite(n)) return null;
+  const i = Math.floor(n);
+  if (i < 0) return null;
+  return i;
+}
+
+function normalizeHeatingUsageDeviceUpdate(value: unknown): HeatingUsageDeviceUpdate | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  const label = obj.label === 'Boiler' || obj.label === 'Radiator' ? (obj.label as HeatingUsageDeviceLabel) : null;
+  const entityId = typeof obj.entityId === 'string' ? obj.entityId.trim() : '';
+  const onSeconds = asNonNegativeInt(obj.onSeconds);
+  const offSeconds = asNonNegativeInt(obj.offSeconds);
+  const lastSeenAt = parseIsoDate(obj.lastSeenAt);
+  const lastWasOn =
+    obj.lastWasOn === null ? null : typeof obj.lastWasOn === 'boolean' ? obj.lastWasOn : null;
+
+  if (!label || !entityId || !lastSeenAt) return null;
+  if (onSeconds === null || offSeconds === null) return null;
+
+  return {
+    label,
+    entityId,
+    onSeconds,
+    offSeconds,
+    lastSeenAt: lastSeenAt.toISOString(),
+    lastWasOn,
+  };
+}
+
+async function ingestHeatingUsage({
+  haConnectionId,
+  upload,
+}: {
+  haConnectionId: number;
+  upload: HeatingUsageUpload;
+}): Promise<{ processed: number; skipped: number }> {
+  const schemaVersion = Number(upload?.schemaVersion ?? 0);
+  if (schemaVersion !== 1) return { processed: 0, skipped: 0 };
+
+  const rawDevices = (upload as HeatingUsageUpload)?.devices;
+  if (!Array.isArray(rawDevices)) return { processed: 0, skipped: 0 };
+
+  const MAX_DEVICES = 200;
+  const normalized = rawDevices
+    .slice(0, MAX_DEVICES)
+    .map(normalizeHeatingUsageDeviceUpdate)
+    .filter(Boolean) as HeatingUsageDeviceUpdate[];
+
+  if (normalized.length === 0) return { processed: 0, skipped: 0 };
+
+  const entityIds = Array.from(new Set(normalized.map((d) => d.entityId)));
+  const knownDevices = await prisma.device.findMany({
+    where: { haConnectionId, entityId: { in: entityIds } },
+    select: { entityId: true, label: true },
+  });
+  const labelByEntityId = new Map(knownDevices.map((d) => [d.entityId, (d.label || '').trim()]));
+
+  let processed = 0;
+  let skipped = 0;
+
+  for (const update of normalized) {
+    const dbLabel = (labelByEntityId.get(update.entityId) || '').toLowerCase();
+    const expected = update.label.toLowerCase();
+    if (dbLabel && dbLabel !== expected) {
+      skipped += 1;
+      continue;
+    }
+
+    const lastSeenAt = new Date(update.lastSeenAt);
+    if (update.label === 'Boiler') {
+      const existing = await prisma.boilerUsageAccumulator.findUnique({
+        where: { haConnectionId_entityId: { haConnectionId, entityId: update.entityId } },
+        select: { lastSeenAt: true },
+      });
+
+      if (existing?.lastSeenAt && lastSeenAt.getTime() <= existing.lastSeenAt.getTime()) {
+        skipped += 1;
+        continue;
+      }
+
+      await prisma.boilerUsageAccumulator.upsert({
+        where: { haConnectionId_entityId: { haConnectionId, entityId: update.entityId } },
+        create: {
+          haConnectionId,
+          entityId: update.entityId,
+          onSeconds: update.onSeconds,
+          offSeconds: update.offSeconds,
+          lastSeenAt,
+          lastWasOn: update.lastWasOn,
+        },
+        update: {
+          onSeconds: update.onSeconds,
+          offSeconds: update.offSeconds,
+          lastSeenAt,
+          lastWasOn: update.lastWasOn,
+        },
+      });
+      processed += 1;
+      continue;
+    }
+
+    const existing = await prisma.radiatorUsageAccumulator.findUnique({
+      where: { haConnectionId_entityId: { haConnectionId, entityId: update.entityId } },
+      select: { lastSeenAt: true },
+    });
+
+    if (existing?.lastSeenAt && lastSeenAt.getTime() <= existing.lastSeenAt.getTime()) {
+      skipped += 1;
+      continue;
+    }
+
+    await prisma.radiatorUsageAccumulator.upsert({
+      where: { haConnectionId_entityId: { haConnectionId, entityId: update.entityId } },
+      create: {
+        haConnectionId,
+        entityId: update.entityId,
+        onSeconds: update.onSeconds,
+        offSeconds: update.offSeconds,
+        lastSeenAt,
+        lastWasOn: update.lastWasOn,
+      },
+      update: {
+        onSeconds: update.onSeconds,
+        offSeconds: update.offSeconds,
+        lastSeenAt,
+        lastWasOn: update.lastWasOn,
+      },
+    });
+    processed += 1;
+  }
+
+  return { processed, skipped };
+}
+
 export async function POST(req: NextRequest) {
   let body: {
     serial?: string;
@@ -27,6 +188,7 @@ export async function POST(req: NextRequest) {
     sig?: string;
     agentSeenVersion?: number;
     lanBaseUrl?: string;
+    heatingUsage?: HeatingUsageUpload;
   };
   try {
     body = await req.json();
@@ -181,6 +343,29 @@ export async function POST(req: NextRequest) {
       });
     }
   });
+
+  if (hubInstall.home?.haConnectionId && body?.heatingUsage) {
+    try {
+      const summary = await ingestHeatingUsage({
+        haConnectionId: hubInstall.home.haConnectionId,
+        upload: body.heatingUsage,
+      });
+      if (summary.processed > 0 || summary.skipped > 0) {
+        console.log('[hub-agent/token-state] Heating usage upload processed', {
+          serial,
+          haConnectionId: hubInstall.home.haConnectionId,
+          processed: summary.processed,
+          skipped: summary.skipped,
+        });
+      }
+    } catch (err) {
+      console.warn('[hub-agent/token-state] Heating usage upload failed', {
+        serial,
+        haConnectionId: hubInstall.home.haConnectionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   return NextResponse.json({
     ok: true,

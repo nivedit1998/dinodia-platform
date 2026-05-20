@@ -311,6 +311,8 @@ model HaConnection {
   devices   Device[]
   monitoringReadings MonitoringReading[]
   boilerTemperatureReadings BoilerTemperatureReading[]
+  boilerUsageAccumulators BoilerUsageAccumulator[]
+  radiatorUsageAccumulators RadiatorUsageAccumulator[]
   newDeviceCommissioningSessions NewDeviceCommissioningSession[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -501,6 +503,38 @@ model BoilerTemperatureReading {
 
   @@index([haConnectionId, entityId, capturedAt])
   @@index([haConnectionId, capturedAt])
+}
+
+model BoilerUsageAccumulator {
+  id             Int          @id @default(autoincrement())
+  haConnection   HaConnection @relation(fields: [haConnectionId], references: [id])
+  haConnectionId Int
+  entityId       String
+  onSeconds      Int          @default(0)
+  offSeconds     Int          @default(0)
+  lastSeenAt     DateTime?
+  lastWasOn      Boolean?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([haConnectionId, entityId])
+  @@index([haConnectionId])
+}
+
+model RadiatorUsageAccumulator {
+  id             Int          @id @default(autoincrement())
+  haConnection   HaConnection @relation(fields: [haConnectionId], references: [id])
+  haConnectionId Int
+  entityId       String
+  onSeconds      Int          @default(0)
+  offSeconds     Int          @default(0)
+  lastSeenAt     DateTime?
+  lastWasOn      Boolean?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([haConnectionId, entityId])
+  @@index([haConnectionId])
 }
 
 model AlexaAuthCode {
