@@ -74,6 +74,7 @@ type TemperatureBucket = {
   currentCount: number;
   targetSum: number;
   targetCount: number;
+  offCount: number;
 };
 
 const isFiniteNumber = (value: unknown): value is number =>
@@ -270,7 +271,9 @@ export async function GET(req: NextRequest) {
       : null;
     if (currentValue == null) continue;
 
-    const targetValue = isFiniteNumber(reading.targetTemperature) ? reading.targetTemperature : null;
+    const rawTarget = isFiniteNumber(reading.targetTemperature) ? reading.targetTemperature : null;
+    const isOffReading = rawTarget === 0;
+    const targetValue = rawTarget != null && rawTarget > 0 ? rawTarget : null;
     const info = bucket2hUtc(reading.capturedAt);
 
     const perArea = areaBuckets.get(area!) ?? new Map();
@@ -313,6 +316,7 @@ export async function GET(req: NextRequest) {
         currentCount: 1,
         targetSum: targetValue ?? 0,
         targetCount: targetValue == null ? 0 : 1,
+        offCount: isOffReading ? 1 : 0,
       });
     } else {
       tempExisting.currentSum += currentValue;
@@ -320,6 +324,9 @@ export async function GET(req: NextRequest) {
       if (targetValue != null) {
         tempExisting.targetSum += targetValue;
         tempExisting.targetCount += 1;
+      }
+      if (isOffReading) {
+        tempExisting.offCount += 1;
       }
     }
     if (!entityTemperatureBuckets.has(reading.entityId)) entityTemperatureBuckets.set(reading.entityId, perEntityTemp);
@@ -382,7 +389,7 @@ export async function GET(req: NextRequest) {
           bucketStart: b.bucketStart.toISOString(),
           label: b.label,
           currentTemperature: b.currentCount > 0 ? b.currentSum / b.currentCount : 0,
-          targetTemperature: b.targetCount > 0 ? b.targetSum / b.targetCount : null,
+          targetTemperature: b.targetCount > 0 ? b.targetSum / b.targetCount : b.offCount > 0 ? 0 : null,
         })),
     }))
     .filter((series) => isAssignedArea(series.area))
@@ -393,16 +400,25 @@ export async function GET(req: NextRequest) {
       return a.entityId.localeCompare(b.entityId);
     });
 
-  const seriesTemperatureByEntityWithCarry = seriesTemperatureByEntity.map((series) => {
-    let lastTarget: number | null = null;
-    const points = series.points.map((point) => {
-      const nextTarget = isFiniteNumber(point.targetTemperature) ? point.targetTemperature : null;
-      const effectiveTarget = nextTarget ?? lastTarget;
-      if (nextTarget != null) lastTarget = nextTarget;
-      return { ...point, targetTemperature: effectiveTarget };
-    });
-    return { ...series, points };
-  });
+  const shouldCarryTarget = requestedLabel === 'Radiator';
+  const seriesTemperatureByEntityWithCarry = shouldCarryTarget
+    ? seriesTemperatureByEntity.map((series) => {
+        let lastTarget: number | null = null;
+        const points = series.points.map((point) => {
+          const rawTarget = isFiniteNumber(point.targetTemperature) ? point.targetTemperature : null;
+          if (rawTarget === 0) {
+            lastTarget = null;
+            return { ...point, targetTemperature: 0 };
+          }
+          if (rawTarget == null) {
+            return { ...point, targetTemperature: lastTarget };
+          }
+          lastTarget = rawTarget;
+          return { ...point, targetTemperature: rawTarget };
+        });
+        return { ...series, points };
+      })
+    : seriesTemperatureByEntity;
 
   const seriesHeatingStateByEntity = seriesTemperatureByEntityWithCarry.map((series) => ({
     entityId: series.entityId,
@@ -414,6 +430,8 @@ export async function GET(req: NextRequest) {
       state:
         point.targetTemperature == null
           ? null
+          : point.targetTemperature === 0
+          ? 0
           : point.targetTemperature > point.currentTemperature + toleranceC
           ? 1
           : 0,

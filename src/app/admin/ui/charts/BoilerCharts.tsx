@@ -57,6 +57,9 @@ const formatDateTime = (date: Date) =>
     hour12: false,
   });
 
+const isValidTargetTemp = (value: number | null): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0;
+
 function findNearestDate(points: Array<{ date: Date }>, target: Date) {
   if (points.length === 0) return null;
   const b = bisector((d: { date: Date }) => d.date).center;
@@ -81,7 +84,7 @@ function buildTemperatureBands(
   for (let i = 0; i < points.length - 1; i += 1) {
     const a = points[i];
     const b = points[i + 1];
-    if (a.targetTemperature == null || b.targetTemperature == null) continue;
+    if (!isValidTargetTemp(a.targetTemperature) || !isValidTargetTemp(b.targetTemperature)) continue;
 
     const deltaA = a.targetTemperature - a.currentTemperature;
     const deltaB = b.targetTemperature - b.currentTemperature;
@@ -188,9 +191,10 @@ export function BoilerTemperatureBandChart({
   }, [allPoints]);
 
   const xDomain = extent(allPoints, (d) => d.date);
-  const yValues = allPoints.flatMap((point) =>
-    point.targetTemperature == null ? [point.currentTemperature] : [point.currentTemperature, point.targetTemperature]
-  );
+  const yValues = allPoints.flatMap((point) => {
+    if (!isValidTargetTemp(point.targetTemperature)) return [point.currentTemperature];
+    return [point.currentTemperature, point.targetTemperature];
+  });
   const yMinRaw = yValues.length > 0 ? Math.min(...yValues) : 0;
   const yMaxRaw = yValues.length > 0 ? Math.max(...yValues) : 1;
   const yPadding = Math.max(0.8, (yMaxRaw - yMinRaw) * 0.12);
@@ -284,7 +288,7 @@ export function BoilerTemperatureBandChart({
                   .curve(curveMonotoneX)(entry.points) ?? '';
               const targetPath =
                 line<TemperaturePoint>()
-                  .defined((d) => d.targetTemperature != null && Number.isFinite(d.targetTemperature))
+                  .defined((d) => isValidTargetTemp(d.targetTemperature))
                   .x((d) => xScale(d.date))
                   .y((d) => yScale(d.targetTemperature ?? d.currentTemperature))
                   .curve(curveMonotoneX)(entry.points) ?? '';
@@ -325,7 +329,11 @@ export function BoilerTemperatureBandChart({
                         </span>
                         <span className="font-semibold text-slate-900">
                           C: {row.point ? formatTemp(row.point.currentTemperature) : '—'} · T:{' '}
-                          {row.point?.targetTemperature == null ? 'Unknown' : formatTemp(row.point.targetTemperature)}
+                          {row.point?.targetTemperature == null
+                            ? 'Unknown'
+                            : row.point.targetTemperature === 0
+                            ? 'Off'
+                            : formatTemp(row.point.targetTemperature)}
                         </span>
                       </div>
                     ))}

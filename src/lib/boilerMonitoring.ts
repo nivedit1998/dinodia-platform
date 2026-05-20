@@ -34,7 +34,15 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
       const attrs = d.attributes ?? {};
       const current = getCurrentTemperature(attrs);
       if (typeof current !== 'number' || !Number.isFinite(current)) return null;
-      const target = getTargetTemperature(attrs);
+      const state = String(d.state ?? '').trim().toLowerCase();
+      const hvacMode = typeof attrs.hvac_mode === 'string' ? attrs.hvac_mode.trim().toLowerCase() : '';
+      const isExplicitOff = state === 'off' || hvacMode === 'off';
+      const rawTarget = isExplicitOff ? null : getTargetTemperature(attrs);
+      const target = isExplicitOff
+        ? 0
+        : typeof rawTarget === 'number' && Number.isFinite(rawTarget) && rawTarget > 0
+        ? rawTarget
+        : null;
       return {
         haConnectionId,
         entityId: d.entityId,
