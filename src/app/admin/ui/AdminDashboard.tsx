@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { platformFetch } from '@/lib/platformFetchClient';
@@ -57,6 +57,17 @@ type BoilerHistoryResponse = {
   seriesByEntity?: BoilerEntitySeries[];
   seriesTemperatureByEntity?: BoilerTemperatureSeries[];
   seriesHeatingStateByEntity?: BoilerHeatingSeries[];
+  meta?: {
+    label?: string | null;
+    labelFilterDegraded?: boolean;
+    toleranceC?: number;
+    bucketHours?: number;
+    boilerPowerKw?: number | null;
+    pricePerKwh?: number | null;
+    estimatedOnHours?: number | null;
+    estimatedKwh?: number | null;
+    estimatedCost?: number | null;
+  };
   error?: string;
 };
 
@@ -299,18 +310,19 @@ export default function AdminDashboard({ username }: Props) {
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
   const [energyEntities, setEnergyEntities] = useState<EntityOption[]>([]);
   const [batteryEntities, setBatteryEntities] = useState<EntityOption[]>([]);
+  const [radiatorEntities, setRadiatorEntities] = useState<EntityOption[]>([]);
   const [boilerEntities, setBoilerEntities] = useState<EntityOption[]>([]);
   const [selectedEnergyEntities, setSelectedEnergyEntities] = useState<string[]>([]);
   const [selectedBatteryEntities, setSelectedBatteryEntities] = useState<string[]>([]);
+  const [selectedRadiatorEntities, setSelectedRadiatorEntities] = useState<string[]>([]);
   const [selectedBoilerEntities, setSelectedBoilerEntities] = useState<string[]>([]);
-  const [boilerTemperatureSeriesAll, setBoilerTemperatureSeriesAll] = useState<BoilerTemperatureSeries[]>([]);
+  const [radiatorTemperatureSeriesAll, setRadiatorTemperatureSeriesAll] = useState<BoilerTemperatureSeries[]>([]);
   const [boilerHeatingSeriesAll, setBoilerHeatingSeriesAll] = useState<BoilerHeatingSeries[]>([]);
+  const [boilerMeta, setBoilerMeta] = useState<BoilerHistoryResponse['meta'] | null>(null);
   const [boilerLoading, setBoilerLoading] = useState(false);
   const [boilerError, setBoilerError] = useState<string | null>(null);
   const [selectorsError, setSelectorsError] = useState<string | null>(null);
-  const energyScrollRef = useRef<HTMLDivElement | null>(null);
-  const batteryScrollRef = useRef<HTMLDivElement | null>(null);
-  const boilerScrollRef = useRef<HTMLDivElement | null>(null);
+  // Charts are observe-only; keep UI stable across hover/scroll.
 
   useEffect(() => {
     if (preset !== 'custom') return;
@@ -550,11 +562,11 @@ export default function AdminDashboard({ username }: Props) {
     [summary]
   );
 
-  const boilerTemperatureSeriesFiltered = useMemo(() => {
+  const radiatorTemperatureSeriesFiltered = useMemo(() => {
     const hasAreaFilter = selectedAreas.length > 0;
     const areaSet = new Set(selectedAreas);
-    const boilerEntitySet = new Set(selectedBoilerEntities);
-    const hasBoilerEntityFilter = boilerEntitySet.size > 0;
+    const radiatorEntitySet = new Set(selectedRadiatorEntities);
+    const hasRadiatorEntityFilter = radiatorEntitySet.size > 0;
     const rangeWindow = rangeState.window;
     const rangeReady = preset !== 'custom' || (from && to);
     const inRange = (iso: string) => {
@@ -564,10 +576,10 @@ export default function AdminDashboard({ username }: Props) {
       return date >= rangeWindow.from && date <= rangeWindow.to;
     };
 
-    return boilerTemperatureSeriesAll
+    return radiatorTemperatureSeriesAll
       .filter((series) => {
         if (hasAreaFilter && !areaSet.has(series.area)) return false;
-        if (hasBoilerEntityFilter && !boilerEntitySet.has(series.entityId)) return false;
+        if (hasRadiatorEntityFilter && !radiatorEntitySet.has(series.entityId)) return false;
         return true;
       })
       .map((series) => ({
@@ -576,9 +588,9 @@ export default function AdminDashboard({ username }: Props) {
       }))
       .filter((series) => series.points.length > 0);
   }, [
-    boilerTemperatureSeriesAll,
+    radiatorTemperatureSeriesAll,
     selectedAreas,
-    selectedBoilerEntities,
+    selectedRadiatorEntities,
     preset,
     from,
     to,
@@ -612,9 +624,9 @@ export default function AdminDashboard({ username }: Props) {
       .filter((series) => series.points.length > 0);
   }, [boilerHeatingSeriesAll, selectedAreas, selectedBoilerEntities, preset, from, to, rangeState.window]);
 
-  const boilerTemperatureSeriesByEntity = useMemo(
+  const radiatorTemperatureSeriesByEntity = useMemo(
     () =>
-      boilerTemperatureSeriesFiltered.map((series) => ({
+      radiatorTemperatureSeriesFiltered.map((series) => ({
         id: series.entityId,
         label: series.name || series.entityId,
         hint: `${series.entityId} • ${series.area}`,
@@ -626,7 +638,7 @@ export default function AdminDashboard({ username }: Props) {
           targetTemperature: point.targetTemperature,
         })),
       })),
-    [boilerTemperatureSeriesFiltered]
+    [radiatorTemperatureSeriesFiltered]
   );
 
   const boilerHeatingSeriesByEntity: HeatingStateSeries[] = useMemo(
@@ -645,9 +657,9 @@ export default function AdminDashboard({ username }: Props) {
     [boilerHeatingSeriesFiltered]
   );
 
-  const boilerTemperaturePointCount = useMemo(
-    () => Math.max(0, ...boilerTemperatureSeriesByEntity.map((s) => s.points.length)),
-    [boilerTemperatureSeriesByEntity]
+  const radiatorTemperaturePointCount = useMemo(
+    () => Math.max(0, ...radiatorTemperatureSeriesByEntity.map((s) => s.points.length)),
+    [radiatorTemperatureSeriesByEntity]
   );
   const boilerStatePointCount = useMemo(
     () => Math.max(0, ...boilerHeatingSeriesByEntity.map((s) => s.points.length)),
@@ -661,29 +673,7 @@ export default function AdminDashboard({ username }: Props) {
     () => Math.max(0, ...batterySeriesByEntity.map((s) => s.points.length)),
     [batterySeriesByEntity]
   );
-  useEffect(() => {
-    const el = energyScrollRef.current;
-    if (!el) return;
-    requestAnimationFrame(() => {
-      el.scrollLeft = el.scrollWidth;
-    });
-  }, [energySeriesByArea, bucket]);
-
-  useEffect(() => {
-    const el = batteryScrollRef.current;
-    if (!el) return;
-    requestAnimationFrame(() => {
-      el.scrollLeft = el.scrollWidth;
-    });
-  }, [batterySeriesByEntity, bucket]);
-
-  useEffect(() => {
-    const el = boilerScrollRef.current;
-    if (!el) return;
-    requestAnimationFrame(() => {
-      el.scrollLeft = el.scrollWidth;
-    });
-  }, [boilerHeatingSeriesByEntity]);
+  // Auto-scroll removed: admin charts should keep axes visible and avoid tooltip clipping.
 
   // Coverage removed from UI; metric no longer used
 
@@ -702,10 +692,19 @@ export default function AdminDashboard({ username }: Props) {
     return params.toString();
   }, []);
 
+  const buildRadiatorParams = useCallback(() => {
+    const params = new URLSearchParams();
+    params.set('days', 'all');
+    params.set('groupBy', 'area');
+    params.set('label', 'Radiator');
+    return params.toString();
+  }, []);
+
   const buildBoilerParams = useCallback(() => {
     const params = new URLSearchParams();
     params.set('days', 'all');
     params.set('groupBy', 'area');
+    params.set('label', 'Boiler');
     return params.toString();
   }, []);
 
@@ -738,19 +737,25 @@ export default function AdminDashboard({ username }: Props) {
   const loadSelectors = useCallback(async () => {
     try {
       setSelectorsError(null);
-      const [areasRes, entitiesRes, boilerRes] = await Promise.all([
+      const [areasRes, entitiesRes, radiatorRes, boilerRes] = await Promise.all([
         platformFetch('/api/admin/areas', { cache: 'no-store', credentials: 'include' }),
         platformFetch(`/api/admin/monitoring/entities?${buildSelectorParams()}`, { cache: 'no-store', credentials: 'include' }),
-        platformFetch(`/api/admin/monitoring/boiler-entities?${buildSelectorParams()}`, {
+        platformFetch(`/api/admin/monitoring/boiler-entities?${buildSelectorParams()}&label=Radiator`, {
+          cache: 'no-store',
+          credentials: 'include',
+        }),
+        platformFetch(`/api/admin/monitoring/boiler-entities?${buildSelectorParams()}&label=Boiler`, {
           cache: 'no-store',
           credentials: 'include',
         }),
       ]);
       const areasData = await areasRes.json().catch(() => ({}));
       const entitiesData = await entitiesRes.json().catch(() => ({}));
+      const radiatorData = await radiatorRes.json().catch(() => ({}));
       const boilerData = await boilerRes.json().catch(() => ({}));
       if (!areasRes.ok) throw new Error(areasData.error || 'Unable to load areas.');
       if (!entitiesRes.ok) throw new Error(entitiesData.error || 'Unable to load entities.');
+      if (!radiatorRes.ok) throw new Error(radiatorData.error || 'Unable to load radiator devices.');
       if (!boilerRes.ok) throw new Error(boilerData.error || 'Unable to load boiler devices.');
       const areaList: string[] = Array.isArray(areasData.areas)
         ? Array.from(
@@ -767,14 +772,18 @@ export default function AdminDashboard({ username }: Props) {
       const batteryList = Array.isArray(entitiesData.batteryEntities) ? entitiesData.batteryEntities : [];
       setEnergyEntities(energyList.filter((e: EntityOption) => (e.area || '').toLowerCase() !== 'unassigned'));
       setBatteryEntities(batteryList.filter((e: EntityOption) => (e.area || '').toLowerCase() !== 'unassigned'));
+      const radiatorList = Array.isArray(radiatorData.boilerEntities) ? radiatorData.boilerEntities : [];
+      setRadiatorEntities(radiatorList.filter((e: EntityOption) => (e.area || '').toLowerCase() !== 'unassigned'));
       const boilerList = Array.isArray(boilerData.boilerEntities) ? boilerData.boilerEntities : [];
       setBoilerEntities(boilerList.filter((e: EntityOption) => (e.area || '').toLowerCase() !== 'unassigned'));
 
       const energyIds = new Set(energyList.map((e: EntityOption) => e.entityId));
       const batteryIds = new Set(batteryList.map((e: EntityOption) => e.entityId));
+      const radiatorIds = new Set(radiatorList.map((e: EntityOption) => e.entityId));
       const boilerIds = new Set(boilerList.map((e: EntityOption) => e.entityId));
       setSelectedEnergyEntities((prev) => prev.filter((id) => energyIds.has(id)));
       setSelectedBatteryEntities((prev) => prev.filter((id) => batteryIds.has(id)));
+      setSelectedRadiatorEntities((prev) => prev.filter((id) => radiatorIds.has(id)));
       setSelectedBoilerEntities((prev) => prev.filter((id) => boilerIds.has(id)));
     } catch (err) {
       console.error('Failed to load selectors', err);
@@ -782,25 +791,43 @@ export default function AdminDashboard({ username }: Props) {
     }
   }, [buildSelectorParams]);
 
-  const loadBoilerHistory = useCallback(async (paramsOverride?: string) => {
+  const loadHeatingHistory = useCallback(async () => {
     setBoilerLoading(true);
     setBoilerError(null);
     try {
-      const params = paramsOverride ?? buildBoilerParams();
-      const res = await platformFetch(`/api/admin/monitoring/boiler-history?${params}`, {
-        cache: 'no-store',
-        credentials: 'include',
-      });
-      const data = (await res.json().catch(() => null)) as BoilerHistoryResponse | null;
-      if (!res.ok || !data?.ok) {
+      const [radiatorRes, boilerRes] = await Promise.all([
+        platformFetch(`/api/admin/monitoring/boiler-history?${buildRadiatorParams()}`, {
+          cache: 'no-store',
+          credentials: 'include',
+        }),
+        platformFetch(`/api/admin/monitoring/boiler-history?${buildBoilerParams()}`, {
+          cache: 'no-store',
+          credentials: 'include',
+        }),
+      ]);
+
+      const radiatorData = (await radiatorRes.json().catch(() => null)) as BoilerHistoryResponse | null;
+      if (!radiatorRes.ok || !radiatorData?.ok) {
         const message =
-          data && typeof data.error === 'string' && data.error.length > 0 ? data.error : 'Unable to load boiler trend.';
+          radiatorData && typeof radiatorData.error === 'string' && radiatorData.error.length > 0
+            ? radiatorData.error
+            : 'Unable to load radiator trend.';
         throw new Error(message);
       }
-      const temperatureSeries: BoilerTemperatureSeries[] = Array.isArray(data.seriesTemperatureByEntity)
-        ? data.seriesTemperatureByEntity
-        : Array.isArray(data.seriesByEntity)
-        ? data.seriesByEntity.map((series) => ({
+
+      const boilerData = (await boilerRes.json().catch(() => null)) as BoilerHistoryResponse | null;
+      if (!boilerRes.ok || !boilerData?.ok) {
+        const message =
+          boilerData && typeof boilerData.error === 'string' && boilerData.error.length > 0
+            ? boilerData.error
+            : 'Unable to load boiler trend.';
+        throw new Error(message);
+      }
+
+      const temperatureSeries: BoilerTemperatureSeries[] = Array.isArray(radiatorData.seriesTemperatureByEntity)
+        ? radiatorData.seriesTemperatureByEntity
+        : Array.isArray(radiatorData.seriesByEntity)
+        ? radiatorData.seriesByEntity.map((series) => ({
             entityId: series.entityId,
             name: series.name,
             area: series.area,
@@ -812,39 +839,29 @@ export default function AdminDashboard({ username }: Props) {
             })),
           }))
         : [];
-      const heatingSeries: BoilerHeatingSeries[] = Array.isArray(data.seriesHeatingStateByEntity)
-        ? data.seriesHeatingStateByEntity
-        : temperatureSeries.map((series) => ({
-            entityId: series.entityId,
-            name: series.name,
-            area: series.area,
-            points: series.points.map((point) => ({
-              bucketStart: point.bucketStart,
-              label: point.label,
-              state:
-                point.targetTemperature == null
-                  ? null
-                  : point.targetTemperature > point.currentTemperature
-                  ? 1
-                  : 0,
-            })),
-          }));
-      setBoilerTemperatureSeriesAll(temperatureSeries);
+
+      const heatingSeries: BoilerHeatingSeries[] = Array.isArray(boilerData.seriesHeatingStateByEntity)
+        ? boilerData.seriesHeatingStateByEntity
+        : [];
+
+      setRadiatorTemperatureSeriesAll(temperatureSeries);
       setBoilerHeatingSeriesAll(heatingSeries);
+      setBoilerMeta(boilerData.meta ?? null);
     } catch (err) {
-      console.error('Failed to load boiler trend', err);
-      setBoilerError(friendlyUnknownError(err, 'Unable to load boiler trend.'));
-      setBoilerTemperatureSeriesAll([]);
+      console.error('Failed to load heating trends', err);
+      setBoilerError(friendlyUnknownError(err, 'Unable to load heating trends.'));
+      setRadiatorTemperatureSeriesAll([]);
       setBoilerHeatingSeriesAll([]);
+      setBoilerMeta(null);
     } finally {
       setBoilerLoading(false);
     }
-  }, [buildBoilerParams]);
+  }, [buildBoilerParams, buildRadiatorParams]);
 
   useEffect(() => {
     void loadSummary();
     void loadSelectors();
-    void loadBoilerHistory();
+    void loadHeatingHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -852,7 +869,7 @@ export default function AdminDashboard({ username }: Props) {
   const lastFetchedDisplay = lastFetchedAt ? formatDateTime(lastFetchedAt) : 'Never';
   const handleRefresh = () => {
     void loadSummary();
-    void loadBoilerHistory();
+    void loadHeatingHistory();
   };
 
   return (
@@ -1069,24 +1086,15 @@ export default function AdminDashboard({ username }: Props) {
               placeholder="All energy entities"
             />
           </div>
-          <div
-            ref={energyScrollRef}
-            className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm"
-          >
-            <div
-              className="min-w-[900px]"
-              style={{ minWidth: `${Math.max(900, energyPointCount * 32)}px` }}
-            >
-              <MultiLineChart
-                id="energy-trend"
-                title="Energy by area"
-                series={energySeriesByArea}
-                valueUnit="kWh"
-                emptyLabel="No energy readings in this window."
-                formatValue={(v) => Number(v).toFixed(2)}
-                forcedWidth={Math.max(900, energyPointCount * 32)}
-              />
-            </div>
+          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+            <MultiLineChart
+              id="energy-trend"
+              title="Energy by area"
+              series={energySeriesByArea}
+              valueUnit="kWh"
+              emptyLabel="No energy readings in this window."
+              formatValue={(v) => Number(v).toFixed(2)}
+            />
           </div>
           {summary?.seriesTotalCost?.length ? (
             <div className="mt-2 text-sm text-slate-600">Cost trend mirrors energy using configured £/kWh.</div>
@@ -1109,82 +1117,91 @@ export default function AdminDashboard({ username }: Props) {
               placeholder="All battery entities"
             />
           </div>
-          <div
-            ref={batteryScrollRef}
-            className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm"
-          >
-            <div
-              className="min-w-[900px]"
-              style={{ minWidth: `${Math.max(900, batteryPointCount * 32)}px` }}
-            >
-              <MultiLineChart
-                id="battery-trend"
-                title="Battery by entity"
-                series={batterySeriesByEntity}
-                valueUnit="%"
-                emptyLabel="No battery readings in this window."
-                formatValue={(v) => v.toFixed(0)}
-                forcedWidth={Math.max(900, batteryPointCount * 32)}
-              />
-            </div>
+          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+            <MultiLineChart
+              id="battery-trend"
+              title="Battery by entity"
+              series={batterySeriesByEntity}
+              valueUnit="%"
+              emptyLabel="No battery readings in this window."
+              formatValue={(v) => v.toFixed(0)}
+            />
           </div>
           <p className="text-xs text-slate-500">Average of latest battery % per entity per bucket.</p>
         </section>
 
         <section className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">Boiler temperature trend</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Heating trends</h2>
             <span className="text-xs text-slate-500">
-              Temp points: {boilerTemperaturePointCount} · State points: {boilerStatePointCount}
+              Radiator temp points: {radiatorTemperaturePointCount} · Boiler state points: {boilerStatePointCount}
             </span>
           </div>
           <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
-            <MultiSelect
-              label="Boiler entities"
-              options={boilerEntities.map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
-              selected={selectedBoilerEntities}
-              onChange={setSelectedBoilerEntities}
-              placeholder="All boiler entities"
-            />
+            <div className="flex flex-wrap gap-3">
+              <MultiSelect
+                label="Radiator devices"
+                options={radiatorEntities.map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
+                selected={selectedRadiatorEntities}
+                onChange={setSelectedRadiatorEntities}
+                placeholder="All radiators"
+              />
+              <MultiSelect
+                label="Boiler devices"
+                options={boilerEntities.map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
+                selected={selectedBoilerEntities}
+                onChange={setSelectedBoilerEntities}
+                placeholder="All boilers"
+              />
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200/70 bg-white/90 px-4 py-3 text-sm text-slate-700 shadow-sm">
+            {boilerMeta?.estimatedCost != null ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="font-semibold text-slate-900">Estimated boiler cost</span>
+                <span>{costFmt.format(boilerMeta.estimatedCost)}</span>
+                <span className="text-slate-500">
+                  ({numberFmt.format(boilerMeta.estimatedOnHours ?? 0)}h ON ·{' '}
+                  {numberFmt.format(boilerMeta.estimatedKwh ?? 0)} kWh @ £{boilerMeta.pricePerKwh}/kWh · {boilerMeta.boilerPowerKw} kW)
+                </span>
+              </div>
+            ) : (
+              <div className="text-slate-600">
+                Boiler cost estimates require server config: set <span className="font-mono">BOILER_POWER_KW</span> and{' '}
+                <span className="font-mono">HEATING_PRICE_PER_KWH</span> (or reuse <span className="font-mono">ELECTRICITY_PRICE_PER_KWH</span>).
+              </div>
+            )}
           </div>
           <div
-            className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm"
+            className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm"
           >
-            <div
-              className="min-w-[900px]"
-              style={{ minWidth: `${Math.max(900, boilerTemperaturePointCount * 44)}px` }}
-            >
+            <div>
               {boilerError ? (
                 <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
                   {boilerError}
                 </div>
               ) : boilerLoading ? (
                 <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  Loading boiler trend…
+                  Loading heating trends…
                 </div>
-              ) : boilerTemperatureSeriesByEntity.length === 0 ? (
+              ) : radiatorTemperatureSeriesByEntity.length === 0 ? (
                 <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  No boiler readings in this window.
+                  No radiator readings in this window.
                 </div>
               ) : (
                 <BoilerTemperatureBandChart
                   id="boiler-temperature-band"
-                  title="Current vs target temperature by entity"
-                  series={boilerTemperatureSeriesByEntity}
-                  emptyLabel="No boiler readings in this window."
-                  forcedWidth={Math.max(900, boilerTemperaturePointCount * 44)}
+                  title="Radiator current vs target temperature"
+                  series={radiatorTemperatureSeriesByEntity}
+                  emptyLabel="No radiator readings in this window."
                 />
               )}
             </div>
           </div>
           <div
-            ref={boilerScrollRef}
-            className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm"
+            className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm"
           >
-            <div
-              className="min-w-[900px]"
-              style={{ minWidth: `${Math.max(900, boilerStatePointCount * 40)}px` }}
-            >
+            <div>
               {boilerError ? (
                 <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
                   {boilerError}
@@ -1200,16 +1217,15 @@ export default function AdminDashboard({ username }: Props) {
               ) : (
                 <BoilerHeatingStateChart
                   id="boiler-heating-state"
-                  title="Boiler heating ON/OFF by entity"
+                  title="Boiler ON/OFF (derived from target > current)"
                   series={boilerHeatingSeriesByEntity}
                   emptyLabel="No heating state samples in this window."
-                  forcedWidth={Math.max(900, boilerStatePointCount * 40)}
                 />
               )}
             </div>
           </div>
           <p className="text-xs text-slate-500">
-            2-hour snapshots. Heating ON when target is above current; OFF when target is below or equal to current.
+            2-hour snapshots. Boiler ON/OFF is derived: ON when target is above current; OFF when target is below or equal to current.
           </p>
         </section>
 

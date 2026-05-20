@@ -33,12 +33,14 @@ export async function GET(req: NextRequest) {
     const refreshToken = await prisma.alexaRefreshToken.findFirst({
       where: { userId: authUser.id, revoked: false },
     });
-    const linked = !!refreshToken;
     const latestSkillLink = await prisma.alexaSkillUserLink.findFirst({
       where: { userId: authUser.id },
       orderBy: { updatedAt: 'desc' },
       select: { disabledReason: true, disabledAt: true },
     });
+
+    const disabled = !!latestSkillLink?.disabledAt;
+    const linked = !!refreshToken && !disabled;
 
     const reason =
       linked
