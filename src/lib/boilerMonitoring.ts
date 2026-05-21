@@ -5,7 +5,8 @@ import { getCurrentTemperature, getTargetTemperature } from '@/lib/deviceCapabil
 
 const HEAT_LABELS = new Set(['Boiler', 'Radiator']);
 const MIN_INTERVAL_MS = 2 * 60 * 60 * 1000;
-const MAX_DELTA_SECONDS = 3 * 60 * 60;
+const MAX_SNAPSHOT_INTERVAL_SECONDS = 24 * 60 * 60;
+const SNAPSHOT_TOLERANCE_SECONDS = 10 * 60;
 const MAX_ERROR_LENGTH = 300;
 
 type ConnectionSnapshotFailure = {
@@ -103,6 +104,7 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
             lastSnapshotOnSeconds: true,
             lastSnapshotOffSeconds: true,
             lastSnapshotUnknownSeconds: true,
+            lastSnapshotAt: true,
           },
         })
       : Promise.resolve([]),
@@ -117,6 +119,7 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
             lastSnapshotOnSeconds: true,
             lastSnapshotOffSeconds: true,
             lastSnapshotUnknownSeconds: true,
+            lastSnapshotAt: true,
           },
         })
       : Promise.resolve([]),
@@ -160,23 +163,44 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
     const cursorOff = acc.lastSnapshotOffSeconds;
     const cursorUnknown = acc.lastSnapshotUnknownSeconds;
 
+    const lastSnapshotAt = acc.lastSnapshotAt instanceof Date ? acc.lastSnapshotAt : null;
+    const intervalSecondsRaw =
+      lastSnapshotAt && Number.isFinite(lastSnapshotAt.getTime())
+        ? Math.floor((now.getTime() - lastSnapshotAt.getTime()) / 1000)
+        : null;
+    const intervalSeconds = intervalSecondsRaw !== null ? Math.max(0, intervalSecondsRaw) : null;
+    const intervalClamp =
+      intervalSeconds !== null
+        ? Math.min(MAX_SNAPSHOT_INTERVAL_SECONDS, intervalSeconds + SNAPSHOT_TOLERANCE_SECONDS)
+        : MAX_SNAPSHOT_INTERVAL_SECONDS;
+
     let onForSeconds: number | null = null;
     let offForSeconds: number | null = null;
     let unknownForSeconds: number | null = null;
 
-    if (typeof cursorOn === 'number' && Number.isFinite(cursorOn) && typeof cursorOff === 'number' && Number.isFinite(cursorOff)) {
+    if (typeof cursorOn === 'number' && Number.isFinite(cursorOn)) {
       const rawOn = onSeconds - cursorOn;
+      if (rawOn >= 0) onForSeconds = Math.min(intervalClamp, Math.floor(rawOn));
+    }
+
+    if (typeof cursorOff === 'number' && Number.isFinite(cursorOff)) {
       const rawOff = offSeconds - cursorOff;
-      if (rawOn >= 0 && rawOff >= 0) {
-        onForSeconds = Math.min(MAX_DELTA_SECONDS, Math.floor(rawOn));
-        offForSeconds = Math.min(MAX_DELTA_SECONDS, Math.floor(rawOff));
-      }
+      if (rawOff >= 0) offForSeconds = Math.min(intervalClamp, Math.floor(rawOff));
     }
 
     if (typeof cursorUnknown === 'number' && Number.isFinite(cursorUnknown)) {
       const rawUnknown = unknownSeconds - cursorUnknown;
-      if (rawUnknown >= 0) {
-        unknownForSeconds = Math.min(MAX_DELTA_SECONDS, Math.floor(rawUnknown));
+      if (rawUnknown >= 0) unknownForSeconds = Math.min(intervalClamp, Math.floor(rawUnknown));
+    }
+
+    if (
+      typeof onForSeconds === 'number' &&
+      typeof offForSeconds === 'number' &&
+      typeof unknownForSeconds === 'number'
+    ) {
+      const total = onForSeconds + offForSeconds + unknownForSeconds;
+      if (total > intervalClamp) {
+        unknownForSeconds = Math.max(0, intervalClamp - onForSeconds - offForSeconds);
       }
     }
 
