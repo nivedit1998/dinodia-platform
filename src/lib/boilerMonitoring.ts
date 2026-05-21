@@ -7,7 +7,13 @@ const HEAT_LABELS = new Set(['Boiler', 'Radiator']);
 const MIN_INTERVAL_MS = 2 * 60 * 60 * 1000;
 const MAX_SNAPSHOT_INTERVAL_SECONDS = 24 * 60 * 60;
 const SNAPSHOT_TOLERANCE_SECONDS = 10 * 60;
+const HUB_OFFLINE_JITTER_SECONDS = 20 * 60;
 const MAX_ERROR_LENGTH = 300;
+
+function clampSeconds(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
 
 type ConnectionSnapshotFailure = {
   haConnectionId: number;
@@ -28,8 +34,32 @@ function normalizeErrorMessage(err: unknown): string {
 }
 
 export async function captureBoilerTempSnapshotForConnection(haConnectionId: number, now = new Date()) {
-  const devices = await getDevicesForHaConnection(haConnectionId);
+  const [devices, haMeta] = await Promise.all([
+    getDevicesForHaConnection(haConnectionId),
+    prisma.haConnection.findUnique({
+      where: { id: haConnectionId },
+      select: {
+        home: {
+          select: {
+            hubInstall: {
+              select: { lastSeenAt: true, platformSyncIntervalMinutes: true },
+            },
+          },
+        },
+      },
+    }),
+  ]);
   const boilerDevices = devices.filter((d) => HEAT_LABELS.has(getGroupLabel(d)));
+
+  const hubInstall = haMeta?.home?.hubInstall ?? null;
+  const offlineDetectionEnabled = Boolean(hubInstall);
+  const hubLastSeenAt = hubInstall?.lastSeenAt instanceof Date ? hubInstall.lastSeenAt : null;
+  const syncIntervalRaw = hubInstall?.platformSyncIntervalMinutes;
+  const platformSyncIntervalMinutes =
+    typeof syncIntervalRaw === 'number' && Number.isFinite(syncIntervalRaw) && syncIntervalRaw > 0
+      ? Math.floor(syncIntervalRaw)
+      : 2;
+  const offlineGraceSeconds = platformSyncIntervalMinutes * 60 + HUB_OFFLINE_JITTER_SECONDS;
 
   type HeatGroupLabel = 'Boiler' | 'Radiator';
   type SnapshotReading = {
@@ -174,6 +204,11 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
         ? Math.min(MAX_SNAPSHOT_INTERVAL_SECONDS, intervalSeconds + SNAPSHOT_TOLERANCE_SECONDS)
         : MAX_SNAPSHOT_INTERVAL_SECONDS;
 
+    const snapshotStartAt =
+      lastSnapshotAt && Number.isFinite(lastSnapshotAt.getTime())
+        ? lastSnapshotAt
+        : new Date(now.getTime() - intervalClamp * 1000);
+
     let onForSeconds: number | null = null;
     let offForSeconds: number | null = null;
     let unknownForSeconds: number | null = null;
@@ -201,6 +236,37 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
       const total = onForSeconds + offForSeconds + unknownForSeconds;
       if (total > intervalClamp) {
         unknownForSeconds = Math.max(0, intervalClamp - onForSeconds - offForSeconds);
+      }
+    }
+
+    // Phase 9: hub-offline attribution.
+    // Remove "quiet period" UNKNOWN and instead attribute UNKNOWN only when the hub heartbeat is stale.
+    if (offlineDetectionEnabled) {
+      const unknownSecondsByHeartbeat = !hubLastSeenAt
+        ? intervalClamp
+        : clampSeconds(
+            Math.floor(
+              (now.getTime() -
+                Math.max(
+                  snapshotStartAt.getTime(),
+                  hubLastSeenAt.getTime() + offlineGraceSeconds * 1000
+                )) /
+                1000
+            ),
+            0,
+            intervalClamp
+          );
+
+      if (unknownSecondsByHeartbeat > 0) {
+        const baseUnknown = typeof unknownForSeconds === 'number' ? unknownForSeconds : 0;
+        unknownForSeconds = Math.max(baseUnknown, unknownSecondsByHeartbeat);
+
+        const onVal = typeof onForSeconds === 'number' ? onForSeconds : 0;
+        const offVal = typeof offForSeconds === 'number' ? offForSeconds : 0;
+        const total = onVal + offVal + unknownForSeconds;
+        if (total > intervalClamp) {
+          unknownForSeconds = Math.max(0, intervalClamp - onVal - offVal);
+        }
       }
     }
 
