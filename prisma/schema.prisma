@@ -329,6 +329,8 @@ model HubInstall {
   graceMinutes                Int                          @default(20) // minutes
   publishedHubTokenVersion    Int                          @default(0)
   lastAckedHubTokenVersion    Int                          @default(0)
+  heatingUsageResetRequestedAt DateTime?
+  heatingUsageResetCompletedAt DateTime?
   lastReportedLanBaseUrl      String?
   lastReportedLanBaseUrlAt    DateTime?
   lastSeenAt                  DateTime?

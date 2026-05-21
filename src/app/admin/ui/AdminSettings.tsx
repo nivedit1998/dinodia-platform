@@ -1573,7 +1573,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
             <p className="mt-3 text-xs text-slate-600">
               Choose if everyone is leaving or if tenants stay. FULL_RESET removes all users, tenant-owned
               devices/entities and tenant-created automations, telemetry, onboarding/support artifacts, and
-              scrubs the property address to UNCLAIMED. OWNER_TRANSFER removes only you and keeps the home active.
+              scrubs the property address to UNCLAIMED. OWNER_TRANSFER removes only you, keeps occupiers active, and scrubs monitoring + heating telemetry so the incoming homeowner starts fresh.
             </p>
             {sellingPreviewLoading && (
               <p className="mt-2 text-xs text-slate-500">Loading deregister impact preview…</p>
@@ -1590,6 +1590,8 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                   Users: {sellingPreview.fullReset.dbCounts?.users ?? 0} ·
                   Monitoring readings: {sellingPreview.fullReset.dbCounts?.monitoringReadings ?? 0} ·
                   Boiler readings: {sellingPreview.fullReset.dbCounts?.boilerTemperatureReadings ?? 0} ·
+                  Boiler usage rows: {sellingPreview.fullReset.dbCounts?.boilerUsageAccumulators ?? 0} ·
+                  Radiator usage rows: {sellingPreview.fullReset.dbCounts?.radiatorUsageAccumulators ?? 0} ·
                   Pending onboarding: {sellingPreview.fullReset.dbCounts?.pendingHomeownerOnboardings ?? 0}
                 </p>
               </div>
@@ -1601,6 +1603,12 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                   Users removed: {sellingPreview.ownerTransfer.dbCounts?.users ?? 0} ·
                   Trusted devices: {sellingPreview.ownerTransfer.dbCounts?.trustedDevices ?? 0} ·
                   Auth challenges: {sellingPreview.ownerTransfer.dbCounts?.authChallenges ?? 0}
+                </p>
+                <p>
+                  Monitoring readings scrubbed: {sellingPreview.ownerTransfer.dbCounts?.monitoringReadings ?? 0} ·
+                  Boiler readings scrubbed: {sellingPreview.ownerTransfer.dbCounts?.boilerTemperatureReadings ?? 0} ·
+                  Boiler usage rows reset: {sellingPreview.ownerTransfer.dbCounts?.boilerUsageAccumulators ?? 0} ·
+                  Radiator usage rows reset: {sellingPreview.ownerTransfer.dbCounts?.radiatorUsageAccumulators ?? 0}
                 </p>
               </div>
             )}

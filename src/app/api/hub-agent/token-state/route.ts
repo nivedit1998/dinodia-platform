@@ -213,6 +213,7 @@ export async function POST(req: NextRequest) {
     agentSeenVersion?: number;
     lanBaseUrl?: string;
     heatingUsage?: HeatingUsageUpload;
+    heatingUsageResetAckAt?: string;
   };
   try {
     body = await req.json();
@@ -223,6 +224,7 @@ export async function POST(req: NextRequest) {
   const { serial, ts, nonce, sig } = body ?? {};
   const agentSeenVersion = Number(body?.agentSeenVersion ?? 0);
   const reportedLanBaseUrl = normalizeLanBaseUrl(body?.lanBaseUrl);
+  const heatingUsageResetAckAt = parseIsoDate(body?.heatingUsageResetAckAt);
 
   if (!serial || typeof ts !== 'number' || !nonce || !sig) {
     return apiFailFromStatus(400, 'serial, ts, nonce, sig are required.');
@@ -240,6 +242,8 @@ export async function POST(req: NextRequest) {
       graceMinutes: true,
       publishedHubTokenVersion: true,
       lastAckedHubTokenVersion: true,
+      heatingUsageResetRequestedAt: true,
+      heatingUsageResetCompletedAt: true,
       hubTokens: true,
       homeId: true,
       home: { select: { id: true, haConnectionId: true } },
@@ -368,6 +372,28 @@ export async function POST(req: NextRequest) {
     }
   });
 
+  const pendingHeatingUsageResetAt =
+    hubInstall.heatingUsageResetRequestedAt &&
+    (!hubInstall.heatingUsageResetCompletedAt ||
+      hubInstall.heatingUsageResetCompletedAt.getTime() < hubInstall.heatingUsageResetRequestedAt.getTime())
+      ? hubInstall.heatingUsageResetRequestedAt.toISOString()
+      : null;
+
+  // Phase 8: mark hub-side heating usage reset as completed once the hub agent acknowledges it.
+  let heatingUsageResetAtForResponse: string | null = pendingHeatingUsageResetAt;
+  if (heatingUsageResetAckAt && hubInstall.heatingUsageResetRequestedAt) {
+    const requestedAtMs = hubInstall.heatingUsageResetRequestedAt.getTime();
+    const ackMs = heatingUsageResetAckAt.getTime();
+    const completedMs = hubInstall.heatingUsageResetCompletedAt?.getTime() ?? 0;
+    if (ackMs >= requestedAtMs && ackMs > completedMs) {
+      await prisma.hubInstall.update({
+        where: { id: hubInstall.id },
+        data: { heatingUsageResetCompletedAt: heatingUsageResetAckAt },
+      });
+      heatingUsageResetAtForResponse = null;
+    }
+  }
+
   if (hubInstall.home?.haConnectionId && body?.heatingUsage) {
     try {
       const summary = await ingestHeatingUsage({
@@ -398,5 +424,6 @@ export async function POST(req: NextRequest) {
     publishedVersion,
     latestVersion,
     hubTokenHashes: hashes,
+    heatingUsageResetAt: heatingUsageResetAtForResponse,
   });
 }
