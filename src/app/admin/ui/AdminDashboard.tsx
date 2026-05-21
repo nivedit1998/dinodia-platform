@@ -33,7 +33,7 @@ type BoilerHeatingPoint = { bucketStart: string; label: string; state: number | 
 type BoilerEntitySeries = { entityId: string; name: string; area: string; points: BoilerHistoryPoint[] };
 type BoilerTemperatureSeries = { entityId: string; name: string; area: string; points: BoilerTemperaturePoint[] };
 type BoilerHeatingSeries = { entityId: string; name: string; area: string; points: BoilerHeatingPoint[] };
-type HeatingUsagePoint = { ts: string; onMinutes: number | null; offMinutes: number | null };
+type HeatingUsagePoint = { ts: string; onMinutes: number | null; offMinutes: number | null; unknownMinutes?: number | null };
 type HeatingUsageEntitySeries = { entityId: string; name: string; area: string; label?: string | null; points: HeatingUsagePoint[] };
 type HeatingUsageResponse = {
   ok: boolean;
@@ -949,6 +949,7 @@ export default function AdminDashboard({ username }: Props) {
                 label: new Date(p.ts).toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }),
                 onMinutes: typeof p.onMinutes === 'number' ? p.onMinutes : null,
                 offMinutes: typeof p.offMinutes === 'number' ? p.offMinutes : null,
+                unknownMinutes: typeof p.unknownMinutes === 'number' ? p.unknownMinutes : null,
               })),
             }))
           : [];

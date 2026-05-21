@@ -99,8 +99,10 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
             entityId: true,
             onSeconds: true,
             offSeconds: true,
+            unknownSeconds: true,
             lastSnapshotOnSeconds: true,
             lastSnapshotOffSeconds: true,
+            lastSnapshotUnknownSeconds: true,
           },
         })
       : Promise.resolve([]),
@@ -111,8 +113,10 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
             entityId: true,
             onSeconds: true,
             offSeconds: true,
+            unknownSeconds: true,
             lastSnapshotOnSeconds: true,
             lastSnapshotOffSeconds: true,
+            lastSnapshotUnknownSeconds: true,
           },
         })
       : Promise.resolve([]),
@@ -126,8 +130,10 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
     entityId: string;
     onSeconds: number;
     offSeconds: number;
+    unknownSeconds: number;
     onForSeconds: number | null;
     offForSeconds: number | null;
+    unknownForSeconds: number | null;
   }> = [];
 
   const data = toInsert.map((reading) => {
@@ -141,6 +147,7 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
         targetTemperature: reading.targetTemperature,
         onForSeconds: null,
         offForSeconds: null,
+        unknownForSeconds: null,
         unit: reading.unit,
         capturedAt: reading.capturedAt,
       };
@@ -148,11 +155,14 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
 
     const onSeconds = Math.max(0, Math.floor(Number(acc.onSeconds ?? 0)));
     const offSeconds = Math.max(0, Math.floor(Number(acc.offSeconds ?? 0)));
+    const unknownSeconds = Math.max(0, Math.floor(Number(acc.unknownSeconds ?? 0)));
     const cursorOn = acc.lastSnapshotOnSeconds;
     const cursorOff = acc.lastSnapshotOffSeconds;
+    const cursorUnknown = acc.lastSnapshotUnknownSeconds;
 
     let onForSeconds: number | null = null;
     let offForSeconds: number | null = null;
+    let unknownForSeconds: number | null = null;
 
     if (typeof cursorOn === 'number' && Number.isFinite(cursorOn) && typeof cursorOff === 'number' && Number.isFinite(cursorOff)) {
       const rawOn = onSeconds - cursorOn;
@@ -163,13 +173,22 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
       }
     }
 
+    if (typeof cursorUnknown === 'number' && Number.isFinite(cursorUnknown)) {
+      const rawUnknown = unknownSeconds - cursorUnknown;
+      if (rawUnknown >= 0) {
+        unknownForSeconds = Math.min(MAX_DELTA_SECONDS, Math.floor(rawUnknown));
+      }
+    }
+
     cursorUpdates.push({
       groupLabel: reading.groupLabel,
       entityId: reading.entityId,
       onSeconds,
       offSeconds,
+      unknownSeconds,
       onForSeconds,
       offForSeconds,
+      unknownForSeconds,
     });
 
     return {
@@ -180,6 +199,7 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
       targetTemperature: reading.targetTemperature,
       onForSeconds,
       offForSeconds,
+      unknownForSeconds,
       unit: reading.unit,
       capturedAt: reading.capturedAt,
     };
@@ -199,6 +219,7 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
               data: {
                 lastSnapshotOnSeconds: update.onSeconds,
                 lastSnapshotOffSeconds: update.offSeconds,
+                lastSnapshotUnknownSeconds: update.unknownSeconds,
                 lastSnapshotAt: now,
               },
             });
@@ -210,6 +231,7 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
               data: {
                 lastSnapshotOnSeconds: update.onSeconds,
                 lastSnapshotOffSeconds: update.offSeconds,
+                lastSnapshotUnknownSeconds: update.unknownSeconds,
                 lastSnapshotAt: now,
               },
             });

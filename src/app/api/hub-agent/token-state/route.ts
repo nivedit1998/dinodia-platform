@@ -26,8 +26,10 @@ type HeatingUsageDeviceUpdate = {
   entityId: string;
   onSeconds: number;
   offSeconds: number;
+  unknownSeconds: number | null;
   lastSeenAt: string;
   lastWasOn: boolean | null;
+  lastWasKnown: boolean | null;
 };
 
 type HeatingUsageUpload = {
@@ -58,20 +60,26 @@ function normalizeHeatingUsageDeviceUpdate(value: unknown): HeatingUsageDeviceUp
   const entityId = typeof obj.entityId === 'string' ? obj.entityId.trim() : '';
   const onSeconds = asNonNegativeInt(obj.onSeconds);
   const offSeconds = asNonNegativeInt(obj.offSeconds);
+  const unknownSeconds = obj.unknownSeconds === undefined ? null : asNonNegativeInt(obj.unknownSeconds);
   const lastSeenAt = parseIsoDate(obj.lastSeenAt);
   const lastWasOn =
     obj.lastWasOn === null ? null : typeof obj.lastWasOn === 'boolean' ? obj.lastWasOn : null;
+  const lastWasKnown =
+    obj.lastWasKnown === null ? null : typeof obj.lastWasKnown === 'boolean' ? obj.lastWasKnown : null;
 
   if (!label || !entityId || !lastSeenAt) return null;
   if (onSeconds === null || offSeconds === null) return null;
+  if (obj.unknownSeconds !== undefined && unknownSeconds === null) return null;
 
   return {
     label,
     entityId,
     onSeconds,
     offSeconds,
+    unknownSeconds,
     lastSeenAt: lastSeenAt.toISOString(),
     lastWasOn,
+    lastWasKnown,
   };
 }
 
@@ -115,6 +123,14 @@ async function ingestHeatingUsage({
     }
 
     const lastSeenAt = new Date(update.lastSeenAt);
+    const normalizedLastWasKnown =
+      typeof update.lastWasKnown === 'boolean'
+        ? update.lastWasKnown
+        : typeof update.lastWasOn === 'boolean'
+        ? true
+        : false;
+    const normalizedLastWasOn =
+      normalizedLastWasKnown && typeof update.lastWasOn === 'boolean' ? update.lastWasOn : false;
     if (update.label === 'Boiler') {
       const existing = await prisma.boilerUsageAccumulator.findUnique({
         where: { haConnectionId_entityId: { haConnectionId, entityId: update.entityId } },
@@ -133,14 +149,18 @@ async function ingestHeatingUsage({
           entityId: update.entityId,
           onSeconds: update.onSeconds,
           offSeconds: update.offSeconds,
+          unknownSeconds: update.unknownSeconds ?? 0,
           lastSeenAt,
-          lastWasOn: update.lastWasOn,
+          lastWasOn: normalizedLastWasOn,
+          lastWasKnown: normalizedLastWasKnown,
         },
         update: {
           onSeconds: update.onSeconds,
           offSeconds: update.offSeconds,
+          ...(update.unknownSeconds !== null ? { unknownSeconds: update.unknownSeconds } : {}),
           lastSeenAt,
-          lastWasOn: update.lastWasOn,
+          lastWasOn: normalizedLastWasOn,
+          lastWasKnown: normalizedLastWasKnown,
         },
       });
       processed += 1;
@@ -164,14 +184,18 @@ async function ingestHeatingUsage({
         entityId: update.entityId,
         onSeconds: update.onSeconds,
         offSeconds: update.offSeconds,
+        unknownSeconds: update.unknownSeconds ?? 0,
         lastSeenAt,
-        lastWasOn: update.lastWasOn,
+        lastWasOn: normalizedLastWasOn,
+        lastWasKnown: normalizedLastWasKnown,
       },
       update: {
         onSeconds: update.onSeconds,
         offSeconds: update.offSeconds,
+        ...(update.unknownSeconds !== null ? { unknownSeconds: update.unknownSeconds } : {}),
         lastSeenAt,
-        lastWasOn: update.lastWasOn,
+        lastWasOn: normalizedLastWasOn,
+        lastWasKnown: normalizedLastWasKnown,
       },
     });
     processed += 1;

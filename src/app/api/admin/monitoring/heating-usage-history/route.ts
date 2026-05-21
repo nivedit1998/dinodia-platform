@@ -159,12 +159,13 @@ export async function GET(req: NextRequest) {
       capturedAt: true,
       onForSeconds: true,
       offForSeconds: true,
+      unknownForSeconds: true,
     },
   });
 
   const pointsByEntity = new Map<
     string,
-    Array<{ ts: string; onMinutes: number | null; offMinutes: number | null }>
+    Array<{ ts: string; onMinutes: number | null; offMinutes: number | null; unknownMinutes: number | null }>
   >();
 
   for (const row of readings) {
@@ -173,6 +174,7 @@ export async function GET(req: NextRequest) {
       ts: row.capturedAt.toISOString(),
       onMinutes: typeof row.onForSeconds === 'number' ? row.onForSeconds / 60 : null,
       offMinutes: typeof row.offForSeconds === 'number' ? row.offForSeconds / 60 : null,
+      unknownMinutes: typeof row.unknownForSeconds === 'number' ? row.unknownForSeconds / 60 : null,
     });
     pointsByEntity.set(row.entityId, list);
   }
@@ -198,4 +200,3 @@ export async function GET(req: NextRequest) {
     },
   });
 }
-
