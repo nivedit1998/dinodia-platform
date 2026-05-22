@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { entityId, name, blindTravelSeconds, area, label } = body;
+  const { entityId, name, blindTravelSeconds, area, label, boilerPowerKw, heatingPricePerKwh } = body;
 
   if (!entityId || !name) {
     return NextResponse.json(
@@ -54,6 +54,37 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const parseOptionalFloat = (value: unknown) => {
+    if (value === undefined) return { present: false as const, value: null as number | null };
+    if (value === null || value === '') return { present: true as const, value: null as number | null };
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(parsed)) {
+      return { present: true as const, value: NaN };
+    }
+    return { present: true as const, value: parsed };
+  };
+
+  const boilerPowerParsed = parseOptionalFloat(boilerPowerKw);
+  const heatingPriceParsed = parseOptionalFloat(heatingPricePerKwh);
+
+  if (boilerPowerParsed.present && boilerPowerParsed.value !== null) {
+    if (!Number.isFinite(boilerPowerParsed.value) || boilerPowerParsed.value <= 0 || boilerPowerParsed.value > 200) {
+      return NextResponse.json(
+        { error: 'Boiler power (kW) must be a positive number (max 200) when provided.' },
+        { status: 400 }
+      );
+    }
+  }
+
+  if (heatingPriceParsed.present && heatingPriceParsed.value !== null) {
+    if (!Number.isFinite(heatingPriceParsed.value) || heatingPriceParsed.value < 0 || heatingPriceParsed.value > 100) {
+      return NextResponse.json(
+        { error: 'Heating price per kWh must be a non-negative number (max 100) when provided.' },
+        { status: 400 }
+      );
+    }
+  }
+
   const hasArea = Object.prototype.hasOwnProperty.call(body, 'area');
   const areaValue =
     typeof area === 'string' && area.trim().length > 0 ? area.trim() : null;
@@ -67,6 +98,8 @@ export async function POST(req: NextRequest) {
     blindTravelSeconds: number | null;
     area?: string | null;
     label?: string | null;
+    boilerPowerKw?: number | null;
+    heatingPricePerKwh?: number | null;
   } = {
     name,
     blindTravelSeconds: blindTravelSecondsValue,
@@ -80,6 +113,14 @@ export async function POST(req: NextRequest) {
 
   if (hasArea) {
     updateData.area = areaValue;
+  }
+
+  if (boilerPowerParsed.present) {
+    updateData.boilerPowerKw = boilerPowerParsed.value === null ? null : boilerPowerParsed.value;
+  }
+
+  if (heatingPriceParsed.present) {
+    updateData.heatingPricePerKwh = heatingPriceParsed.value === null ? null : heatingPriceParsed.value;
   }
 
   const device = await prisma.device.upsert({
@@ -102,6 +143,8 @@ export async function POST(req: NextRequest) {
             ? labelValue
             : null,
       blindTravelSeconds: blindTravelSecondsValue,
+      boilerPowerKw: boilerPowerParsed.present ? boilerPowerParsed.value : null,
+      heatingPricePerKwh: heatingPriceParsed.present ? heatingPriceParsed.value : null,
     },
   });
 

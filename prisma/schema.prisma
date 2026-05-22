@@ -471,6 +471,8 @@ model Device {
   area               String?
   label              String?
   blindTravelSeconds Int?
+  boilerPowerKw      Float?
+  heatingPricePerKwh Float?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -7,8 +7,8 @@ import { platformFetch } from '@/lib/platformFetchClient';
 import { logout as performLogout } from '@/lib/logout';
 import { friendlyUnknownError } from '@/lib/clientError';
 import { MultiLineChart, MultiSeriesTrend } from './charts/LineAreaChart';
-import { BoilerHeatingStateChart, BoilerTemperatureBandChart, HeatingStateSeries } from './charts/BoilerCharts';
-import { HeatingUsageStackedBarChart, UsageSeries } from './charts/HeatingUsageCharts';
+import { BoilerTemperatureBandChart } from './charts/BoilerCharts';
+import { MetricGroupedBarChart, MetricPoint, MetricSeries, MetricTotalsBarChart } from './charts/HeatingTotalsCharts';
 
 type HistoryBucket = 'daily' | 'weekly' | 'monthly';
 type Preset = '7' | '30' | '90' | 'all' | 'custom';
@@ -33,15 +33,6 @@ type BoilerHeatingPoint = { bucketStart: string; label: string; state: number | 
 type BoilerEntitySeries = { entityId: string; name: string; area: string; points: BoilerHistoryPoint[] };
 type BoilerTemperatureSeries = { entityId: string; name: string; area: string; points: BoilerTemperaturePoint[] };
 type BoilerHeatingSeries = { entityId: string; name: string; area: string; points: BoilerHeatingPoint[] };
-type HeatingUsagePoint = { ts: string; onMinutes: number | null; offMinutes: number | null; unknownMinutes?: number | null };
-type HeatingUsageEntitySeries = { entityId: string; name: string; area: string; label?: string | null; points: HeatingUsagePoint[] };
-type HeatingUsageResponse = {
-  ok: boolean;
-  unit: string;
-  seriesByEntity: HeatingUsageEntitySeries[];
-  meta?: { label?: string | null; from?: string; to?: string };
-  error?: string;
-};
 
 type SummaryResponse = {
   ok: boolean;
@@ -327,10 +318,12 @@ export default function AdminDashboard({ username }: Props) {
   const [selectedRadiatorEntities, setSelectedRadiatorEntities] = useState<string[]>([]);
   const [selectedBoilerEntities, setSelectedBoilerEntities] = useState<string[]>([]);
   const [radiatorTemperatureSeriesAll, setRadiatorTemperatureSeriesAll] = useState<BoilerTemperatureSeries[]>([]);
-  const [boilerHeatingSeriesAll, setBoilerHeatingSeriesAll] = useState<BoilerHeatingSeries[]>([]);
-  const [radiatorUsageSeriesAll, setRadiatorUsageSeriesAll] = useState<UsageSeries[]>([]);
-  const [boilerUsageSeriesAll, setBoilerUsageSeriesAll] = useState<UsageSeries[]>([]);
-  const [boilerMeta, setBoilerMeta] = useState<BoilerHistoryResponse['meta'] | null>(null);
+  const [boilerUsageMinutesTotals, setBoilerUsageMinutesTotals] = useState<MetricPoint[]>([]);
+  const [radiatorUsageMinutesTotals, setRadiatorUsageMinutesTotals] = useState<MetricPoint[]>([]);
+  const [boilerUsageKwhTotals, setBoilerUsageKwhTotals] = useState<MetricPoint[]>([]);
+  const [radiatorUsageKwhTotals, setRadiatorUsageKwhTotals] = useState<MetricPoint[]>([]);
+  const [boilerCostTotals, setBoilerCostTotals] = useState<MetricPoint[]>([]);
+  const [radiatorCostByEntitySeries, setRadiatorCostByEntitySeries] = useState<MetricSeries[]>([]);
   const [boilerLoading, setBoilerLoading] = useState(false);
   const [boilerError, setBoilerError] = useState<string | null>(null);
   const [selectorsError, setSelectorsError] = useState<string | null>(null);
@@ -609,75 +602,6 @@ export default function AdminDashboard({ username }: Props) {
     rangeState.window,
   ]);
 
-  const boilerHeatingSeriesFiltered = useMemo(() => {
-    const hasAreaFilter = selectedAreas.length > 0;
-    const areaSet = new Set(selectedAreas);
-    const boilerEntitySet = new Set(selectedBoilerEntities);
-    const hasBoilerEntityFilter = boilerEntitySet.size > 0;
-    const rangeWindow = rangeState.window;
-    const rangeReady = preset !== 'custom' || (from && to);
-    const inRange = (iso: string) => {
-      if (!rangeWindow || !rangeReady) return true;
-      const date = new Date(iso);
-      if (Number.isNaN(date.getTime())) return false;
-      return date >= rangeWindow.from && date <= rangeWindow.to;
-    };
-
-    return boilerHeatingSeriesAll
-      .filter((series) => {
-        if (hasAreaFilter && !areaSet.has(series.area)) return false;
-        if (hasBoilerEntityFilter && !boilerEntitySet.has(series.entityId)) return false;
-        return true;
-      })
-      .map((series) => ({
-        ...series,
-        points: series.points.filter((p) => inRange(p.bucketStart)),
-      }))
-      .filter((series) => series.points.length > 0);
-  }, [boilerHeatingSeriesAll, selectedAreas, selectedBoilerEntities, preset, from, to, rangeState.window]);
-
-  const radiatorUsageSeriesFiltered = useMemo(() => {
-    const radiatorEntitySet = new Set(selectedRadiatorEntities);
-    const hasRadiatorEntityFilter = radiatorEntitySet.size > 0;
-    const rangeWindow = rangeState.window;
-    const rangeReady = preset !== 'custom' || (from && to);
-
-    return radiatorUsageSeriesAll
-      .filter((series) => {
-        if (hasRadiatorEntityFilter && !radiatorEntitySet.has(series.id)) return false;
-        return true;
-      })
-      .map((series) => ({
-        ...series,
-        points: series.points.filter((p) => {
-          if (!rangeWindow || !rangeReady) return true;
-          return p.date >= rangeWindow.from && p.date <= rangeWindow.to;
-        }),
-      }))
-      .filter((series) => series.points.length > 0);
-  }, [radiatorUsageSeriesAll, selectedRadiatorEntities, preset, from, to, rangeState.window]);
-
-  const boilerUsageSeriesFiltered = useMemo(() => {
-    const boilerEntitySet = new Set(selectedBoilerEntities);
-    const hasBoilerEntityFilter = boilerEntitySet.size > 0;
-    const rangeWindow = rangeState.window;
-    const rangeReady = preset !== 'custom' || (from && to);
-
-    return boilerUsageSeriesAll
-      .filter((series) => {
-        if (hasBoilerEntityFilter && !boilerEntitySet.has(series.id)) return false;
-        return true;
-      })
-      .map((series) => ({
-        ...series,
-        points: series.points.filter((p) => {
-          if (!rangeWindow || !rangeReady) return true;
-          return p.date >= rangeWindow.from && p.date <= rangeWindow.to;
-        }),
-      }))
-      .filter((series) => series.points.length > 0);
-  }, [boilerUsageSeriesAll, selectedBoilerEntities, preset, from, to, rangeState.window]);
-
   const radiatorTemperatureSeriesByEntity = useMemo(
     () =>
       radiatorTemperatureSeriesFiltered.map((series) => ({
@@ -695,29 +619,9 @@ export default function AdminDashboard({ username }: Props) {
     [radiatorTemperatureSeriesFiltered]
   );
 
-  const boilerHeatingSeriesByEntity: HeatingStateSeries[] = useMemo(
-    () =>
-      boilerHeatingSeriesFiltered.map((series) => ({
-        id: series.entityId,
-        label: series.name || series.entityId,
-        hint: `${series.entityId} • ${series.area}`,
-        color: stableColorById(series.entityId),
-        points: series.points.map((p) => ({
-          date: new Date(p.bucketStart),
-          label: p.label,
-          state: p.state,
-        })),
-      })),
-    [boilerHeatingSeriesFiltered]
-  );
-
   const radiatorTemperaturePointCount = useMemo(
     () => Math.max(0, ...radiatorTemperatureSeriesByEntity.map((s) => s.points.length)),
     [radiatorTemperatureSeriesByEntity]
-  );
-  const boilerStatePointCount = useMemo(
-    () => Math.max(0, ...boilerHeatingSeriesByEntity.map((s) => s.points.length)),
-    [boilerHeatingSeriesByEntity]
   );
   const energyPointCount = useMemo(
     () => Math.max(0, ...energySeriesByArea.map((s) => s.points.length)),
@@ -751,14 +655,6 @@ export default function AdminDashboard({ username }: Props) {
     params.set('days', 'all');
     params.set('groupBy', 'area');
     params.set('label', 'Radiator');
-    return params.toString();
-  }, []);
-
-  const buildBoilerParams = useCallback(() => {
-    const params = new URLSearchParams();
-    params.set('days', 'all');
-    params.set('groupBy', 'area');
-    params.set('label', 'Boiler');
     return params.toString();
   }, []);
 
@@ -849,38 +745,70 @@ export default function AdminDashboard({ username }: Props) {
     setBoilerLoading(true);
     setBoilerError(null);
     try {
-      const buildUsageParams = (label: 'Boiler' | 'Radiator', entityIds: string[]) => {
+      const buildTotalsParams = (
+        label: 'Boiler' | 'Radiator',
+        metric: 'minutesOn' | 'kwh' | 'costGbp',
+        groupBy: 'total' | 'entity',
+        entityIds?: string[],
+        boilerEntityIds?: string[]
+      ) => {
         const params = new URLSearchParams();
-        params.set('days', 'all');
         params.set('label', label);
-        for (const id of entityIds) params.append('entityIds', id);
+        params.set('metric', metric);
+        params.set('groupBy', groupBy);
+        params.set('bucket', bucket);
+
+        if (preset === 'all') {
+          params.set('days', 'all');
+        } else if (preset === 'custom') {
+          if (from && to) {
+            params.set('from', from);
+            params.set('to', to);
+          } else {
+            params.set('days', '7');
+          }
+        } else {
+          params.set('days', preset);
+        }
+
+        (entityIds ?? []).forEach((id) => params.append('entityIds', id));
+        (boilerEntityIds ?? []).forEach((id) => params.append('boilerEntityIds', id));
         return params.toString();
       };
 
-      const radiatorUsageEntityIds = radiatorEntities.map((e) => e.entityId);
-      const boilerUsageEntityIds = boilerEntities.map((e) => e.entityId);
+      const selectedRadiators = selectedRadiatorEntities.length ? selectedRadiatorEntities : undefined;
+      const selectedBoilers = selectedBoilerEntities.length ? selectedBoilerEntities : undefined;
 
-      const [radiatorRes, boilerRes, radiatorUsageRes, boilerUsageRes] = await Promise.all([
+      const [radiatorRes, boilerMinutesRes, radiatorMinutesRes, boilerKwhRes, radiatorKwhRes, boilerCostRes, radiatorCostByEntityRes] =
+        await Promise.all([
         platformFetch(`/api/admin/monitoring/boiler-history?${buildRadiatorParams()}`, {
           cache: 'no-store',
           credentials: 'include',
         }),
-        platformFetch(`/api/admin/monitoring/boiler-history?${buildBoilerParams()}`, {
-          cache: 'no-store',
-          credentials: 'include',
-        }),
-        radiatorUsageEntityIds.length
-          ? platformFetch(
-              `/api/admin/monitoring/heating-usage-history?${buildUsageParams('Radiator', radiatorUsageEntityIds)}`,
-              { cache: 'no-store', credentials: 'include' }
-            )
-          : Promise.resolve(new Response(JSON.stringify({ ok: true, unit: 'min', seriesByEntity: [] }), { status: 200 })),
-        boilerUsageEntityIds.length
-          ? platformFetch(`/api/admin/monitoring/heating-usage-history?${buildUsageParams('Boiler', boilerUsageEntityIds)}`, {
-              cache: 'no-store',
-              credentials: 'include',
-            })
-          : Promise.resolve(new Response(JSON.stringify({ ok: true, unit: 'min', seriesByEntity: [] }), { status: 200 })),
+        platformFetch(
+          `/api/admin/monitoring/heating-usage-totals?${buildTotalsParams('Boiler', 'minutesOn', 'total', selectedBoilers)}`,
+          { cache: 'no-store', credentials: 'include' }
+        ),
+        platformFetch(
+          `/api/admin/monitoring/heating-usage-totals?${buildTotalsParams('Radiator', 'minutesOn', 'total', selectedRadiators)}`,
+          { cache: 'no-store', credentials: 'include' }
+        ),
+        platformFetch(
+          `/api/admin/monitoring/heating-usage-totals?${buildTotalsParams('Boiler', 'kwh', 'total', selectedBoilers)}`,
+          { cache: 'no-store', credentials: 'include' }
+        ),
+        platformFetch(
+          `/api/admin/monitoring/heating-usage-totals?${buildTotalsParams('Radiator', 'kwh', 'total', selectedRadiators, selectedBoilers)}`,
+          { cache: 'no-store', credentials: 'include' }
+        ),
+        platformFetch(
+          `/api/admin/monitoring/heating-usage-totals?${buildTotalsParams('Boiler', 'costGbp', 'total', selectedBoilers)}`,
+          { cache: 'no-store', credentials: 'include' }
+        ),
+        platformFetch(
+          `/api/admin/monitoring/heating-usage-totals?${buildTotalsParams('Radiator', 'costGbp', 'entity', selectedRadiators, selectedBoilers)}`,
+          { cache: 'no-store', credentials: 'include' }
+        ),
       ]);
 
       const radiatorData = (await radiatorRes.json().catch(() => null)) as BoilerHistoryResponse | null;
@@ -889,15 +817,6 @@ export default function AdminDashboard({ username }: Props) {
           radiatorData && typeof radiatorData.error === 'string' && radiatorData.error.length > 0
             ? radiatorData.error
             : 'Unable to load radiator trend.';
-        throw new Error(message);
-      }
-
-      const boilerData = (await boilerRes.json().catch(() => null)) as BoilerHistoryResponse | null;
-      if (!boilerRes.ok || !boilerData?.ok) {
-        const message =
-          boilerData && typeof boilerData.error === 'string' && boilerData.error.length > 0
-            ? boilerData.error
-            : 'Unable to load boiler trend.';
         throw new Error(message);
       }
 
@@ -917,60 +836,85 @@ export default function AdminDashboard({ username }: Props) {
           }))
         : [];
 
-      const heatingSeries: BoilerHeatingSeries[] = Array.isArray(boilerData.seriesHeatingStateByEntity)
-        ? boilerData.seriesHeatingStateByEntity
-        : [];
+      type TotalsResponse = {
+        ok: boolean;
+        unit: string;
+        bucket: HistoryBucket;
+        metric: string;
+        label: string;
+        groupBy: string;
+        seriesByEntity: Array<{
+          entityId: string;
+          name: string;
+          area: string | null;
+          points: Array<{ bucketStart: string; label: string; value: number }>;
+        }>;
+        error?: string;
+      };
 
-      const radiatorUsageData = (await radiatorUsageRes.json().catch(() => null)) as HeatingUsageResponse | null;
-      if (!radiatorUsageRes.ok || !radiatorUsageData?.ok) {
-        const message =
-          radiatorUsageData && typeof radiatorUsageData.error === 'string' && radiatorUsageData.error.length > 0
-            ? radiatorUsageData.error
-            : 'Unable to load radiator usage trend.';
-        throw new Error(message);
-      }
+      const parseTotalsPoints = async (res: Response, fallbackMessage: string) => {
+        const data = (await res.json().catch(() => null)) as TotalsResponse | null;
+        if (!res.ok || !data?.ok) {
+          const message = data && typeof data.error === 'string' && data.error.length > 0 ? data.error : fallbackMessage;
+          throw new Error(message);
+        }
+        const series = Array.isArray(data.seriesByEntity) ? data.seriesByEntity : [];
+        const total = series[0];
+        const points: MetricPoint[] = (total?.points ?? [])
+          .map((p) => ({
+            date: new Date(p.bucketStart),
+            label: p.label,
+            value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : 0,
+          }))
+          .filter((p) => !Number.isNaN(p.date.getTime()))
+          .sort((a, b) => a.date.getTime() - b.date.getTime());
+        return points;
+      };
 
-      const boilerUsageData = (await boilerUsageRes.json().catch(() => null)) as HeatingUsageResponse | null;
-      if (!boilerUsageRes.ok || !boilerUsageData?.ok) {
-        const message =
-          boilerUsageData && typeof boilerUsageData.error === 'string' && boilerUsageData.error.length > 0
-            ? boilerUsageData.error
-            : 'Unable to load boiler usage trend.';
-        throw new Error(message);
-      }
-
-      const toUsageSeries = (data: HeatingUsageResponse): UsageSeries[] =>
-        Array.isArray(data.seriesByEntity)
-          ? data.seriesByEntity.map((s) => ({
-              id: s.entityId,
-              label: s.name || s.entityId,
-              points: (s.points || []).map((p) => ({
-                date: new Date(p.ts),
-                label: new Date(p.ts).toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }),
-                onMinutes: typeof p.onMinutes === 'number' ? p.onMinutes : null,
-                offMinutes: typeof p.offMinutes === 'number' ? p.offMinutes : null,
-                unknownMinutes: typeof p.unknownMinutes === 'number' ? p.unknownMinutes : null,
-              })),
+      const parseTotalsSeries = async (res: Response, fallbackMessage: string) => {
+        const data = (await res.json().catch(() => null)) as TotalsResponse | null;
+        if (!res.ok || !data?.ok) {
+          const message = data && typeof data.error === 'string' && data.error.length > 0 ? data.error : fallbackMessage;
+          throw new Error(message);
+        }
+        const series = Array.isArray(data.seriesByEntity) ? data.seriesByEntity : [];
+        const out: MetricSeries[] = series.map((s) => ({
+          id: s.entityId,
+          label: s.name || s.entityId,
+          color: stableColorById(s.entityId),
+          points: (s.points ?? [])
+            .map((p) => ({
+              date: new Date(p.bucketStart),
+              label: p.label,
+              value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : 0,
             }))
-          : [];
+            .filter((p) => !Number.isNaN(p.date.getTime()))
+            .sort((a, b) => a.date.getTime() - b.date.getTime()),
+        }));
+        return out.filter((s) => s.points.length > 0);
+      };
 
       setRadiatorTemperatureSeriesAll(temperatureSeries);
-      setBoilerHeatingSeriesAll(heatingSeries);
-      setRadiatorUsageSeriesAll(toUsageSeries(radiatorUsageData));
-      setBoilerUsageSeriesAll(toUsageSeries(boilerUsageData));
-      setBoilerMeta(boilerData.meta ?? null);
+      setBoilerUsageMinutesTotals(await parseTotalsPoints(boilerMinutesRes, 'Unable to load boiler usage totals.'));
+      setRadiatorUsageMinutesTotals(await parseTotalsPoints(radiatorMinutesRes, 'Unable to load radiator usage totals.'));
+      setBoilerUsageKwhTotals(await parseTotalsPoints(boilerKwhRes, 'Unable to load boiler kWh totals.'));
+      setRadiatorUsageKwhTotals(await parseTotalsPoints(radiatorKwhRes, 'Unable to load radiator kWh totals.'));
+      setBoilerCostTotals(await parseTotalsPoints(boilerCostRes, 'Unable to load boiler cost totals.'));
+      setRadiatorCostByEntitySeries(await parseTotalsSeries(radiatorCostByEntityRes, 'Unable to load radiator cost totals.'));
     } catch (err) {
       console.error('Failed to load heating trends', err);
       setBoilerError(friendlyUnknownError(err, 'Unable to load heating trends.'));
       setRadiatorTemperatureSeriesAll([]);
-      setBoilerHeatingSeriesAll([]);
-      setRadiatorUsageSeriesAll([]);
-      setBoilerUsageSeriesAll([]);
-      setBoilerMeta(null);
+      setBoilerUsageMinutesTotals([]);
+      setRadiatorUsageMinutesTotals([]);
+      setBoilerUsageKwhTotals([]);
+      setRadiatorUsageKwhTotals([]);
+      setBoilerCostTotals([]);
+      setRadiatorCostByEntitySeries([]);
     } finally {
       setBoilerLoading(false);
     }
-  }, [buildBoilerParams, buildRadiatorParams, boilerEntities, radiatorEntities]);
+  }, [bucket, buildRadiatorParams, from, preset, selectedBoilerEntities, selectedRadiatorEntities, to]);
 
   useEffect(() => {
     void loadSummary();
@@ -1248,7 +1192,7 @@ export default function AdminDashboard({ username }: Props) {
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-900">Heating trends</h2>
             <span className="text-xs text-slate-500">
-              Radiator temp points: {radiatorTemperaturePointCount} · Boiler state points: {boilerStatePointCount}
+              Radiator temp points: {radiatorTemperaturePointCount}
             </span>
           </div>
           <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
@@ -1269,126 +1213,166 @@ export default function AdminDashboard({ username }: Props) {
               />
             </div>
           </div>
-          <div className="rounded-2xl border border-slate-200/70 bg-white/90 px-4 py-3 text-sm text-slate-700 shadow-sm">
-            {boilerMeta?.estimatedCost != null ? (
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="font-semibold text-slate-900">Estimated boiler cost</span>
-                <span>{costFmt.format(boilerMeta.estimatedCost)}</span>
-                <span className="text-slate-500">
-                  ({numberFmt.format(boilerMeta.estimatedOnHours ?? 0)}h ON ·{' '}
-                  {numberFmt.format(boilerMeta.estimatedKwh ?? 0)} kWh @ £{boilerMeta.pricePerKwh}/kWh · {boilerMeta.boilerPowerKw} kW)
-                </span>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {boilerError ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                {boilerError}
+              </div>
+            ) : boilerLoading ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                Loading heating charts…
+              </div>
+            ) : radiatorTemperatureSeriesByEntity.length === 0 ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                No radiator readings in this window.
               </div>
             ) : (
-              <div className="text-slate-600">
-                Boiler cost estimates require server config: set <span className="font-mono">BOILER_POWER_KW</span> and{' '}
-                <span className="font-mono">HEATING_PRICE_PER_KWH</span> (or reuse <span className="font-mono">ELECTRICITY_PRICE_PER_KWH</span>).
+              <BoilerTemperatureBandChart
+                id="radiator-temperature-current"
+                title="Radiator current temperature"
+                series={radiatorTemperatureSeriesByEntity}
+                emptyLabel="No radiator readings in this window."
+                showTarget={false}
+              />
+            )}
+
+            {boilerError ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                {boilerError}
               </div>
+            ) : boilerLoading ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                Loading boiler usage…
+              </div>
+            ) : boilerUsageMinutesTotals.length === 0 ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                No boiler usage totals in this window.
+              </div>
+            ) : (
+              <MetricTotalsBarChart
+                id="boiler-usage-minutes"
+                title="Boiler usage (minutes ON)"
+                unitLabel="min"
+                points={boilerUsageMinutesTotals}
+                color="#f97316"
+                formatValue={(v) => v.toFixed(0)}
+              />
+            )}
+
+            {boilerError ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                {boilerError}
+              </div>
+            ) : boilerLoading ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                Loading radiator usage…
+              </div>
+            ) : radiatorUsageMinutesTotals.length === 0 ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                No radiator usage totals in this window.
+              </div>
+            ) : (
+              <MetricTotalsBarChart
+                id="radiator-usage-minutes"
+                title="Radiator usage (minutes ON)"
+                unitLabel="min"
+                points={radiatorUsageMinutesTotals}
+                color="#0ea5e9"
+                formatValue={(v) => v.toFixed(0)}
+              />
+            )}
+
+            {boilerError ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                {boilerError}
+              </div>
+            ) : boilerLoading ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                Loading boiler kWh…
+              </div>
+            ) : boilerUsageKwhTotals.length === 0 ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                No boiler kWh totals in this window.
+              </div>
+            ) : (
+              <MetricTotalsBarChart
+                id="boiler-usage-kwh"
+                title="Boiler energy (kWh)"
+                unitLabel="kWh"
+                points={boilerUsageKwhTotals}
+                color="#ff9500"
+                formatValue={(v) => v.toFixed(2)}
+              />
+            )}
+
+            {boilerError ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                {boilerError}
+              </div>
+            ) : boilerLoading ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                Loading radiator kWh…
+              </div>
+            ) : radiatorUsageKwhTotals.length === 0 ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                No radiator kWh totals in this window.
+              </div>
+            ) : (
+              <MetricTotalsBarChart
+                id="radiator-usage-kwh"
+                title="Radiator energy (kWh, allocated)"
+                unitLabel="kWh"
+                points={radiatorUsageKwhTotals}
+                color="#34c759"
+                formatValue={(v) => v.toFixed(2)}
+              />
+            )}
+
+            {boilerError ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                {boilerError}
+              </div>
+            ) : boilerLoading ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                Loading boiler cost…
+              </div>
+            ) : boilerCostTotals.length === 0 ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                No boiler cost totals in this window.
+              </div>
+            ) : (
+              <MetricTotalsBarChart
+                id="boiler-cost"
+                title="Boiler running cost"
+                unitLabel="£"
+                points={boilerCostTotals}
+                color="#af52de"
+                formatValue={(v) => v.toFixed(2)}
+              />
+            )}
+
+            {boilerError ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                {boilerError}
+              </div>
+            ) : boilerLoading ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                Loading radiator costs…
+              </div>
+            ) : radiatorCostByEntitySeries.length === 0 ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                No radiator cost data in this window.
+              </div>
+            ) : (
+              <MetricGroupedBarChart
+                id="radiator-cost-by-radiator"
+                title="Radiator cost (by radiator)"
+                unitLabel="£"
+                series={radiatorCostByEntitySeries}
+                formatValue={(v) => v.toFixed(2)}
+              />
             )}
           </div>
-          <div
-            className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm"
-          >
-            <div>
-              {boilerError ? (
-                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  {boilerError}
-                </div>
-              ) : boilerLoading ? (
-                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  Loading heating trends…
-                </div>
-              ) : radiatorTemperatureSeriesByEntity.length === 0 ? (
-                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  No radiator readings in this window.
-                </div>
-              ) : (
-                <BoilerTemperatureBandChart
-                  id="boiler-temperature-band"
-                  title="Radiator current vs target temperature"
-                  series={radiatorTemperatureSeriesByEntity}
-                  emptyLabel="No radiator readings in this window."
-                />
-              )}
-            </div>
-          </div>
-          <div
-            className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm"
-          >
-            <div>
-              {boilerError ? (
-                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  {boilerError}
-                </div>
-              ) : boilerLoading ? (
-                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  Loading heating state trend…
-                </div>
-              ) : boilerHeatingSeriesByEntity.length === 0 ? (
-                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  No heating state samples in this window.
-                </div>
-              ) : (
-                <BoilerHeatingStateChart
-                  id="boiler-heating-state"
-                  title="Boiler ON/OFF (derived from target > current)"
-                  series={boilerHeatingSeriesByEntity}
-                  emptyLabel="No heating state samples in this window."
-                />
-              )}
-            </div>
-          </div>
-          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
-            <div>
-              {boilerError ? (
-                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  {boilerError}
-                </div>
-              ) : boilerLoading ? (
-                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  Loading boiler usage trend…
-                </div>
-              ) : boilerUsageSeriesFiltered.length === 0 ? (
-                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  No boiler usage snapshots in this window.
-                </div>
-              ) : (
-                <HeatingUsageStackedBarChart
-                  id="boiler-usage-snapshots"
-                  title="Boiler usage (minutes ON/OFF per snapshot)"
-                  series={boilerUsageSeriesFiltered}
-                  emptyLabel="No boiler usage snapshots in this window."
-                />
-              )}
-            </div>
-          </div>
-          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
-            <div>
-              {boilerError ? (
-                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  {boilerError}
-                </div>
-              ) : boilerLoading ? (
-                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  Loading radiator usage trend…
-                </div>
-              ) : radiatorUsageSeriesFiltered.length === 0 ? (
-                <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  No radiator usage snapshots in this window.
-                </div>
-              ) : (
-                <HeatingUsageStackedBarChart
-                  id="radiator-usage-snapshots"
-                  title="Radiator usage (minutes ON/OFF per snapshot)"
-                  series={radiatorUsageSeriesFiltered}
-                  emptyLabel="No radiator usage snapshots in this window."
-                />
-              )}
-            </div>
-          </div>
-          <p className="text-xs text-slate-500">
-            2-hour snapshots. Boiler ON/OFF is derived: ON when target is above current; OFF when target is below or equal to current.
-          </p>
         </section>
 
         <section className="grid gap-6 lg:grid-cols-2">

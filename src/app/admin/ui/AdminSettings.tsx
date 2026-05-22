@@ -34,8 +34,18 @@ type DeviceOverride = {
     lastCapturedAt?: string;
   }[];
   blindTravelSeconds?: number | null;
+  boilerPowerKw?: number | null;
+  heatingPricePerKwh?: number | null;
 };
-type OverrideForm = { entityId: string; name: string; area: string; label: string; blindTravelSeconds: string };
+type OverrideForm = {
+  entityId: string;
+  name: string;
+  area: string;
+  label: string;
+  blindTravelSeconds: string;
+  boilerPowerKw: string;
+  heatingPricePerKwh: string;
+};
 type SellingPreview = {
   fullReset?: {
     haTargets?: {
@@ -132,6 +142,8 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     area: '',
     label: '',
     blindTravelSeconds: '',
+    boilerPowerKw: '',
+    heatingPricePerKwh: '',
   });
   const [editingOverrideId, setEditingOverrideId] = useState<string | null>(null);
   const [filterAreas, setFilterAreas] = useState<string[]>([]);
@@ -260,6 +272,8 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       area: '',
       label: '',
       blindTravelSeconds: '',
+      boilerPowerKw: '',
+      heatingPricePerKwh: '',
     });
   }
 
@@ -272,6 +286,8 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       label: override.label ?? '',
       blindTravelSeconds:
         override.blindTravelSeconds != null ? String(override.blindTravelSeconds) : '',
+      boilerPowerKw: override.boilerPowerKw != null ? String(override.boilerPowerKw) : '',
+      heatingPricePerKwh: override.heatingPricePerKwh != null ? String(override.heatingPricePerKwh) : '',
     });
   }
 
@@ -298,6 +314,46 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       blindTravelSeconds = parsed;
     }
 
+    const labelKey = overrideForm.label.trim().toLowerCase();
+    let boilerPowerKw: number | null | undefined = undefined;
+    let heatingPricePerKwh: number | null | undefined = undefined;
+
+    if (labelKey === 'boiler') {
+      const powerRaw = overrideForm.boilerPowerKw.trim();
+      if (!powerRaw) {
+        boilerPowerKw = null;
+      } else {
+        const parsed = Number(powerRaw);
+        if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 200) {
+          setOverrideAlert({
+            type: 'error',
+            message: 'Boiler power (kW) must be a positive number (max 200) when provided.',
+          });
+          return;
+        }
+        boilerPowerKw = parsed;
+      }
+
+      const priceRaw = overrideForm.heatingPricePerKwh.trim();
+      if (!priceRaw) {
+        heatingPricePerKwh = null;
+      } else {
+        const parsed = Number(priceRaw);
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+          setOverrideAlert({
+            type: 'error',
+            message: 'Heating price per kWh must be a non-negative number (max 100) when provided.',
+          });
+          return;
+        }
+        heatingPricePerKwh = parsed;
+      }
+    } else if (editingOverrideId) {
+      // If changing away from Boiler, clear any prior boiler overrides.
+      boilerPowerKw = null;
+      heatingPricePerKwh = null;
+    }
+
     try {
       const res = await platformFetch('/api/admin/device', {
         method: 'POST',
@@ -308,6 +364,8 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
           area: overrideForm.area.trim(),
           label: overrideForm.label.trim(),
           blindTravelSeconds,
+          ...(boilerPowerKw !== undefined ? { boilerPowerKw } : {}),
+          ...(heatingPricePerKwh !== undefined ? { heatingPricePerKwh } : {}),
         }),
       });
       await res.json();
@@ -1513,6 +1571,32 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                       placeholder="Leave blank unless calibrating blinds"
                     />
                   </div>
+                )}
+                {overrideForm.label === 'Boiler' && (
+                  <>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-slate-500">Boiler power (kW)</label>
+                      <input
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                        value={overrideForm.boilerPowerKw}
+                        onChange={(e) => setOverrideForm((prev) => ({ ...prev, boilerPowerKw: e.target.value }))}
+                        placeholder="Leave blank to use default"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">Used for kWh and cost calculations.</p>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-slate-500">Heating price (£/kWh)</label>
+                      <input
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                        value={overrideForm.heatingPricePerKwh}
+                        onChange={(e) =>
+                          setOverrideForm((prev) => ({ ...prev, heatingPricePerKwh: e.target.value }))
+                        }
+                        placeholder="Leave blank to use default"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">Falls back to server env defaults.</p>
+                    </div>
+                  </>
                 )}
               </div>
               <div className="mt-3 flex flex-wrap gap-2">

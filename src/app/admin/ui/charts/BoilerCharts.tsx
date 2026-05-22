@@ -145,6 +145,7 @@ export function BoilerTemperatureBandChart({
   height = 340,
   forcedWidth,
   emptyLabel,
+  showTarget = true,
 }: {
   id: string;
   title: string;
@@ -152,6 +153,7 @@ export function BoilerTemperatureBandChart({
   height?: number;
   forcedWidth?: number;
   emptyLabel?: string;
+  showTarget?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
@@ -192,7 +194,7 @@ export function BoilerTemperatureBandChart({
 
   const xDomain = extent(allPoints, (d) => d.date);
   const yValues = allPoints.flatMap((point) =>
-    isValidTargetTemp(point.targetTemperature)
+    showTarget && isValidTargetTemp(point.targetTemperature)
       ? [point.currentTemperature, point.targetTemperature]
       : [point.currentTemperature]
   );
@@ -281,25 +283,39 @@ export function BoilerTemperatureBandChart({
 
             {preparedSeries.map((entry) => {
               const color = colorMap.get(entry.id) || palette[0];
-              const areaBands = buildTemperatureBands(entry.points, (date) => xScale(date), (value) => yScale(value), entry.id);
+              const areaBands = showTarget
+                ? buildTemperatureBands(entry.points, (date) => xScale(date), (value) => yScale(value), entry.id)
+                : [];
               const currentPath =
                 line<TemperaturePoint>()
                   .x((d) => xScale(d.date))
                   .y((d) => yScale(d.currentTemperature))
                   .curve(curveMonotoneX)(entry.points) ?? '';
-              const targetPath =
-                line<TemperaturePoint>()
-                  .defined((d) => isValidTargetTemp(d.targetTemperature))
-                  .x((d) => xScale(d.date))
-                  .y((d) => yScale(d.targetTemperature ?? d.currentTemperature))
-                  .curve(curveMonotoneX)(entry.points) ?? '';
+              const targetPath = showTarget
+                ? line<TemperaturePoint>()
+                    .defined((d) => isValidTargetTemp(d.targetTemperature))
+                    .x((d) => xScale(d.date))
+                    .y((d) => yScale(d.targetTemperature ?? d.currentTemperature))
+                    .curve(curveMonotoneX)(entry.points) ?? ''
+                : '';
               return (
                 <g key={entry.id}>
                   {areaBands.map((band) => (
                     <polygon key={band.id} points={band.points} fill={band.color} fillOpacity={0.14} />
                   ))}
                   <path d={currentPath} fill="none" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
-                  <path d={targetPath} fill="none" stroke={color} strokeWidth={1.9} strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" opacity={0.72} />
+                  {showTarget ? (
+                    <path
+                      d={targetPath}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={1.9}
+                      strokeDasharray="5 4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity={0.72}
+                    />
+                  ) : null}
                 </g>
               );
             })}
@@ -329,12 +345,18 @@ export function BoilerTemperatureBandChart({
                           <span className="truncate">{row.label}</span>
                         </span>
                         <span className="font-semibold text-slate-900">
-                          C: {row.point ? formatTemp(row.point.currentTemperature) : '—'} · T:{' '}
-                          {row.point?.targetTemperature == null
-                            ? 'Unknown'
-                            : row.point.targetTemperature === 0
-                            ? formatTemp(0)
-                            : formatTemp(row.point.targetTemperature)}
+                          C: {row.point ? formatTemp(row.point.currentTemperature) : '—'}
+                          {showTarget ? (
+                            <>
+                              {' '}
+                              · T:{' '}
+                              {row.point?.targetTemperature == null
+                                ? 'Unknown'
+                                : row.point.targetTemperature === 0
+                                ? formatTemp(0)
+                                : formatTemp(row.point.targetTemperature)}
+                            </>
+                          ) : null}
                         </span>
                       </div>
                     ))}

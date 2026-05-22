@@ -64,7 +64,17 @@ export async function GET(req: NextRequest) {
   const overrides = await prisma.device.findMany({
     where: deviceWhere,
     orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
-    select: { entityId: true, name: true, label: true, area: true, blindTravelSeconds: true, updatedAt: true, id: true },
+    select: {
+      entityId: true,
+      name: true,
+      label: true,
+      area: true,
+      blindTravelSeconds: true,
+      boilerPowerKw: true,
+      heatingPricePerKwh: true,
+      updatedAt: true,
+      id: true,
+    },
   });
 
   const overrideMap = new Map(overrides.map((d) => [d.entityId, d]));
@@ -153,6 +163,8 @@ export async function GET(req: NextRequest) {
     area: string | null;
     label: string | null;
     blindTravelSeconds: number | null;
+    boilerPowerKw: number | null;
+    heatingPricePerKwh: number | null;
     deviceId?: string | null;
     hasOverride: boolean;
     labelCategory?: string | null;
@@ -198,6 +210,14 @@ export async function GET(req: NextRequest) {
       label: groupLabel,
       blindTravelSeconds:
         override?.blindTravelSeconds ?? (typeof d.blindTravelSeconds === 'number' ? d.blindTravelSeconds : null),
+      boilerPowerKw:
+        typeof override?.boilerPowerKw === 'number'
+          ? override.boilerPowerKw
+          : null,
+      heatingPricePerKwh:
+        typeof override?.heatingPricePerKwh === 'number'
+          ? override.heatingPricePerKwh
+          : null,
       deviceId: d.deviceId ?? null,
       hasOverride: Boolean(override),
       labelCategory: d.labelCategory ?? null,
@@ -222,6 +242,8 @@ export async function GET(req: NextRequest) {
       area: ov.area?.trim() || null,
       label: groupLabel,
       blindTravelSeconds: typeof ov.blindTravelSeconds === 'number' ? ov.blindTravelSeconds : null,
+      boilerPowerKw: typeof ov.boilerPowerKw === 'number' ? ov.boilerPowerKw : null,
+      heatingPricePerKwh: typeof ov.heatingPricePerKwh === 'number' ? ov.heatingPricePerKwh : null,
       deviceId: null,
       hasOverride: true,
     });
@@ -298,11 +320,15 @@ export async function GET(req: NextRequest) {
         area: d.area,
         label: d.label,
         blindTravelSeconds: d.blindTravelSeconds,
+        boilerPowerKw: d.boilerPowerKw,
+        heatingPricePerKwh: d.heatingPricePerKwh,
         hasOverride: d.hasOverride,
         linkedSensors: linked.map((ls) => ({
           entityId: ls.entityId,
           name: ls.name,
           label: ls.label,
+          boilerPowerKw: ls.boilerPowerKw,
+          heatingPricePerKwh: ls.heatingPricePerKwh,
           unit: undefined,
           lastCapturedAt: undefined,
         })),
