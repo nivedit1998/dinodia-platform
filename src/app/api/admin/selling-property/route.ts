@@ -379,6 +379,26 @@ export async function POST(req: NextRequest) {
           data: { ownerId: null },
         });
 
+        // Phase 11/bugfix: clear any previous pending claim flows so the new homeowner can claim immediately.
+        // Otherwise `/api/claim` rejects with "Another owner is already linked..." when an unexpired
+        // PendingHomeownerOnboarding(CLAIM_CODE) already exists.
+        const pendingWhere = home.hubInstall?.id
+          ? { OR: [{ homeId: home.id }, { hubInstallId: home.hubInstall.id }] }
+          : { homeId: home.id };
+        const pendingRows = await tx.pendingHomeownerOnboarding.findMany({
+          where: pendingWhere,
+          select: { userId: true },
+        });
+        const pendingUserIds = Array.from(
+          new Set(pendingRows.map((row) => row.userId).filter((id): id is number => typeof id === 'number'))
+        );
+        const pendingHomeownerOnboardings = await tx.pendingHomeownerOnboarding.deleteMany({
+          where: pendingWhere,
+        });
+        const pendingUsersDeleted = pendingUserIds.length
+          ? await tx.user.deleteMany({ where: { id: { in: pendingUserIds } } })
+          : { count: 0 };
+
         // Phase 8: scrub property telemetry so the next homeowner starts with a fresh view.
         const monitoringReadings = await tx.monitoringReading.deleteMany({
           where: { haConnectionId: haConnection.id },
@@ -426,6 +446,8 @@ export async function POST(req: NextRequest) {
         });
 
         return {
+          pendingHomeownerOnboardings: pendingHomeownerOnboardings.count,
+          pendingUsersDeleted: pendingUsersDeleted.count,
           monitoringReadings: monitoringReadings.count,
           boilerTemperatureReadings: boilerTemperatureReadings.count,
           boilerUsageAccumulators: boilerUsageAccumulators.count,
