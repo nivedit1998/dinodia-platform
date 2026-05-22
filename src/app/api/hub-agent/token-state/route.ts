@@ -27,6 +27,10 @@ type HeatingUsageDeviceUpdate = {
   onSeconds: number;
   offSeconds: number;
   unknownSeconds: number | null;
+  efficiencyWeightedOnSeconds?: number | null;
+  efficiencyOnSeconds?: number | null;
+  efficiencyBand?: string | null;
+  efficiencyBandVersion?: number | null;
   lastSeenAt: string;
   lastWasOn: boolean | null;
   lastWasKnown: boolean | null;
@@ -53,7 +57,23 @@ function asNonNegativeInt(value: unknown): number | null {
   return i;
 }
 
-function normalizeHeatingUsageDeviceUpdate(value: unknown): HeatingUsageDeviceUpdate | null {
+function asNonNegativeFloat(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isFinite(n)) return null;
+  if (n < 0) return null;
+  return n;
+}
+
+function normalizeEfficiencyBand(value: unknown): string | null {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  const raw = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  if (!raw) return null;
+  if (!/^[A-G]$/.test(raw)) return null;
+  return raw;
+}
+
+function normalizeHeatingUsageDeviceUpdate(value: unknown, schemaVersion: number): HeatingUsageDeviceUpdate | null {
   if (!value || typeof value !== 'object') return null;
   const obj = value as Record<string, unknown>;
   const label = obj.label === 'Boiler' || obj.label === 'Radiator' ? (obj.label as HeatingUsageDeviceLabel) : null;
@@ -61,6 +81,22 @@ function normalizeHeatingUsageDeviceUpdate(value: unknown): HeatingUsageDeviceUp
   const onSeconds = asNonNegativeInt(obj.onSeconds);
   const offSeconds = asNonNegativeInt(obj.offSeconds);
   const unknownSeconds = obj.unknownSeconds === undefined ? null : asNonNegativeInt(obj.unknownSeconds);
+  const efficiencyWeightedOnSeconds =
+    schemaVersion >= 2 && label === 'Boiler' && obj.efficiencyWeightedOnSeconds !== undefined
+      ? asNonNegativeFloat(obj.efficiencyWeightedOnSeconds)
+      : null;
+  const efficiencyOnSeconds =
+    schemaVersion >= 2 && label === 'Boiler' && obj.efficiencyOnSeconds !== undefined
+      ? asNonNegativeInt(obj.efficiencyOnSeconds)
+      : null;
+  const efficiencyBand =
+    schemaVersion >= 2 && label === 'Boiler' && obj.efficiencyBand !== undefined
+      ? normalizeEfficiencyBand(obj.efficiencyBand)
+      : null;
+  const efficiencyBandVersion =
+    schemaVersion >= 2 && label === 'Boiler' && obj.efficiencyBandVersion !== undefined
+      ? asNonNegativeInt(obj.efficiencyBandVersion)
+      : null;
   const lastSeenAt = parseIsoDate(obj.lastSeenAt);
   const lastWasOn =
     obj.lastWasOn === null ? null : typeof obj.lastWasOn === 'boolean' ? obj.lastWasOn : null;
@@ -70,6 +106,12 @@ function normalizeHeatingUsageDeviceUpdate(value: unknown): HeatingUsageDeviceUp
   if (!label || !entityId || !lastSeenAt) return null;
   if (onSeconds === null || offSeconds === null) return null;
   if (obj.unknownSeconds !== undefined && unknownSeconds === null) return null;
+  if (schemaVersion >= 2 && label === 'Boiler') {
+    if (obj.efficiencyWeightedOnSeconds !== undefined && efficiencyWeightedOnSeconds === null) return null;
+    if (obj.efficiencyOnSeconds !== undefined && efficiencyOnSeconds === null) return null;
+    if (obj.efficiencyBand !== undefined && efficiencyBand === null) return null;
+    if (obj.efficiencyBandVersion !== undefined && efficiencyBandVersion === null) return null;
+  }
 
   return {
     label,
@@ -77,6 +119,14 @@ function normalizeHeatingUsageDeviceUpdate(value: unknown): HeatingUsageDeviceUp
     onSeconds,
     offSeconds,
     unknownSeconds,
+    ...(schemaVersion >= 2 && label === 'Boiler'
+      ? {
+          efficiencyWeightedOnSeconds,
+          efficiencyOnSeconds,
+          efficiencyBand,
+          efficiencyBandVersion,
+        }
+      : {}),
     lastSeenAt: lastSeenAt.toISOString(),
     lastWasOn,
     lastWasKnown,
@@ -91,7 +141,7 @@ async function ingestHeatingUsage({
   upload: HeatingUsageUpload;
 }): Promise<{ processed: number; skipped: number }> {
   const schemaVersion = Number(upload?.schemaVersion ?? 0);
-  if (schemaVersion !== 1) return { processed: 0, skipped: 0 };
+  if (schemaVersion !== 1 && schemaVersion !== 2) return { processed: 0, skipped: 0 };
 
   const rawDevices = (upload as HeatingUsageUpload)?.devices;
   if (!Array.isArray(rawDevices)) return { processed: 0, skipped: 0 };
@@ -99,7 +149,7 @@ async function ingestHeatingUsage({
   const MAX_DEVICES = 200;
   const normalized = rawDevices
     .slice(0, MAX_DEVICES)
-    .map(normalizeHeatingUsageDeviceUpdate)
+    .map((row) => normalizeHeatingUsageDeviceUpdate(row, schemaVersion))
     .filter(Boolean) as HeatingUsageDeviceUpdate[];
 
   if (normalized.length === 0) return { processed: 0, skipped: 0 };
@@ -150,6 +200,12 @@ async function ingestHeatingUsage({
           onSeconds: update.onSeconds,
           offSeconds: update.offSeconds,
           unknownSeconds: update.unknownSeconds ?? 0,
+          ...(typeof update.efficiencyWeightedOnSeconds === 'number'
+            ? { efficiencyWeightedOnSeconds: update.efficiencyWeightedOnSeconds }
+            : {}),
+          ...(typeof update.efficiencyOnSeconds === 'number'
+            ? { efficiencyOnSeconds: update.efficiencyOnSeconds }
+            : {}),
           lastSeenAt,
           lastWasOn: normalizedLastWasOn,
           lastWasKnown: normalizedLastWasKnown,
@@ -158,6 +214,12 @@ async function ingestHeatingUsage({
           onSeconds: update.onSeconds,
           offSeconds: update.offSeconds,
           ...(update.unknownSeconds !== null ? { unknownSeconds: update.unknownSeconds } : {}),
+          ...(typeof update.efficiencyWeightedOnSeconds === 'number'
+            ? { efficiencyWeightedOnSeconds: update.efficiencyWeightedOnSeconds }
+            : {}),
+          ...(typeof update.efficiencyOnSeconds === 'number'
+            ? { efficiencyOnSeconds: update.efficiencyOnSeconds }
+            : {}),
           lastSeenAt,
           lastWasOn: normalizedLastWasOn,
           lastWasKnown: normalizedLastWasKnown,
@@ -417,6 +479,35 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  let heatingUsageConfig: {
+    schemaVersion: number;
+    efficiencyBandsVersion: number;
+    defaultBoilerEfficiencyBand: string;
+    boilerBandsByEntityId: Record<string, string>;
+  } | null = null;
+
+  if (hubInstall.home?.haConnectionId) {
+    const boilerOverrides = await prisma.device.findMany({
+      where: {
+        haConnectionId: hubInstall.home.haConnectionId,
+        label: 'Boiler',
+        boilerEfficiencyBand: { not: null },
+      },
+      select: { entityId: true, boilerEfficiencyBand: true },
+    });
+    const map: Record<string, string> = {};
+    for (const row of boilerOverrides) {
+      const band = typeof row.boilerEfficiencyBand === 'string' ? row.boilerEfficiencyBand.trim().toUpperCase() : '';
+      if (/^[A-G]$/.test(band)) map[row.entityId] = band;
+    }
+    heatingUsageConfig = {
+      schemaVersion: 1,
+      efficiencyBandsVersion: 1,
+      defaultBoilerEfficiencyBand: 'B',
+      boilerBandsByEntityId: map,
+    };
+  }
+
   return NextResponse.json({
     ok: true,
     platformSyncEnabled: hubInstall.platformSyncEnabled,
@@ -425,5 +516,6 @@ export async function POST(req: NextRequest) {
     latestVersion,
     hubTokenHashes: hashes,
     heatingUsageResetAt: heatingUsageResetAtForResponse,
+    heatingUsageConfig,
   });
 }

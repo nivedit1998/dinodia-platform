@@ -122,6 +122,20 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
   const boilerEntityIds = toInsert.filter((r) => r.groupLabel === 'Boiler').map((r) => r.entityId);
   const radiatorEntityIds = toInsert.filter((r) => r.groupLabel === 'Radiator').map((r) => r.entityId);
 
+  const boilerPowerOverrides = boilerEntityIds.length
+    ? await prisma.device.findMany({
+        where: { haConnectionId, entityId: { in: boilerEntityIds } },
+        select: { entityId: true, boilerPowerKw: true },
+      })
+    : [];
+  const boilerPowerOverrideByEntityId = new Map(boilerPowerOverrides.map((d) => [d.entityId, d.boilerPowerKw]));
+  const defaultBoilerPowerKw = (() => {
+    const raw = process.env.BOILER_POWER_KW;
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  })();
+
   const [boilerAccumulators, radiatorAccumulators] = await Promise.all([
     boilerEntityIds.length
       ? prisma.boilerUsageAccumulator.findMany({
@@ -131,9 +145,13 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
             onSeconds: true,
             offSeconds: true,
             unknownSeconds: true,
+            efficiencyWeightedOnSeconds: true,
+            efficiencyOnSeconds: true,
             lastSnapshotOnSeconds: true,
             lastSnapshotOffSeconds: true,
             lastSnapshotUnknownSeconds: true,
+            lastSnapshotEfficiencyWeightedOnSeconds: true,
+            lastSnapshotEfficiencyOnSeconds: true,
             lastSnapshotAt: true,
           },
         })
@@ -164,9 +182,13 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
     onSeconds: number;
     offSeconds: number;
     unknownSeconds: number;
+    efficiencyWeightedOnSeconds: number;
+    efficiencyOnSeconds: number;
     onForSeconds: number | null;
     offForSeconds: number | null;
     unknownForSeconds: number | null;
+    averageEfficiencyPercent: number | null;
+    kwhOnEstimated: number | null;
   }> = [];
 
   const data = toInsert.map((reading) => {
@@ -181,6 +203,8 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
         onForSeconds: null,
         offForSeconds: null,
         unknownForSeconds: null,
+        averageEfficiencyPercent: null,
+        kwhOnEstimated: null,
         unit: reading.unit,
         capturedAt: reading.capturedAt,
       };
@@ -189,9 +213,21 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
     const onSeconds = Math.max(0, Math.floor(Number(acc.onSeconds ?? 0)));
     const offSeconds = Math.max(0, Math.floor(Number(acc.offSeconds ?? 0)));
     const unknownSeconds = Math.max(0, Math.floor(Number(acc.unknownSeconds ?? 0)));
+    const efficiencyWeightedOnSeconds =
+      reading.groupLabel === 'Boiler' ? Math.max(0, Number((acc as { efficiencyWeightedOnSeconds?: unknown }).efficiencyWeightedOnSeconds ?? 0)) : 0;
+    const efficiencyOnSeconds =
+      reading.groupLabel === 'Boiler' ? Math.max(0, Math.floor(Number((acc as { efficiencyOnSeconds?: unknown }).efficiencyOnSeconds ?? 0))) : 0;
     const cursorOn = acc.lastSnapshotOnSeconds;
     const cursorOff = acc.lastSnapshotOffSeconds;
     const cursorUnknown = acc.lastSnapshotUnknownSeconds;
+    const cursorEffWeighted =
+      reading.groupLabel === 'Boiler'
+        ? (acc as { lastSnapshotEfficiencyWeightedOnSeconds?: unknown }).lastSnapshotEfficiencyWeightedOnSeconds
+        : null;
+    const cursorEffOn =
+      reading.groupLabel === 'Boiler'
+        ? (acc as { lastSnapshotEfficiencyOnSeconds?: unknown }).lastSnapshotEfficiencyOnSeconds
+        : null;
 
     const lastSnapshotAt = acc.lastSnapshotAt instanceof Date ? acc.lastSnapshotAt : null;
     const intervalSecondsRaw =
@@ -212,6 +248,8 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
     let onForSeconds: number | null = null;
     let offForSeconds: number | null = null;
     let unknownForSeconds: number | null = null;
+    let averageEfficiencyPercent: number | null = null;
+    let kwhOnEstimated: number | null = null;
 
     if (typeof cursorOn === 'number' && Number.isFinite(cursorOn)) {
       const rawOn = onSeconds - cursorOn;
@@ -270,15 +308,47 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
       }
     }
 
+    if (reading.groupLabel === 'Boiler') {
+      let deltaEffWeighted: number | null = null;
+      let deltaEffOn: number | null = null;
+
+      if (typeof cursorEffWeighted === 'number' && Number.isFinite(cursorEffWeighted)) {
+        const raw = efficiencyWeightedOnSeconds - cursorEffWeighted;
+        if (raw >= 0) deltaEffWeighted = Math.min(intervalClamp, raw);
+      }
+
+      if (typeof cursorEffOn === 'number' && Number.isFinite(cursorEffOn)) {
+        const raw = efficiencyOnSeconds - cursorEffOn;
+        if (raw >= 0) deltaEffOn = Math.min(intervalClamp, Math.floor(raw));
+      }
+
+      if (typeof deltaEffWeighted === 'number' && typeof deltaEffOn === 'number') {
+        averageEfficiencyPercent =
+          deltaEffOn > 0 ? (deltaEffWeighted / deltaEffOn) * 100 : null;
+
+        const overrideKw = boilerPowerOverrideByEntityId.get(reading.entityId);
+        const boilerPowerKw =
+          typeof overrideKw === 'number' && Number.isFinite(overrideKw) && overrideKw > 0
+            ? overrideKw
+            : defaultBoilerPowerKw;
+        kwhOnEstimated =
+          boilerPowerKw != null ? boilerPowerKw * (deltaEffWeighted / 3600) : null;
+      }
+    }
+
     cursorUpdates.push({
       groupLabel: reading.groupLabel,
       entityId: reading.entityId,
       onSeconds,
       offSeconds,
       unknownSeconds,
+      efficiencyWeightedOnSeconds,
+      efficiencyOnSeconds,
       onForSeconds,
       offForSeconds,
       unknownForSeconds,
+      averageEfficiencyPercent,
+      kwhOnEstimated,
     });
 
     return {
@@ -290,6 +360,8 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
       onForSeconds,
       offForSeconds,
       unknownForSeconds,
+      averageEfficiencyPercent,
+      kwhOnEstimated,
       unit: reading.unit,
       capturedAt: reading.capturedAt,
     };
@@ -310,6 +382,8 @@ export async function captureBoilerTempSnapshotForConnection(haConnectionId: num
                 lastSnapshotOnSeconds: update.onSeconds,
                 lastSnapshotOffSeconds: update.offSeconds,
                 lastSnapshotUnknownSeconds: update.unknownSeconds,
+                lastSnapshotEfficiencyWeightedOnSeconds: update.efficiencyWeightedOnSeconds,
+                lastSnapshotEfficiencyOnSeconds: update.efficiencyOnSeconds,
                 lastSnapshotAt: now,
               },
             });

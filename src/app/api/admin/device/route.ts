@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { entityId, name, blindTravelSeconds, area, label, boilerPowerKw, heatingPricePerKwh } = body;
+  const { entityId, name, blindTravelSeconds, area, label, boilerPowerKw, heatingPricePerKwh, boilerEfficiencyBand } = body;
 
   if (!entityId || !name) {
     return NextResponse.json(
@@ -100,6 +100,7 @@ export async function POST(req: NextRequest) {
     label?: string | null;
     boilerPowerKw?: number | null;
     heatingPricePerKwh?: number | null;
+    boilerEfficiencyBand?: string | null;
   } = {
     name,
     blindTravelSeconds: blindTravelSecondsValue,
@@ -121,6 +122,36 @@ export async function POST(req: NextRequest) {
 
   if (heatingPriceParsed.present) {
     updateData.heatingPricePerKwh = heatingPriceParsed.value === null ? null : heatingPriceParsed.value;
+  }
+
+  const hasBoilerEfficiencyBand = Object.prototype.hasOwnProperty.call(body, 'boilerEfficiencyBand');
+  let boilerEfficiencyBandValue: string | null = null;
+  if (hasBoilerEfficiencyBand) {
+    if (boilerEfficiencyBand === null || boilerEfficiencyBand === '') {
+      boilerEfficiencyBandValue = null;
+    } else if (typeof boilerEfficiencyBand === 'string') {
+      const band = boilerEfficiencyBand.trim().toUpperCase();
+      if (!/^[A-G]$/.test(band)) {
+        return NextResponse.json(
+          { error: 'Boiler efficiency band must be one of A, B, C, D, E, F, G when provided.' },
+          { status: 400 }
+        );
+      }
+      boilerEfficiencyBandValue = band;
+    } else {
+      return NextResponse.json(
+        { error: 'Boiler efficiency band must be one of A, B, C, D, E, F, G when provided.' },
+        { status: 400 }
+      );
+    }
+  }
+
+  const effectiveLabel = (updateData.label ?? (hasLabel ? labelValue : null))?.trim() || null;
+  if (hasBoilerEfficiencyBand) {
+    updateData.boilerEfficiencyBand = effectiveLabel === 'Boiler' ? boilerEfficiencyBandValue : null;
+  } else if (effectiveLabel !== 'Boiler') {
+    // If changing away from Boiler, clear prior band override.
+    updateData.boilerEfficiencyBand = null;
   }
 
   const device = await prisma.device.upsert({
@@ -145,6 +176,10 @@ export async function POST(req: NextRequest) {
       blindTravelSeconds: blindTravelSecondsValue,
       boilerPowerKw: boilerPowerParsed.present ? boilerPowerParsed.value : null,
       heatingPricePerKwh: heatingPriceParsed.present ? heatingPriceParsed.value : null,
+      boilerEfficiencyBand:
+        (blindTravelSecondsValue !== null ? 'Blind' : hasLabel ? labelValue : null) === 'Boiler'
+          ? boilerEfficiencyBandValue
+          : null,
     },
   });
 

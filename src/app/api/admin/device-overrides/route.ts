@@ -72,6 +72,7 @@ export async function GET(req: NextRequest) {
       blindTravelSeconds: true,
       boilerPowerKw: true,
       heatingPricePerKwh: true,
+      boilerEfficiencyBand: true,
       updatedAt: true,
       id: true,
     },
@@ -165,6 +166,7 @@ export async function GET(req: NextRequest) {
     blindTravelSeconds: number | null;
     boilerPowerKw: number | null;
     heatingPricePerKwh: number | null;
+    boilerEfficiencyBand: string | null;
     deviceId?: string | null;
     hasOverride: boolean;
     labelCategory?: string | null;
@@ -218,6 +220,10 @@ export async function GET(req: NextRequest) {
         typeof override?.heatingPricePerKwh === 'number'
           ? override.heatingPricePerKwh
           : null,
+      boilerEfficiencyBand:
+        typeof override?.boilerEfficiencyBand === 'string'
+          ? override.boilerEfficiencyBand
+          : null,
       deviceId: d.deviceId ?? null,
       hasOverride: Boolean(override),
       labelCategory: d.labelCategory ?? null,
@@ -244,6 +250,7 @@ export async function GET(req: NextRequest) {
       blindTravelSeconds: typeof ov.blindTravelSeconds === 'number' ? ov.blindTravelSeconds : null,
       boilerPowerKw: typeof ov.boilerPowerKw === 'number' ? ov.boilerPowerKw : null,
       heatingPricePerKwh: typeof ov.heatingPricePerKwh === 'number' ? ov.heatingPricePerKwh : null,
+      boilerEfficiencyBand: typeof ov.boilerEfficiencyBand === 'string' ? ov.boilerEfficiencyBand : null,
       deviceId: null,
       hasOverride: true,
     });
@@ -322,6 +329,7 @@ export async function GET(req: NextRequest) {
         blindTravelSeconds: d.blindTravelSeconds,
         boilerPowerKw: d.boilerPowerKw,
         heatingPricePerKwh: d.heatingPricePerKwh,
+        boilerEfficiencyBand: d.boilerEfficiencyBand,
         hasOverride: d.hasOverride,
         linkedSensors: linked.map((ls) => ({
           entityId: ls.entityId,
@@ -329,6 +337,7 @@ export async function GET(req: NextRequest) {
           label: ls.label,
           boilerPowerKw: ls.boilerPowerKw,
           heatingPricePerKwh: ls.heatingPricePerKwh,
+          boilerEfficiencyBand: ls.boilerEfficiencyBand,
           unit: undefined,
           lastCapturedAt: undefined,
         })),

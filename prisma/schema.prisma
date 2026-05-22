@@ -473,6 +473,7 @@ model Device {
   blindTravelSeconds Int?
   boilerPowerKw      Float?
   heatingPricePerKwh Float?
+  boilerEfficiencyBand String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -505,6 +506,8 @@ model BoilerTemperatureReading {
   onForSeconds       Int?
   offForSeconds      Int?
   unknownForSeconds  Int?
+  averageEfficiencyPercent Float?
+  kwhOnEstimated     Float?
   unit               String       @default("°C")
   capturedAt         DateTime     @default(now())
 
@@ -520,12 +523,16 @@ model BoilerUsageAccumulator {
   onSeconds                  Int          @default(0)
   offSeconds                 Int          @default(0)
   unknownSeconds             Int          @default(0)
+  efficiencyWeightedOnSeconds Float       @default(0)
+  efficiencyOnSeconds        Int          @default(0)
   lastSeenAt                 DateTime?
   lastWasOn                  Boolean?
   lastWasKnown               Boolean?
   lastSnapshotOnSeconds      Int?
   lastSnapshotOffSeconds     Int?
   lastSnapshotUnknownSeconds Int?
+  lastSnapshotEfficiencyWeightedOnSeconds Float?
+  lastSnapshotEfficiencyOnSeconds        Int?
   lastSnapshotAt             DateTime?
   createdAt                  DateTime     @default(now())
   updatedAt                  DateTime     @updatedAt

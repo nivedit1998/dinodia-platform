@@ -36,6 +36,7 @@ type DeviceOverride = {
   blindTravelSeconds?: number | null;
   boilerPowerKw?: number | null;
   heatingPricePerKwh?: number | null;
+  boilerEfficiencyBand?: string | null;
 };
 type OverrideForm = {
   entityId: string;
@@ -45,6 +46,7 @@ type OverrideForm = {
   blindTravelSeconds: string;
   boilerPowerKw: string;
   heatingPricePerKwh: string;
+  boilerEfficiencyBand: string;
 };
 type SellingPreview = {
   fullReset?: {
@@ -144,6 +146,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     blindTravelSeconds: '',
     boilerPowerKw: '',
     heatingPricePerKwh: '',
+    boilerEfficiencyBand: '',
   });
   const [editingOverrideId, setEditingOverrideId] = useState<string | null>(null);
   const [filterAreas, setFilterAreas] = useState<string[]>([]);
@@ -274,6 +277,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       blindTravelSeconds: '',
       boilerPowerKw: '',
       heatingPricePerKwh: '',
+      boilerEfficiencyBand: '',
     });
   }
 
@@ -288,6 +292,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
         override.blindTravelSeconds != null ? String(override.blindTravelSeconds) : '',
       boilerPowerKw: override.boilerPowerKw != null ? String(override.boilerPowerKw) : '',
       heatingPricePerKwh: override.heatingPricePerKwh != null ? String(override.heatingPricePerKwh) : '',
+      boilerEfficiencyBand: override.boilerEfficiencyBand != null ? String(override.boilerEfficiencyBand) : '',
     });
   }
 
@@ -317,6 +322,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     const labelKey = overrideForm.label.trim().toLowerCase();
     let boilerPowerKw: number | null | undefined = undefined;
     let heatingPricePerKwh: number | null | undefined = undefined;
+    let boilerEfficiencyBand: string | null | undefined = undefined;
 
     if (labelKey === 'boiler') {
       const powerRaw = overrideForm.boilerPowerKw.trim();
@@ -348,10 +354,26 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
         }
         heatingPricePerKwh = parsed;
       }
+
+      const bandRaw = overrideForm.boilerEfficiencyBand.trim();
+      if (!bandRaw) {
+        boilerEfficiencyBand = null;
+      } else {
+        const band = bandRaw.toUpperCase();
+        if (!/^[A-G]$/.test(band)) {
+          setOverrideAlert({
+            type: 'error',
+            message: 'Boiler efficiency band must be one of A, B, C, D, E, F, G when provided.',
+          });
+          return;
+        }
+        boilerEfficiencyBand = band;
+      }
     } else if (editingOverrideId) {
       // If changing away from Boiler, clear any prior boiler overrides.
       boilerPowerKw = null;
       heatingPricePerKwh = null;
+      boilerEfficiencyBand = null;
     }
 
     try {
@@ -366,6 +388,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
           blindTravelSeconds,
           ...(boilerPowerKw !== undefined ? { boilerPowerKw } : {}),
           ...(heatingPricePerKwh !== undefined ? { heatingPricePerKwh } : {}),
+          ...(boilerEfficiencyBand !== undefined ? { boilerEfficiencyBand } : {}),
         }),
       });
       await res.json();
@@ -1586,6 +1609,26 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                         We do <span className="font-semibold">not</span> read “boiler kWh” from your boiler. We estimate it from runtime:
                         <span className="font-mono"> kWh = (minutes ON ÷ 60) × kW</span>.
                         <span> You can usually find kW on the boiler spec plate/manual (max output).</span>
+                      </p>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-slate-500">Boiler efficiency band (A–G) — used to estimate kWh</label>
+                      <select
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                        value={overrideForm.boilerEfficiencyBand}
+                        onChange={(e) =>
+                          setOverrideForm((prev) => ({ ...prev, boilerEfficiencyBand: e.target.value }))
+                        }
+                      >
+                        <option value="">Default (Band B)</option>
+                        {['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((b) => (
+                          <option key={b} value={b}>
+                            Band {b}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        This affects the estimated average boiler output while heating (thermal-state modulation). Leave blank to use the default.
                       </p>
                     </div>
                     <div>

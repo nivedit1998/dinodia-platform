@@ -145,6 +145,39 @@ function sumOnSecondsByBucket(rows: Array<{ entityId: string; capturedAt: Date; 
   return bucketsByEntity;
 }
 
+function sumKwhByBucket(
+  rows: Array<{ entityId: string; capturedAt: Date; onForSeconds: number | null; kwhOnEstimated: number | null }>,
+  bucket: Bucket,
+  resolveBoilerPowerKw: (entityId: string) => number | null
+) {
+  const bucketsByEntity = new Map<string, Map<string, { bucketStart: Date; label: string; sumKwh: number }>>();
+  for (const row of rows) {
+    const date = row.capturedAt instanceof Date ? row.capturedAt : new Date(row.capturedAt);
+    if (Number.isNaN(date.getTime())) continue;
+    const info = getBucketInfoUtc(bucket, date);
+
+    let kwh = 0;
+    if (typeof row.kwhOnEstimated === 'number' && Number.isFinite(row.kwhOnEstimated) && row.kwhOnEstimated >= 0) {
+      kwh = row.kwhOnEstimated;
+    } else {
+      const seconds = typeof row.onForSeconds === 'number' && Number.isFinite(row.onForSeconds) ? Math.max(0, row.onForSeconds) : 0;
+      const power = resolveBoilerPowerKw(row.entityId);
+      kwh = power != null ? (seconds / 3600) * power : 0;
+    }
+
+    const key = info.bucketStart.toISOString();
+    if (!bucketsByEntity.has(row.entityId)) bucketsByEntity.set(row.entityId, new Map());
+    const entityBuckets = bucketsByEntity.get(row.entityId)!;
+    const existing = entityBuckets.get(key);
+    if (!existing) {
+      entityBuckets.set(key, { bucketStart: info.bucketStart, label: info.label, sumKwh: kwh });
+    } else {
+      existing.sumKwh += kwh;
+    }
+  }
+  return bucketsByEntity;
+}
+
 export async function GET(req: NextRequest) {
   const me = await getCurrentUserFromRequest(req);
   if (!me || me.role !== Role.ADMIN) {
@@ -263,7 +296,7 @@ export async function GET(req: NextRequest) {
       capturedAt: { gte: from, lte: to },
     },
     orderBy: { capturedAt: 'asc' },
-    select: { entityId: true, capturedAt: true, onForSeconds: true },
+    select: { entityId: true, capturedAt: true, onForSeconds: true, kwhOnEstimated: true },
   });
 
   const bucketsByEntity = sumOnSecondsByBucket(readings, bucket);
@@ -285,6 +318,8 @@ export async function GET(req: NextRequest) {
 
   const unit = metric === 'minutesOn' ? 'min' : metric === 'kwh' ? 'kWh' : 'GBP';
 
+  const kwhBucketsByEntity = metric !== 'minutesOn' ? sumKwhByBucket(readings, bucket, resolveBoilerPowerKw) : null;
+
   // Boiler metrics are direct; radiator kWh/cost are allocated from boiler totals by minutesOn share.
   if (metric === 'minutesOn' || label === 'Boiler') {
     const series: TotalsSeries[] =
@@ -293,13 +328,14 @@ export async function GET(req: NextRequest) {
             const buckets = bucketsByEntity.get(entityId) ?? new Map();
             const power = resolveBoilerPowerKw(entityId);
             const price = resolveHeatingPricePerKwh(entityId);
+            const kwhBuckets = kwhBucketsByEntity?.get(entityId) ?? new Map();
             const points = Array.from(buckets.values())
               .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
               .map((p) => {
                 if (metric === 'minutesOn') {
                   return { bucketStart: p.bucketStart.toISOString(), label: p.label, value: p.sumSeconds / 60 };
                 }
-                const kwh = power != null ? (p.sumSeconds / 3600) * power : 0;
+                const kwh = kwhBuckets.get(p.bucketStart.toISOString())?.sumKwh ?? (power != null ? (p.sumSeconds / 3600) * power : 0);
                 if (metric === 'kwh') {
                   return { bucketStart: p.bucketStart.toISOString(), label: p.label, value: kwh };
                 }
@@ -315,6 +351,7 @@ export async function GET(req: NextRequest) {
                 const buckets = bucketsByEntity.get(entityId) ?? new Map();
                 const power = resolveBoilerPowerKw(entityId);
                 const price = resolveHeatingPricePerKwh(entityId);
+                const kwhBuckets = kwhBucketsByEntity?.get(entityId) ?? new Map();
                 for (const p of buckets.values()) {
                   const key = p.bucketStart.toISOString();
                   const existing = combined.get(key);
@@ -322,7 +359,7 @@ export async function GET(req: NextRequest) {
                   if (metric === 'minutesOn') {
                     value = p.sumSeconds / 60;
                   } else {
-                    const kwh = power != null ? (p.sumSeconds / 3600) * power : 0;
+                    const kwh = kwhBuckets.get(key)?.sumKwh ?? (power != null ? (p.sumSeconds / 3600) * power : 0);
                     value = metric === 'kwh' ? kwh : (price != null ? kwh * price : 0);
                   }
                   if (!existing) combined.set(key, { bucketStart: p.bucketStart, label: p.label, value });
@@ -364,11 +401,12 @@ export async function GET(req: NextRequest) {
     ? await prisma.boilerTemperatureReading.findMany({
         where: { haConnectionId, entityId: { in: boilerEntityIds }, capturedAt: { gte: from, lte: to } },
         orderBy: { capturedAt: 'asc' },
-        select: { entityId: true, capturedAt: true, onForSeconds: true },
+        select: { entityId: true, capturedAt: true, onForSeconds: true, kwhOnEstimated: true },
       })
     : [];
 
   const boilerBucketsByEntity = sumOnSecondsByBucket(boilerReadings, bucket);
+  const boilerKwhBucketsByEntity = sumKwhByBucket(boilerReadings, bucket, resolveBoilerPowerKw);
 
   const boilerTotalsByBucket = new Map<
     string,
@@ -376,11 +414,11 @@ export async function GET(req: NextRequest) {
   >();
 
   for (const [entityId, buckets] of boilerBucketsByEntity.entries()) {
-    const power = resolveBoilerPowerKw(entityId);
     const price = resolveHeatingPricePerKwh(entityId);
+    const kwhBuckets = boilerKwhBucketsByEntity.get(entityId) ?? new Map();
     for (const entry of buckets.values()) {
       const key = entry.bucketStart.toISOString();
-      const kwh = power != null ? (entry.sumSeconds / 3600) * power : 0;
+      const kwh = kwhBuckets.get(key)?.sumKwh ?? 0;
       const cost = price != null ? kwh * price : 0;
       const existing = boilerTotalsByBucket.get(key);
       if (!existing) {
