@@ -1575,17 +1575,21 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                 {overrideForm.label === 'Boiler' && (
                   <>
                     <div>
-                      <label className="mb-1 block text-[11px] text-slate-500">Boiler power (kW)</label>
+                      <label className="mb-1 block text-[11px] text-slate-500">Boiler power (kW) — used to estimate kWh</label>
                       <input
                         className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
                         value={overrideForm.boilerPowerKw}
                         onChange={(e) => setOverrideForm((prev) => ({ ...prev, boilerPowerKw: e.target.value }))}
                         placeholder="Leave blank to use default"
                       />
-                      <p className="mt-1 text-[11px] text-slate-500">Used for kWh and cost calculations.</p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        We do <span className="font-semibold">not</span> read “boiler kWh” from your boiler. We estimate it from runtime:
+                        <span className="font-mono"> kWh = (minutes ON ÷ 60) × kW</span>.
+                        <span> You can usually find kW on the boiler spec plate/manual (max output).</span>
+                      </p>
                     </div>
                     <div>
-                      <label className="mb-1 block text-[11px] text-slate-500">Heating price (£/kWh)</label>
+                      <label className="mb-1 block text-[11px] text-slate-500">Heating price (£/kWh) — used to estimate cost</label>
                       <input
                         className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
                         value={overrideForm.heatingPricePerKwh}
@@ -1594,7 +1598,11 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                         }
                         placeholder="Leave blank to use default"
                       />
-                      <p className="mt-1 text-[11px] text-slate-500">Falls back to server env defaults.</p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Estimated cost:
+                        <span className="font-mono"> cost = kWh × £/kWh</span>. Defaults come from server config if blank.
+                        <span> Use your gas/electric tariff unit rate.</span>
+                      </p>
                     </div>
                   </>
                 )}
