@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AuditEventType, HomeStatus, Prisma, Role } from '@prisma/client';
 import { getCurrentUserFromRequest } from '@/lib/auth';
-import { setHomeClaimCode } from '@/lib/claimCode';
+import { setHomeClaimCodeWithClient } from '@/lib/claimCode';
 import {
   HaCleanupConnectionError,
   MAX_REGISTRY_REMOVALS,
@@ -335,45 +335,18 @@ export async function POST(req: NextRequest) {
     });
 
     if (mode === 'OWNER_TRANSFER') {
-      let claimCode: string;
-      try {
-        ({ claimCode } = await setHomeClaimCode(home.id));
-      } catch {
-        return errorResponse('We could not generate a claim code. Please try again.', 500);
-      }
       const now = new Date();
 
-      await prisma.auditEvent.create({
-        data: {
-          type: AuditEventType.CLAIM_CODE_GENERATED,
-          homeId: home.id,
-          actorUserId: me.id,
-          metadata: { mode },
-        },
-      });
-
       const targetEmail = admin.email || admin.emailPending;
-      if (targetEmail) {
-        try {
-          const appUrl = getAppUrl();
-          const emailContent = buildClaimCodeEmail({
-            claimCode,
-            appUrl,
-            username: admin.username,
-          });
-          await sendEmail({
-            to: targetEmail,
-            subject: emailContent.subject,
-            html: emailContent.html,
-            text: emailContent.text,
-            replyTo: REPLY_TO,
-          });
-        } catch (err) {
-          console.error('[selling-property] Failed to send claim code email', err);
-        }
-      }
+      let claimCode = '';
 
       const deletionResult = await prisma.$transaction(async (tx) => {
+        try {
+          ({ claimCode } = await setHomeClaimCodeWithClient(tx, home.id));
+        } catch {
+          throw new Error('CLAIM_CODE_GENERATION_FAILED');
+        }
+
         await tx.haConnection.update({
           where: { id: haConnection.id },
           data: { ownerId: null },
@@ -395,6 +368,12 @@ export async function POST(req: NextRequest) {
         const pendingHomeownerOnboardings = await tx.pendingHomeownerOnboarding.deleteMany({
           where: pendingWhere,
         });
+        // Pending onboarding users may have AuthChallenge rows (email verification / 2FA) that do not cascade.
+        // Delete those first so the user rows can be deleted safely.
+        if (pendingUserIds.length > 0) {
+          await tx.authChallenge.deleteMany({ where: { userId: { in: pendingUserIds } } });
+          await tx.accessRule.deleteMany({ where: { userId: { in: pendingUserIds } } });
+        }
         const pendingUsersDeleted = pendingUserIds.length
           ? await tx.user.deleteMany({ where: { id: { in: pendingUserIds } } })
           : { count: 0 };
@@ -465,6 +444,39 @@ export async function POST(req: NextRequest) {
           usersDeleted: usersDeleted.count,
         };
       });
+
+      if (!claimCode) {
+        return errorResponse('We could not generate a claim code. Please try again.', 500);
+      }
+
+      await prisma.auditEvent.create({
+        data: {
+          type: AuditEventType.CLAIM_CODE_GENERATED,
+          homeId: home.id,
+          actorUserId: me.id,
+          metadata: { mode },
+        },
+      });
+
+      if (targetEmail) {
+        try {
+          const appUrl = getAppUrl();
+          const emailContent = buildClaimCodeEmail({
+            claimCode,
+            appUrl,
+            username: admin.username,
+          });
+          await sendEmail({
+            to: targetEmail,
+            subject: emailContent.subject,
+            html: emailContent.html,
+            text: emailContent.text,
+            replyTo: REPLY_TO,
+          });
+        } catch (err) {
+          console.error('[selling-property] Failed to send claim code email', err);
+        }
+      }
 
       await prisma.auditEvent.create({
         data: {
