@@ -600,8 +600,24 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
         if (!data.claimCode || typeof data.claimCode !== 'string') {
           throw new Error('We could not retrieve the claim code. Please try again.');
         }
-        setSellingClaimCode(data.claimCode);
+        const claimCode = data.claimCode;
+        try {
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem('dinodia_owner_transfer_claim_code_v1', claimCode);
+            window.localStorage.setItem('dinodia_owner_transfer_claim_code_at_v1', new Date().toISOString());
+          }
+        } catch {
+          // best-effort; modal still shows the claim code.
+        }
+        setSellingClaimCode(claimCode);
         setSellingMode(mode);
+        // This flow deletes the current homeowner user, so the session may become invalid immediately after.
+        // Redirect to a public page that can still display the claim code even if the user gets logged out.
+        if (typeof window !== 'undefined') {
+          window.setTimeout(() => {
+            window.location.href = '/transfer/claim-code';
+          }, 250);
+        }
       } else {
         // FULL_RESET: no claim code, sign out after success.
         setSellingMode(null);
