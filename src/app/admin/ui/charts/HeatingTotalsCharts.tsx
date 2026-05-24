@@ -4,6 +4,7 @@ import type { PointerEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { bisector, extent } from 'd3-array';
 import { scaleLinear, scaleTime } from 'd3-scale';
+import { timeDay } from 'd3-time';
 
 const chartPadding = { top: 24, right: 24, bottom: 34, left: 56 };
 const palette = ['#0ea5e9', '#34c759', '#ff9500', '#af52de', '#ff3b30', '#5ac8fa', '#5856d6', '#30d158', '#ff2d55', '#ffd60a'];
@@ -34,8 +35,7 @@ function findNearestDate(points: Array<{ date: Date }>, target: Date) {
   return points[Math.max(0, Math.min(points.length - 1, idx))] ?? null;
 }
 
-const formatDateLabel = (date: Date) =>
-  date.toLocaleString('en-GB', { month: 'short', day: 'numeric' });
+const formatDateLabel = (date: Date) => date.toLocaleString('en-GB', { month: 'short', day: 'numeric' });
 
 export function MetricTotalsBarChart({
   id,
@@ -46,6 +46,7 @@ export function MetricTotalsBarChart({
   height = 340,
   emptyLabel,
   formatValue,
+  xTickMode = 'auto',
 }: {
   id: string;
   title: string;
@@ -55,6 +56,7 @@ export function MetricTotalsBarChart({
   height?: number;
   emptyLabel?: string;
   formatValue?: (value: number) => string;
+  xTickMode?: 'auto' | 'day';
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
@@ -89,7 +91,10 @@ export function MetricTotalsBarChart({
   const xScale = scaleTime().domain((xDomain as [Date, Date]) || [new Date(), new Date()]).range([0, innerWidth]);
   const yScale = scaleLinear().domain(yDomain).range([innerHeight, 0]);
 
-  const ticksX = xScale.ticks(Math.min(10, Math.max(3, prepared.length)));
+  const ticksX =
+    xTickMode === 'day'
+      ? (timeDay.every(1) ? xScale.ticks(timeDay.every(1)!) : xScale.ticks(6))
+      : xScale.ticks(Math.min(10, Math.max(3, prepared.length)));
   const ticksY = yScale.ticks(4);
 
   const activePoint = useMemo(() => {
@@ -153,7 +158,7 @@ export function MetricTotalsBarChart({
             {prepared.map((p) => {
               const xCenter = xScale(p.date);
               const x = xCenter - barWidth / 2;
-              const barHeight = innerHeight - yScale(p.value);
+              const barHeight = Math.max(1, innerHeight - yScale(p.value));
               const y = innerHeight - barHeight;
               return <rect key={p.date.toISOString()} x={x} y={y} width={barWidth} height={barHeight} fill={color} opacity={0.85} rx={2} />;
             })}
@@ -195,6 +200,7 @@ export function MetricGroupedBarChart({
   height = 340,
   emptyLabel,
   formatValue,
+  xTickMode = 'auto',
 }: {
   id: string;
   title: string;
@@ -203,6 +209,7 @@ export function MetricGroupedBarChart({
   height?: number;
   emptyLabel?: string;
   formatValue?: (value: number) => string;
+  xTickMode?: 'auto' | 'day';
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
@@ -250,7 +257,10 @@ export function MetricGroupedBarChart({
   const xScale = scaleTime().domain((xDomain as [Date, Date]) || [new Date(), new Date()]).range([0, innerWidth]);
   const yScale = scaleLinear().domain(yDomain).range([innerHeight, 0]);
 
-  const ticksX = xScale.ticks(Math.min(10, Math.max(3, uniqueDates.length)));
+  const ticksX =
+    xTickMode === 'day'
+      ? (timeDay.every(1) ? xScale.ticks(timeDay.every(1)!) : xScale.ticks(6))
+      : xScale.ticks(Math.min(10, Math.max(3, uniqueDates.length)));
   const ticksY = yScale.ticks(4);
 
   const activeDate = useMemo(() => {
@@ -329,7 +339,7 @@ export function MetricGroupedBarChart({
                   {preparedSeries.map((s, idx) => {
                     const point = s.points.find((p) => p.date.getTime() === date.getTime());
                     const value = point?.value ?? 0;
-                    const barHeight = innerHeight - yScale(value);
+                    const barHeight = Math.max(1, innerHeight - yScale(value));
                     const y = innerHeight - barHeight;
                     const x = groupLeft + idx * perSeriesWidth;
                     return (

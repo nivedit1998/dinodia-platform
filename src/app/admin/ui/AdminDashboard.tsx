@@ -72,6 +72,29 @@ type BoilerHistoryResponse = {
   error?: string;
 };
 
+type HeatingUsageHistoryPoint = {
+  ts: string;
+  label?: string;
+  onMinutes?: number | null;
+  offMinutes?: number | null;
+  unknownMinutes?: number | null;
+  value?: number | null;
+};
+type HeatingUsageHistorySeries = {
+  entityId: string;
+  name: string;
+  area: string | null;
+  label?: string | null;
+  points: HeatingUsageHistoryPoint[];
+};
+type HeatingUsageHistoryResponse = {
+  ok: boolean;
+  unit: string;
+  metric?: string;
+  seriesByEntity: HeatingUsageHistorySeries[];
+  error?: string;
+};
+
 type Props = { username?: string };
 
 const formatDateTime = (iso: string | null | undefined) => {
@@ -85,6 +108,15 @@ const formatDateTime = (iso: string | null | undefined) => {
     hour12: false,
   });
 };
+
+const formatSnapshotLabel = (date: Date) =>
+  date.toLocaleString('en-GB', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 
 const dateOnly = (date: Date) => {
   const y = date.getFullYear();
@@ -745,7 +777,7 @@ export default function AdminDashboard({ username }: Props) {
     setBoilerLoading(true);
     setBoilerError(null);
     try {
-      const buildTotalsParams = (
+      const buildHistoryParams = (
         label: 'Boiler' | 'Radiator',
         metric: 'minutesOn' | 'kwh' | 'costGbp',
         groupBy: 'total' | 'entity',
@@ -756,7 +788,6 @@ export default function AdminDashboard({ username }: Props) {
         params.set('label', label);
         params.set('metric', metric);
         params.set('groupBy', groupBy);
-        params.set('bucket', bucket);
 
         if (preset === 'all') {
           params.set('days', 'all');
@@ -776,8 +807,14 @@ export default function AdminDashboard({ username }: Props) {
         return params.toString();
       };
 
-      const selectedRadiators = selectedRadiatorEntities.length ? selectedRadiatorEntities : undefined;
-      const selectedBoilers = selectedBoilerEntities.length ? selectedBoilerEntities : undefined;
+      const selectedRadiators =
+        selectedRadiatorEntities.length > 0
+          ? selectedRadiatorEntities
+          : radiatorEntities.map((e) => e.entityId);
+      const selectedBoilers =
+        selectedBoilerEntities.length > 0
+          ? selectedBoilerEntities
+          : boilerEntities.map((e) => e.entityId);
 
       const [radiatorRes, boilerMinutesRes, radiatorMinutesRes, boilerKwhRes, radiatorKwhRes, boilerCostRes, radiatorCostByEntityRes] =
         await Promise.all([
@@ -786,27 +823,27 @@ export default function AdminDashboard({ username }: Props) {
           credentials: 'include',
         }),
         platformFetch(
-          `/api/admin/monitoring/heating-usage-totals?${buildTotalsParams('Boiler', 'minutesOn', 'total', selectedBoilers)}`,
+          `/api/admin/monitoring/heating-usage-history?${buildHistoryParams('Boiler', 'minutesOn', 'total', selectedBoilers)}`,
           { cache: 'no-store', credentials: 'include' }
         ),
         platformFetch(
-          `/api/admin/monitoring/heating-usage-totals?${buildTotalsParams('Radiator', 'minutesOn', 'total', selectedRadiators)}`,
+          `/api/admin/monitoring/heating-usage-history?${buildHistoryParams('Radiator', 'minutesOn', 'total', selectedRadiators)}`,
           { cache: 'no-store', credentials: 'include' }
         ),
         platformFetch(
-          `/api/admin/monitoring/heating-usage-totals?${buildTotalsParams('Boiler', 'kwh', 'total', selectedBoilers)}`,
+          `/api/admin/monitoring/heating-usage-history?${buildHistoryParams('Boiler', 'kwh', 'total', selectedBoilers)}`,
           { cache: 'no-store', credentials: 'include' }
         ),
         platformFetch(
-          `/api/admin/monitoring/heating-usage-totals?${buildTotalsParams('Radiator', 'kwh', 'total', selectedRadiators, selectedBoilers)}`,
+          `/api/admin/monitoring/heating-usage-history?${buildHistoryParams('Radiator', 'kwh', 'total', selectedRadiators, selectedBoilers)}`,
           { cache: 'no-store', credentials: 'include' }
         ),
         platformFetch(
-          `/api/admin/monitoring/heating-usage-totals?${buildTotalsParams('Boiler', 'costGbp', 'total', selectedBoilers)}`,
+          `/api/admin/monitoring/heating-usage-history?${buildHistoryParams('Boiler', 'costGbp', 'total', selectedBoilers)}`,
           { cache: 'no-store', credentials: 'include' }
         ),
         platformFetch(
-          `/api/admin/monitoring/heating-usage-totals?${buildTotalsParams('Radiator', 'costGbp', 'entity', selectedRadiators, selectedBoilers)}`,
+          `/api/admin/monitoring/heating-usage-history?${buildHistoryParams('Radiator', 'costGbp', 'entity', selectedRadiators, selectedBoilers)}`,
           { cache: 'no-store', credentials: 'include' }
         ),
       ]);
@@ -836,24 +873,8 @@ export default function AdminDashboard({ username }: Props) {
           }))
         : [];
 
-      type TotalsResponse = {
-        ok: boolean;
-        unit: string;
-        bucket: HistoryBucket;
-        metric: string;
-        label: string;
-        groupBy: string;
-        seriesByEntity: Array<{
-          entityId: string;
-          name: string;
-          area: string | null;
-          points: Array<{ bucketStart: string; label: string; value: number }>;
-        }>;
-        error?: string;
-      };
-
-      const parseTotalsPoints = async (res: Response, fallbackMessage: string) => {
-        const data = (await res.json().catch(() => null)) as TotalsResponse | null;
+      const parseHistoryTotalPoints = async (res: Response, fallbackMessage: string) => {
+        const data = (await res.json().catch(() => null)) as HeatingUsageHistoryResponse | null;
         if (!res.ok || !data?.ok) {
           const message = data && typeof data.error === 'string' && data.error.length > 0 ? data.error : fallbackMessage;
           throw new Error(message);
@@ -861,18 +882,21 @@ export default function AdminDashboard({ username }: Props) {
         const series = Array.isArray(data.seriesByEntity) ? data.seriesByEntity : [];
         const total = series[0];
         const points: MetricPoint[] = (total?.points ?? [])
-          .map((p) => ({
-            date: new Date(p.bucketStart),
-            label: p.label,
-            value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : 0,
-          }))
+          .map((p) => {
+            const date = new Date(p.ts);
+            return {
+              date,
+              label: Number.isNaN(date.getTime()) ? String(p.ts ?? '') : formatSnapshotLabel(date),
+              value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : 0,
+            };
+          })
           .filter((p) => !Number.isNaN(p.date.getTime()))
           .sort((a, b) => a.date.getTime() - b.date.getTime());
         return points;
       };
 
-      const parseTotalsSeries = async (res: Response, fallbackMessage: string) => {
-        const data = (await res.json().catch(() => null)) as TotalsResponse | null;
+      const parseHistorySeries = async (res: Response, fallbackMessage: string) => {
+        const data = (await res.json().catch(() => null)) as HeatingUsageHistoryResponse | null;
         if (!res.ok || !data?.ok) {
           const message = data && typeof data.error === 'string' && data.error.length > 0 ? data.error : fallbackMessage;
           throw new Error(message);
@@ -883,11 +907,14 @@ export default function AdminDashboard({ username }: Props) {
           label: s.name || s.entityId,
           color: stableColorById(s.entityId),
           points: (s.points ?? [])
-            .map((p) => ({
-              date: new Date(p.bucketStart),
-              label: p.label,
-              value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : 0,
-            }))
+            .map((p) => {
+              const date = new Date(p.ts);
+              return {
+                date,
+                label: Number.isNaN(date.getTime()) ? String(p.ts ?? '') : formatSnapshotLabel(date),
+                value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : 0,
+              };
+            })
             .filter((p) => !Number.isNaN(p.date.getTime()))
             .sort((a, b) => a.date.getTime() - b.date.getTime()),
         }));
@@ -895,12 +922,12 @@ export default function AdminDashboard({ username }: Props) {
       };
 
       setRadiatorTemperatureSeriesAll(temperatureSeries);
-      setBoilerUsageMinutesTotals(await parseTotalsPoints(boilerMinutesRes, 'Unable to load boiler usage totals.'));
-      setRadiatorUsageMinutesTotals(await parseTotalsPoints(radiatorMinutesRes, 'Unable to load radiator usage totals.'));
-      setBoilerUsageKwhTotals(await parseTotalsPoints(boilerKwhRes, 'Unable to load boiler kWh totals.'));
-      setRadiatorUsageKwhTotals(await parseTotalsPoints(radiatorKwhRes, 'Unable to load radiator kWh totals.'));
-      setBoilerCostTotals(await parseTotalsPoints(boilerCostRes, 'Unable to load boiler cost totals.'));
-      setRadiatorCostByEntitySeries(await parseTotalsSeries(radiatorCostByEntityRes, 'Unable to load radiator cost totals.'));
+      setBoilerUsageMinutesTotals(await parseHistoryTotalPoints(boilerMinutesRes, 'Unable to load boiler usage.'));
+      setRadiatorUsageMinutesTotals(await parseHistoryTotalPoints(radiatorMinutesRes, 'Unable to load radiator usage.'));
+      setBoilerUsageKwhTotals(await parseHistoryTotalPoints(boilerKwhRes, 'Unable to load boiler kWh.'));
+      setRadiatorUsageKwhTotals(await parseHistoryTotalPoints(radiatorKwhRes, 'Unable to load radiator kWh.'));
+      setBoilerCostTotals(await parseHistoryTotalPoints(boilerCostRes, 'Unable to load boiler cost.'));
+      setRadiatorCostByEntitySeries(await parseHistorySeries(radiatorCostByEntityRes, 'Unable to load radiator cost.'));
     } catch (err) {
       console.error('Failed to load heating trends', err);
       setBoilerError(friendlyUnknownError(err, 'Unable to load heating trends.'));
@@ -914,7 +941,16 @@ export default function AdminDashboard({ username }: Props) {
     } finally {
       setBoilerLoading(false);
     }
-  }, [bucket, buildRadiatorParams, from, preset, selectedBoilerEntities, selectedRadiatorEntities, to]);
+  }, [
+    boilerEntities,
+    buildRadiatorParams,
+    from,
+    preset,
+    radiatorEntities,
+    selectedBoilerEntities,
+    selectedRadiatorEntities,
+    to,
+  ]);
 
   useEffect(() => {
     void loadSummary();
@@ -1256,6 +1292,7 @@ export default function AdminDashboard({ username }: Props) {
                 points={boilerUsageMinutesTotals}
                 color="#f97316"
                 formatValue={(v) => v.toFixed(0)}
+                xTickMode="day"
               />
             )}
 
@@ -1279,6 +1316,7 @@ export default function AdminDashboard({ username }: Props) {
                 points={radiatorUsageMinutesTotals}
                 color="#0ea5e9"
                 formatValue={(v) => v.toFixed(0)}
+                xTickMode="day"
               />
             )}
 
@@ -1302,6 +1340,7 @@ export default function AdminDashboard({ username }: Props) {
                 points={boilerUsageKwhTotals}
                 color="#ff9500"
                 formatValue={(v) => v.toFixed(2)}
+                xTickMode="day"
               />
             )}
 
@@ -1325,6 +1364,7 @@ export default function AdminDashboard({ username }: Props) {
                 points={radiatorUsageKwhTotals}
                 color="#34c759"
                 formatValue={(v) => v.toFixed(2)}
+                xTickMode="day"
               />
             )}
 
@@ -1348,6 +1388,7 @@ export default function AdminDashboard({ username }: Props) {
                 points={boilerCostTotals}
                 color="#af52de"
                 formatValue={(v) => v.toFixed(2)}
+                xTickMode="day"
               />
             )}
 
@@ -1370,6 +1411,7 @@ export default function AdminDashboard({ username }: Props) {
                 unitLabel="£"
                 series={radiatorCostByEntitySeries}
                 formatValue={(v) => v.toFixed(2)}
+                xTickMode="day"
               />
             )}
           </div>
