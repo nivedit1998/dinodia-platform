@@ -82,9 +82,6 @@ export async function GET(req: NextRequest) {
   const selectedEntityIds = parseMulti(searchParams, 'entityIds');
   const boilerEntityIdsOverride = parseMulti(searchParams, 'boilerEntityIds');
   const groupBy = (searchParams.get('groupBy') ?? '').trim().toLowerCase() === 'total' ? 'total' : 'entity';
-  if (selectedEntityIds.length === 0 && groupBy !== 'total') {
-    return NextResponse.json({ ok: true, unit: metric === 'minutesOn' ? 'min' : metric === 'kwh' ? 'kWh' : 'GBP', metric, seriesByEntity: [], meta: { label: requestedLabel } });
-  }
 
   let from = startOfDayUtc(new Date(Date.now() - (days - 1) * MS_PER_DAY));
   let to = endOfDayUtc(new Date());
@@ -151,12 +148,23 @@ export async function GET(req: NextRequest) {
     return ha?.label ?? null;
   };
 
-  const allLabeledEntities = requestedLabel
-    ? haDevices.filter((d) => (getGroupLabel(d) || '').toLowerCase() === requestedLabel.toLowerCase()).map((d) => d.entityId)
-    : [];
-  const baseEntityIds = selectedEntityIds.length > 0 ? selectedEntityIds : allLabeledEntities;
+  let inferredEntityIds: string[] = [];
+  if (selectedEntityIds.length === 0) {
+    const inferred = await prisma.boilerTemperatureReading.findMany({
+      where: { haConnectionId, capturedAt: { gte: from, lte: to } },
+      distinct: ['entityId'],
+      orderBy: [{ entityId: 'asc' }],
+      select: { entityId: true },
+    });
+    inferredEntityIds = inferred.map((row) => row.entityId);
+  }
+
+  const baseEntityIds = selectedEntityIds.length > 0 ? selectedEntityIds : inferredEntityIds;
   const allowedEntityIds = requestedLabel
-    ? baseEntityIds.filter((id) => (resolveLabel(id) || '').toLowerCase() === requestedLabel.toLowerCase())
+    ? baseEntityIds.filter((id) => {
+        const label = resolveLabel(id);
+        return label ? label.toLowerCase() === requestedLabel.toLowerCase() : true; // degrade gracefully when HA labels unavailable
+      })
     : baseEntityIds;
 
   if (allowedEntityIds.length === 0) {

@@ -340,6 +340,7 @@ export default function AdminDashboard({ username }: Props) {
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [areas, setAreas] = useState<string[]>([]);
+  const [selectorsLoaded, setSelectorsLoaded] = useState(false);
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
   const [energyEntities, setEnergyEntities] = useState<EntityOption[]>([]);
   const [batteryEntities, setBatteryEntities] = useState<EntityOption[]>([]);
@@ -767,9 +768,11 @@ export default function AdminDashboard({ username }: Props) {
       setSelectedBatteryEntities((prev) => prev.filter((id) => batteryIds.has(id)));
       setSelectedRadiatorEntities((prev) => prev.filter((id) => radiatorIds.has(id)));
       setSelectedBoilerEntities((prev) => prev.filter((id) => boilerIds.has(id)));
+      setSelectorsLoaded(true);
     } catch (err) {
       console.error('Failed to load selectors', err);
       setSelectorsError(friendlyUnknownError(err, 'Unable to load filters.'));
+      setSelectorsLoaded(false);
     }
   }, [buildSelectorParams]);
 
@@ -955,9 +958,13 @@ export default function AdminDashboard({ username }: Props) {
   useEffect(() => {
     void loadSummary();
     void loadSelectors();
-    void loadHeatingHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!selectorsLoaded) return;
+    void loadHeatingHistory();
+  }, [selectorsLoaded, loadHeatingHistory]);
 
   const lastSnapshotDisplay = summaryAllDaily ? formatDateTime(summaryAllDaily.lastSnapshotAt) : 'Not available';
   const lastFetchedDisplay = lastFetchedAt ? formatDateTime(lastFetchedAt) : 'Never';
