@@ -4,12 +4,22 @@ import { apiFailFromStatus } from '@/lib/apiError';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { requireTrustedPrivilegedDevice } from '@/lib/deviceAuth';
-import { listHaAreaNames } from '@/lib/haAreas';
-import { resolveHaCloudFirst } from '@/lib/haConnection';
-import { resolveHaLongLivedToken } from '@/lib/haSecrets';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+function addAreasFromHubSnapshot(addArea: (value: string | null | undefined) => void, snapshot: unknown) {
+  if (!snapshot || typeof snapshot !== 'object') return;
+  const obj = snapshot as Record<string, unknown>;
+  const rawAreas = obj.areas;
+  if (!Array.isArray(rawAreas)) return;
+  for (const row of rawAreas) {
+    if (!row || typeof row !== 'object') continue;
+    const r = row as Record<string, unknown>;
+    const name = typeof r.name === 'string' ? r.name.trim() : '';
+    if (name) addArea(name);
+  }
+}
 
 export async function GET(req: NextRequest, context: { params: Promise<{ hubInstallId: string }> }) {
   const me = await getCurrentUserFromRequest(req);
@@ -26,21 +36,29 @@ export async function GET(req: NextRequest, context: { params: Promise<{ hubInst
     where: { id: hubInstallId },
     select: {
       id: true,
-      home: { select: { id: true, haConnection: true } },
+      lastReportedHaAreas: true,
+      lastReportedHaAreasAt: true,
+      rooms: { select: { haAreaName: true } },
     },
   });
-  if (!hub?.home?.haConnection) {
+  if (!hub) {
     return apiFailFromStatus(404, 'Hub not found.');
   }
 
-  const { longLivedToken } = resolveHaLongLivedToken(hub.home.haConnection);
-  const hydrated = { ...hub.home.haConnection, longLivedToken };
+  const merged = new Map<string, string>();
+  const addArea = (value: string | null | undefined) => {
+    const normalized = (value ?? '').trim();
+    if (!normalized) return;
+    const key = normalized.toLowerCase();
+    if (!merged.has(key)) merged.set(key, normalized);
+  };
 
-  try {
-    const areas = await listHaAreaNames(resolveHaCloudFirst(hydrated));
-    return NextResponse.json({ ok: true, areas });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unable to load areas.';
-    return apiFailFromStatus(400, message);
-  }
+  (hub.rooms ?? []).forEach((r) => addArea(r.haAreaName));
+  addAreasFromHubSnapshot(addArea, hub.lastReportedHaAreas);
+
+  return NextResponse.json({
+    ok: true,
+    areas: Array.from(merged.values()).sort((a, b) => a.localeCompare(b)),
+    capturedAt: hub.lastReportedHaAreasAt ? hub.lastReportedHaAreasAt.toISOString() : null,
+  });
 }

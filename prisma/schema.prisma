@@ -364,6 +364,8 @@ model HubInstall {
   heatingUsageResetCompletedAt DateTime?
   lastReportedLanBaseUrl       String?
   lastReportedLanBaseUrlAt     DateTime?
+  lastReportedHaAreas          Json?
+  lastReportedHaAreasAt        DateTime?
   lastSeenAt                   DateTime?
   home                         Home?                        @relation("HomeHubInstall", fields: [homeId], references: [id], onDelete: SetNull)
   homeId                       Int?                         @unique
