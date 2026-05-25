@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
       email,
       newPassword,
       confirmNewPassword,
+      expectedRole,
     } = await req.json();
 
     const normalizedUsername = typeof username === 'string' ? username.trim().toLowerCase() : '';
@@ -65,7 +66,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const authResult = await authenticateWithCredentialsDetailed(normalizedUsername, password);
+    const expectedRoleValue = typeof expectedRole === 'string' ? expectedRole.trim().toUpperCase() : '';
+    const expected =
+      expectedRoleValue === 'TENANT' ? Role.TENANT : expectedRoleValue === 'ADMIN' ? Role.ADMIN : null;
+
+    const authResult = await authenticateWithCredentialsDetailed(normalizedUsername, password, {
+      expectedRole: expected,
+    });
     if (!authResult.ok) {
       if (authResult.reason === 'USERNAME_NOT_FOUND') {
         return fail(
@@ -110,6 +117,24 @@ export async function POST(req: NextRequest) {
 
     if (!user) {
       return fail(404, AUTH_ERROR_CODES.INTERNAL_ERROR, 'We could not find your account. Please try again.');
+    }
+
+    if (expected && user.role !== expected) {
+      const message =
+        user.role === Role.INSTALLER
+          ? 'Use Installer login.'
+          : expected === Role.TENANT
+            ? 'Use Tenant login.'
+            : 'Use Homeowner login.';
+      return fail(403, AUTH_ERROR_CODES.ROLE_MISMATCH, message);
+    }
+
+    if (user.role === Role.TENANT) {
+      const existing = (user.emailPending || user.email || '').trim().toLowerCase();
+      const submitted = typeof email === 'string' ? email.trim().toLowerCase() : '';
+      if (existing && submitted && submitted !== existing) {
+        return fail(400, AUTH_ERROR_CODES.INVALID_LOGIN_INPUT, 'This email is already linked to your account.');
+      }
     }
 
     const sessionUser = {

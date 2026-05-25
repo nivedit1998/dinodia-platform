@@ -62,7 +62,6 @@ export async function POST(req: NextRequest) {
 
   const existingTenant = await prisma.user.findFirst({
     where: {
-      homeId: home.id,
       role: Role.TENANT,
       OR: [
         { email: { equals: requestedEmail, mode: 'insensitive' } },

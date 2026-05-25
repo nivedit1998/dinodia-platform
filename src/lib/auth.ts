@@ -156,7 +156,8 @@ export async function authenticateWithCredentials(username: string, password: st
 
 export async function authenticateWithCredentialsDetailed(
   username: string,
-  password: string
+  password: string,
+  options?: { expectedRole?: import('@prisma/client').Role | null }
 ): Promise<CredentialAuthResult> {
   const identifier = typeof username === 'string' ? username.trim() : '';
   if (!identifier || !password) {
@@ -165,11 +166,13 @@ export async function authenticateWithCredentialsDetailed(
 
   const normalized = identifier.toLowerCase();
   const isEmail = normalized.includes('@');
+  const expectedRole = options?.expectedRole ?? null;
 
   const user = isEmail
     ? await (async () => {
         const matches = await prisma.user.findMany({
           where: {
+            ...(expectedRole ? { role: expectedRole } : {}),
             OR: [
               { email: { equals: identifier, mode: 'insensitive' } },
               { emailPending: { equals: identifier, mode: 'insensitive' } },

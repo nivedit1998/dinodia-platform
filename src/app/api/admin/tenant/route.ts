@@ -39,6 +39,22 @@ export async function POST(req: NextRequest) {
     return apiFailFromStatus(400, 'Please enter a valid email address.');
   }
 
+  // Enforce: at most one tenant account can exist for a given email (globally).
+  // (The same email may still be used by the homeowner/admin account.)
+  const existingTenantEmail = await prisma.user.findFirst({
+    where: {
+      role: Role.TENANT,
+      OR: [
+        { email: { equals: normalizedEmail, mode: 'insensitive' } },
+        { emailPending: { equals: normalizedEmail, mode: 'insensitive' } },
+      ],
+    },
+    select: { id: true },
+  });
+  if (existingTenantEmail) {
+    return apiFailFromStatus(409, 'That email address is already used by another tenant. Please use a different email.');
+  }
+
   const normalizedAreas = (() => {
     const candidateAreas: string[] = [];
     if (Array.isArray(areas)) {

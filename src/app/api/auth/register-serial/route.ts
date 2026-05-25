@@ -63,6 +63,26 @@ export async function POST(req: NextRequest) {
   if (!EMAIL_REGEX.test(email)) {
     return fail(400, AUTH_ERROR_CODES.EMAIL_INVALID, 'Please enter a valid email address.');
   }
+  const normalizedEmail = String(email).trim();
+
+  // Enforce: at most one ADMIN/INSTALLER account can exist for a given email.
+  const existingAdminEmail = await prisma.user.findFirst({
+    where: {
+      role: { in: [Role.ADMIN, Role.INSTALLER] },
+      OR: [
+        { email: { equals: normalizedEmail, mode: 'insensitive' } },
+        { emailPending: { equals: normalizedEmail, mode: 'insensitive' } },
+      ],
+    },
+    select: { id: true },
+  });
+  if (existingAdminEmail) {
+    return fail(
+      409,
+      AUTH_ERROR_CODES.REGISTRATION_BLOCKED,
+      'That email address is already used by another homeowner account. Please use a different email.'
+    );
+  }
 
   const existingUser = await prisma.user.findFirst({
     where: { username: { equals: username, mode: 'insensitive' } },
@@ -133,7 +153,7 @@ export async function POST(req: NextRequest) {
         username,
         passwordHash,
         role: Role.ADMIN,
-        emailPending: email,
+        emailPending: normalizedEmail,
         emailVerifiedAt: null,
         homeId: null,
         haConnectionId: null,
@@ -147,7 +167,7 @@ export async function POST(req: NextRequest) {
     userId: admin.id,
     proposedUsername: admin.username,
     proposedPasswordHash: passwordHash,
-    proposedEmail: email,
+    proposedEmail: normalizedEmail,
     deviceId,
     deviceLabel: typeof deviceLabel === 'string' ? deviceLabel : null,
     homeId,
@@ -157,7 +177,7 @@ export async function POST(req: NextRequest) {
   const challenge = await createAuthChallenge({
     userId: admin.id,
     purpose: 'ADMIN_EMAIL_VERIFY',
-    email,
+    email: normalizedEmail,
     deviceId,
   });
 
@@ -172,7 +192,7 @@ export async function POST(req: NextRequest) {
   });
 
   await sendEmail({
-    to: email,
+    to: normalizedEmail,
     subject: emailContent.subject,
     html: emailContent.html,
     text: emailContent.text,

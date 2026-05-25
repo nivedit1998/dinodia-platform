@@ -12,6 +12,7 @@ type PendingLoginState = {
   deviceId: string;
   deviceLabel: string;
   challengeId?: string | null;
+  needsEmailInput?: boolean;
 };
 
 const TENANT_SETUP_KEY = 'tenant_setup_state';
@@ -28,6 +29,7 @@ export default function TenantSetup2FA() {
   const [completing, setCompleting] = useState(false);
   const [pending, setPending] = useState<PendingLoginState | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const needsEmailInput = Boolean(pending?.needsEmailInput);
 
   const statusCopy = useMemo(() => {
     switch (challengeStatus) {
@@ -357,18 +359,20 @@ export default function TenantSetup2FA() {
                   {completing ? 'Finishing…' : 'Finish setup'}
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => {
-                  stopPolling();
-                  setChallengeId(null);
-                  setChallengeStatus(null);
-                  setInfo(null);
-                }}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Enter a different email
-              </button>
+              {needsEmailInput ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopPolling();
+                    setChallengeId(null);
+                    setChallengeStatus(null);
+                    setInfo(null);
+                  }}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Enter a different email
+                </button>
+              ) : null}
             </div>
             <button
               type="button"
@@ -383,4 +387,3 @@ export default function TenantSetup2FA() {
     </div>
   );
 }
-

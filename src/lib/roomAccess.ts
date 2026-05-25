@@ -309,32 +309,59 @@ export async function approveOrRejectRoomAccessByToken(args: { tokenRaw: string;
     let tempPassword: string | null = null;
 
     if (!tenantUserId) {
-      username = await generateUniqueUsername({
-        requestedName: updatedRequest.requestedName,
-        requestedEmail: updatedRequest.requestedEmail,
-      });
-      tempPassword = generateTemporaryPassword();
-      const passwordHash = await hashPassword(tempPassword);
+      const requestedEmailNormalized = updatedRequest.requestedEmail.trim();
 
-      const tenant = await tx.user.create({
-        data: {
-          username,
-          passwordHash,
-          mustChangePassword: true,
+      // Defensive: public scan flow should block if a tenant already exists for this email, but
+      // older requests may still exist. In that case, do NOT create a second tenant—attach to
+      // the existing tenant if and only if it belongs to this home.
+      const existingTenant = await tx.user.findFirst({
+        where: {
           role: Role.TENANT,
-          homeId: homeIdForTenant,
-          haConnectionId,
-          emailPending: updatedRequest.requestedEmail.trim(),
-          emailVerifiedAt: null,
-          email2faEnabled: false,
+          OR: [
+            { email: { equals: requestedEmailNormalized, mode: 'insensitive' } },
+            { emailPending: { equals: requestedEmailNormalized, mode: 'insensitive' } },
+          ],
         },
-        select: { id: true },
+        select: { id: true, homeId: true },
       });
-      tenantUserId = tenant.id;
-      await tx.roomAccessRequest.update({
-        where: { id: updatedRequest.id },
-        data: { tenantUserId },
-      });
+
+      if (existingTenant) {
+        if (existingTenant.homeId !== homeIdForTenant) {
+          throw new Error('This email is already linked to a tenant account for a different home.');
+        }
+        tenantUserId = existingTenant.id;
+        await tx.roomAccessRequest.update({
+          where: { id: updatedRequest.id },
+          data: { tenantUserId },
+        });
+      } else {
+        username = await generateUniqueUsername({
+          requestedName: updatedRequest.requestedName,
+          requestedEmail: requestedEmailNormalized,
+        });
+        tempPassword = generateTemporaryPassword();
+        const passwordHash = await hashPassword(tempPassword);
+
+        const tenant = await tx.user.create({
+          data: {
+            username,
+            passwordHash,
+            mustChangePassword: true,
+            role: Role.TENANT,
+            homeId: homeIdForTenant,
+            haConnectionId,
+            emailPending: requestedEmailNormalized,
+            emailVerifiedAt: null,
+            email2faEnabled: false,
+          },
+          select: { id: true },
+        });
+        tenantUserId = tenant.id;
+        await tx.roomAccessRequest.update({
+          where: { id: updatedRequest.id },
+          data: { tenantUserId },
+        });
+      }
     }
 
     await tx.accessRule.createMany({

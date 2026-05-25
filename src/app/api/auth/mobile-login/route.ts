@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
       email,
       newPassword,
       confirmNewPassword,
+      expectedRole,
     } = await req.json();
 
     if (!username || !password) {
@@ -67,16 +68,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const expectedRoleValue = typeof expectedRole === 'string' ? expectedRole.trim().toUpperCase() : '';
+    const expected =
+      expectedRoleValue === 'TENANT' ? Role.TENANT : expectedRoleValue === 'ADMIN' ? Role.ADMIN : null;
+
     const authResult = await authenticateWithCredentialsDetailed(normalizedUsername, password);
-    if (!authResult.ok) {
-      if (authResult.reason === 'USERNAME_NOT_FOUND') {
+    const resolvedAuth =
+      !authResult.ok && authResult.reason === 'EMAIL_NOT_UNIQUE' && expected
+        ? await authenticateWithCredentialsDetailed(normalizedUsername, password, { expectedRole: expected })
+        : authResult;
+    if (!resolvedAuth.ok) {
+      if (resolvedAuth.reason === 'USERNAME_NOT_FOUND') {
         return fail(
           401,
           AUTH_ERROR_CODES.USERNAME_NOT_FOUND,
           'This username doesn’t exist. Ask your homeowner to create it first.'
         );
       }
-      if (authResult.reason === 'EMAIL_NOT_UNIQUE') {
+      if (resolvedAuth.reason === 'EMAIL_NOT_UNIQUE') {
         return fail(
           401,
           AUTH_ERROR_CODES.EMAIL_NOT_UNIQUE,
@@ -85,7 +94,7 @@ export async function POST(req: NextRequest) {
       }
       return fail(401, AUTH_ERROR_CODES.INVALID_PASSWORD, 'That password is incorrect. Please try again.');
     }
-    const authUser = authResult.user;
+    const authUser = resolvedAuth.user;
 
     const user = await prisma.user.findUnique({
       where: { id: authUser.id },
@@ -112,6 +121,24 @@ export async function POST(req: NextRequest) {
 
     if (!user) {
       return fail(404, AUTH_ERROR_CODES.INTERNAL_ERROR, 'We could not find your account. Please try again.');
+    }
+
+    if (expected && user.role !== expected) {
+      const message =
+        user.role === Role.INSTALLER
+          ? 'Use Installer login.'
+          : expected === Role.TENANT
+            ? 'Use Tenant login.'
+            : 'Use Homeowner login.';
+      return fail(403, AUTH_ERROR_CODES.ROLE_MISMATCH, message);
+    }
+
+    if (user.role === Role.TENANT) {
+      const existing = (user.emailPending || user.email || '').trim().toLowerCase();
+      const submitted = typeof email === 'string' ? email.trim().toLowerCase() : '';
+      if (existing && submitted && submitted !== existing) {
+        return fail(400, AUTH_ERROR_CODES.INVALID_LOGIN_INPUT, 'This email is already linked to your account.');
+      }
     }
 
     const sessionUser = {

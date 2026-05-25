@@ -86,6 +86,18 @@ export async function POST(
     return fail(403, AUTH_ERROR_CODES.VERIFICATION_FAILED, 'Login session role mismatch.');
   }
 
+  // Hard-stop: do not allow a tenant to substitute a different email during first-login/setup
+  // if an email (or pending email) is already associated to the account.
+  if (user.role === Role.TENANT) {
+    const existing = (user.emailPending || user.email || '').trim().toLowerCase();
+    if (existing && email && email !== existing) {
+      return fail(400, AUTH_ERROR_CODES.INVALID_LOGIN_INPUT, 'This email is already linked to your account.');
+    }
+    if (existing && confirmEmail && confirmEmail !== existing) {
+      return fail(400, AUTH_ERROR_CODES.INVALID_LOGIN_INPUT, 'This email is already linked to your account.');
+    }
+  }
+
   const sessionUser = {
     id: user.id,
     username: user.username,

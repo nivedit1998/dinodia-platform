@@ -1254,11 +1254,17 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                 className="w-full flex items-center justify-between px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500"
                 onClick={() => setAddTenantOpen((prev) => !prev)}
               >
-                <span>Home setup – add tenant</span>
+                <span>Home setup – property manager & tenants</span>
                 <span className="text-[11px] font-normal text-slate-400">
                   {addTenantOpen ? 'Hide' : 'Show'}
                 </span>
               </button>
+              <div className="px-4 pb-3 text-[11px] text-slate-500">
+                Property manager:{' '}
+                <span className="font-medium text-slate-700">
+                  {propertyManagerEmail?.trim() ? propertyManagerEmail.trim() : 'Not set'}
+                </span>
+              </div>
               {tenantLocked && (
                 <p className="mx-4 mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                   {TENANT_LOCKED_MESSAGE}
