@@ -1,0 +1,53 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { Role } from '@prisma/client';
+import { apiFailFromStatus } from '@/lib/apiError';
+import { prisma } from '@/lib/prisma';
+import { getCurrentUserFromRequest } from '@/lib/auth';
+import { requireTrustedPrivilegedDevice } from '@/lib/deviceAuth';
+import { listHaAreaNames } from '@/lib/haAreas';
+import { resolveHaCloudFirst } from '@/lib/haConnection';
+import { resolveHaLongLivedToken } from '@/lib/haSecrets';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+function parseHomeId(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const num = Number(raw);
+  return Number.isInteger(num) && num > 0 ? num : null;
+}
+
+export async function GET(req: NextRequest, context: { params: Promise<{ homeId: string }> }) {
+  const me = await getCurrentUserFromRequest(req);
+  if (!me || me.role !== Role.INSTALLER) {
+    return apiFailFromStatus(401, 'Installer access required.');
+  }
+  const deviceError = await requireTrustedPrivilegedDevice(req, me.id).catch((err) => err);
+  if (deviceError instanceof Error) {
+    return apiFailFromStatus(403, deviceError.message);
+  }
+
+  const { homeId: rawHomeId } = await context.params;
+  const homeId = parseHomeId(rawHomeId);
+  if (!homeId) return apiFailFromStatus(400, 'Invalid home id.');
+
+  const home = await prisma.home.findUnique({
+    where: { id: homeId },
+    select: { haConnection: true },
+  });
+  if (!home?.haConnection) {
+    return apiFailFromStatus(404, 'Home not found.');
+  }
+
+  const { longLivedToken } = resolveHaLongLivedToken(home.haConnection);
+  const hydrated = { ...home.haConnection, longLivedToken };
+
+  try {
+    const areas = await listHaAreaNames(resolveHaCloudFirst(hydrated));
+    return NextResponse.json({ ok: true, areas });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unable to load areas.';
+    return apiFailFromStatus(400, message);
+  }
+}
+
