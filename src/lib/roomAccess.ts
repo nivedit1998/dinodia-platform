@@ -155,8 +155,10 @@ export async function createRoomAccessRequestEmails(args: {
   });
 
   const emailPayloads = createdTokens.map((entry) => {
-    const approveUrl = `${appUrl}/api/public/rooms/requests/approve?token=${encodeURIComponent(entry.approveRaw)}`;
-    const rejectUrl = `${appUrl}/api/public/rooms/requests/reject?token=${encodeURIComponent(entry.rejectRaw)}`;
+    // Send recipients to a safe, side-effect-free preview page first. The final approve/reject
+    // action is performed via POST from the browser.
+    const approveUrl = `${appUrl}/rooms/requests/approve?token=${encodeURIComponent(entry.approveRaw)}`;
+    const rejectUrl = `${appUrl}/rooms/requests/reject?token=${encodeURIComponent(entry.rejectRaw)}`;
     const content = buildRoomAccessRequestEmail({
       appUrl,
       approveUrl,
@@ -391,4 +393,151 @@ export async function approveOrRejectRoomAccessByToken(args: { tokenRaw: string;
 
 export async function clearHomePropertyManagerContacts(homeId: number) {
   await prisma.homeContact.deleteMany({ where: { homeId, type: HomeContactType.PROPERTY_MANAGER } });
+}
+
+export type RoomAccessDecisionPreviewStatus =
+  | 'ACTIONABLE'
+  | 'NOT_FOUND'
+  | 'EXPIRED'
+  | 'CONSUMED'
+  | 'ALREADY_HANDLED'
+  | 'HOME_MISSING'
+  | 'HOME_UNCLAIMED';
+
+export type RoomAccessDecisionPreview = {
+  status: RoomAccessDecisionPreviewStatus;
+  kind: RoomAccessApprovalKind;
+  roomDisplayName: string | null;
+  requestedName: string | null;
+  requestedEmail: string | null;
+  requestStatus: RoomAccessRequestStatus | null;
+  expiresAt: string | null;
+  consumedAt: string | null;
+};
+
+export async function previewRoomAccessDecisionByToken(args: { tokenRaw: string; kind: RoomAccessApprovalKind }): Promise<RoomAccessDecisionPreview> {
+  const tokenHash = hashSha256(args.tokenRaw);
+  const now = new Date();
+
+  const tokenRow = await prisma.roomAccessApprovalToken.findUnique({
+    where: { tokenHash },
+    select: {
+      kind: true,
+      consumedAt: true,
+      expiresAt: true,
+      request: {
+        select: {
+          status: true,
+          requestedName: true,
+          requestedEmail: true,
+          room: { select: { displayName: true } },
+          hubInstall: { select: { homeId: true } },
+        },
+      },
+    },
+  });
+
+  if (!tokenRow) {
+    return {
+      status: 'NOT_FOUND',
+      kind: args.kind,
+      roomDisplayName: null,
+      requestedName: null,
+      requestedEmail: null,
+      requestStatus: null,
+      expiresAt: null,
+      consumedAt: null,
+    };
+  }
+
+  if (tokenRow.kind !== args.kind) {
+    return {
+      status: 'NOT_FOUND',
+      kind: args.kind,
+      roomDisplayName: null,
+      requestedName: null,
+      requestedEmail: null,
+      requestStatus: null,
+      expiresAt: null,
+      consumedAt: null,
+    };
+  }
+
+  const homeId = tokenRow.request.hubInstall.homeId;
+  if (!homeId) {
+    return {
+      status: 'HOME_MISSING',
+      kind: args.kind,
+      roomDisplayName: tokenRow.request.room.displayName,
+      requestedName: tokenRow.request.requestedName,
+      requestedEmail: tokenRow.request.requestedEmail,
+      requestStatus: tokenRow.request.status,
+      expiresAt: tokenRow.expiresAt.toISOString(),
+      consumedAt: tokenRow.consumedAt?.toISOString() ?? null,
+    };
+  }
+
+  const home = await prisma.home.findUnique({ where: { id: homeId }, select: { status: true } });
+  if (!home || home.status === HomeStatus.UNCLAIMED) {
+    return {
+      status: 'HOME_UNCLAIMED',
+      kind: args.kind,
+      roomDisplayName: tokenRow.request.room.displayName,
+      requestedName: tokenRow.request.requestedName,
+      requestedEmail: tokenRow.request.requestedEmail,
+      requestStatus: tokenRow.request.status,
+      expiresAt: tokenRow.expiresAt.toISOString(),
+      consumedAt: tokenRow.consumedAt?.toISOString() ?? null,
+    };
+  }
+
+  if (tokenRow.expiresAt < now) {
+    return {
+      status: 'EXPIRED',
+      kind: args.kind,
+      roomDisplayName: tokenRow.request.room.displayName,
+      requestedName: tokenRow.request.requestedName,
+      requestedEmail: tokenRow.request.requestedEmail,
+      requestStatus: tokenRow.request.status,
+      expiresAt: tokenRow.expiresAt.toISOString(),
+      consumedAt: tokenRow.consumedAt?.toISOString() ?? null,
+    };
+  }
+
+  if (tokenRow.consumedAt) {
+    return {
+      status: 'CONSUMED',
+      kind: args.kind,
+      roomDisplayName: tokenRow.request.room.displayName,
+      requestedName: tokenRow.request.requestedName,
+      requestedEmail: tokenRow.request.requestedEmail,
+      requestStatus: tokenRow.request.status,
+      expiresAt: tokenRow.expiresAt.toISOString(),
+      consumedAt: tokenRow.consumedAt.toISOString(),
+    };
+  }
+
+  if (tokenRow.request.status !== RoomAccessRequestStatus.PENDING) {
+    return {
+      status: 'ALREADY_HANDLED',
+      kind: args.kind,
+      roomDisplayName: tokenRow.request.room.displayName,
+      requestedName: tokenRow.request.requestedName,
+      requestedEmail: tokenRow.request.requestedEmail,
+      requestStatus: tokenRow.request.status,
+      expiresAt: tokenRow.expiresAt.toISOString(),
+      consumedAt: null,
+    };
+  }
+
+  return {
+    status: 'ACTIONABLE',
+    kind: args.kind,
+    roomDisplayName: tokenRow.request.room.displayName,
+    requestedName: tokenRow.request.requestedName,
+    requestedEmail: tokenRow.request.requestedEmail,
+    requestStatus: tokenRow.request.status,
+    expiresAt: tokenRow.expiresAt.toISOString(),
+    consumedAt: null,
+  };
 }
