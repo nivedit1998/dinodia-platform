@@ -16,8 +16,8 @@ type Props = {
 };
 
 type StatusMessage = { type: 'success' | 'error'; message: string } | null;
-type TenantForm = { username: string; password: string; areas: string[] };
-type TenantStringField = 'username' | 'password';
+type TenantForm = { username: string; email: string; password: string; areas: string[] };
+type TenantStringField = 'username' | 'email' | 'password';
 type SellingMode = 'FULL_RESET' | 'OWNER_TRANSFER';
 type TenantInfo = { id: number; username: string; areas: string[] };
 type TenantActionState = { saving: boolean; error: string | null };
@@ -62,7 +62,7 @@ type SellingPreview = {
   };
 };
 
-const EMPTY_TENANT_FORM: TenantForm = { username: '', password: '', areas: [] };
+const EMPTY_TENANT_FORM: TenantForm = { username: '', email: '', password: '', areas: [] };
 const EMPTY_PASSWORD_FORM = {
   currentPassword: '',
   newPassword: '',
@@ -128,6 +128,10 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
   const [sellingPreview, setSellingPreview] = useState<SellingPreview | null>(null);
   const [sellingPreviewLoading, setSellingPreviewLoading] = useState(false);
 
+  const [propertyManagerEmail, setPropertyManagerEmail] = useState('');
+  const [propertyManagerLoading, setPropertyManagerLoading] = useState(false);
+  const [propertyManagerMsg, setPropertyManagerMsg] = useState<StatusMessage>(null);
+
   const [overrides, setOverrides] = useState<DeviceOverride[]>([]);
   const allowedLabelOptions = useMemo(
     () => ['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Doorbell', 'Home Security', 'TV', 'Speaker', 'Sockets'],
@@ -186,6 +190,18 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     setTenantForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  const loadPropertyManager = useCallback(async () => {
+    try {
+      const res = await platformFetch('/api/admin/home/contacts', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      const email = typeof data.propertyManagerEmail === 'string' ? data.propertyManagerEmail : '';
+      setPropertyManagerEmail(email || '');
+    } catch {
+      // best effort
+    }
+  }, []);
+
   function updatePasswordField(key: keyof typeof passwordForm, value: string) {
     setPasswordForm((prev) => ({ ...prev, [key]: value }));
   }
@@ -214,6 +230,10 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
   useEffect(() => {
     void loadAvailableAreas();
   }, [loadAvailableAreas]);
+
+  useEffect(() => {
+    void loadPropertyManager();
+  }, [loadPropertyManager]);
 
   function addArea(areaValue?: string) {
     const valueToUse = areaValue ?? newAreaInput;
@@ -433,6 +453,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
         method: 'POST',
         body: JSON.stringify({
           username: tenantForm.username,
+          email: tenantForm.email,
           password: tenantForm.password,
           areas: tenantForm.areas,
         }),
@@ -1249,6 +1270,60 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                     tenantLocked ? 'pointer-events-none opacity-60' : ''
                   }`}
                 >
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                    <p className="text-xs font-semibold text-slate-900">Property manager email</p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Optional. Property managers can approve tenant room access requests by email link.
+                    </p>
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <input
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                        value={propertyManagerEmail}
+                        onChange={(e) => setPropertyManagerEmail(e.target.value)}
+                        placeholder="manager@example.com"
+                        type="email"
+                        disabled={propertyManagerLoading || tenantLocked}
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setPropertyManagerMsg(null);
+                          setPropertyManagerLoading(true);
+                          try {
+                            const res = await platformFetch('/api/admin/home/contacts', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ propertyManagerEmail }),
+                            });
+                            const data = await res.json().catch(() => ({}));
+                            if (!res.ok) {
+                              setPropertyManagerMsg({
+                                type: 'error',
+                                message: (data && typeof data.error === 'string' ? data.error : null) || 'Unable to save email.',
+                              });
+                              return;
+                            }
+                            setPropertyManagerEmail(data.propertyManagerEmail || '');
+                            setPropertyManagerMsg({ type: 'success', message: 'Saved.' });
+                          } catch (err) {
+                            setPropertyManagerMsg({ type: 'error', message: friendlyUnknownError(err, 'Unable to save email.') });
+                          } finally {
+                            setPropertyManagerLoading(false);
+                          }
+                        }}
+                        className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                        disabled={propertyManagerLoading || tenantLocked}
+                      >
+                        {propertyManagerLoading ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                    {propertyManagerMsg ? (
+                      <p className={`mt-2 text-xs ${propertyManagerMsg.type === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                        {propertyManagerMsg.message}
+                      </p>
+                    ) : null}
+                  </div>
+
                   <form onSubmit={handleTenantSubmit} className="mt-3 space-y-3">
                     <div>
                       <label className="block mb-1 text-xs">Tenant username</label>
@@ -1259,6 +1334,20 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                         required
                         disabled={tenantLocked}
                       />
+                    </div>
+                    <div>
+                      <label className="block mb-1 text-xs">Tenant email</label>
+                      <input
+                        type="email"
+                        className="w-full border rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                        value={tenantForm.email}
+                        onChange={(e) => updateTenantField('email', e.target.value)}
+                        required
+                        disabled={tenantLocked}
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Tenants can sign in with email or username.
+                      </p>
                     </div>
                     <div>
                       <label className="block mb-1 text-xs">Tenant password</label>

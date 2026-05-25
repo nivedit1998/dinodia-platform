@@ -74,6 +74,13 @@ export async function POST(req: NextRequest) {
           'This username doesn’t exist. Ask your homeowner to create it first.'
         );
       }
+      if (authResult.reason === 'EMAIL_NOT_UNIQUE') {
+        return fail(
+          401,
+          AUTH_ERROR_CODES.EMAIL_NOT_UNIQUE,
+          'Multiple accounts use this email. Please sign in with your username instead.'
+        );
+      }
       return fail(401, AUTH_ERROR_CODES.INVALID_PASSWORD, 'That password is incorrect. Please try again.');
     }
     const authUser = authResult.user;

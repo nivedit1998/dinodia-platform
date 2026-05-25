@@ -24,10 +24,19 @@ export async function POST(req: NextRequest) {
   if (!body || typeof body !== 'object') {
     return apiFailFromStatus(400, 'Invalid request. Please try again.');
   }
-  const { username, password, area, areas } = body;
+  const { username, password, email, area, areas } = body;
 
   if (!username || !password) {
     return apiFailFromStatus(400, 'Please enter a username and password.');
+  }
+  if (typeof email !== 'string' || !email.trim()) {
+    return apiFailFromStatus(400, 'Please enter an email address for this tenant.');
+  }
+
+  const normalizedEmail = email.trim();
+  const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  if (!EMAIL_REGEX.test(normalizedEmail)) {
+    return apiFailFromStatus(400, 'Please enter a valid email address.');
   }
 
   const normalizedAreas = (() => {
@@ -77,6 +86,9 @@ export async function POST(req: NextRequest) {
       role: Role.TENANT,
       homeId: user.homeId,
       haConnectionId: haConnection.id,
+      emailPending: normalizedEmail,
+      emailVerifiedAt: null,
+      email2faEnabled: false,
     },
   });
 

@@ -320,7 +320,7 @@ export default function LoginPage() {
       {!awaitingVerification ? (
         <form onSubmit={handleSubmit} className="space-y-4">
           <Field
-            label="Username"
+            label="Email or username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoComplete="username"
@@ -359,6 +359,15 @@ export default function LoginPage() {
 
           <Button type="submit" loading={loading} fullWidth>
             {loading ? 'Signing you in' : 'Continue'}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            fullWidth
+            onClick={() => router.push('/scan-room')}
+            disabled={loading}
+          >
+            Scan room QR code
           </Button>
           <div className="text-right">
             <button
