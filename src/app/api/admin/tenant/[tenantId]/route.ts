@@ -111,7 +111,7 @@ export async function PATCH(
 
   const tenant = await prisma.user.findFirst({
     where: { id: tenantId, homeId: adminHomeId, role: Role.TENANT },
-    select: { id: true, username: true },
+    select: { id: true, username: true, email: true, emailPending: true },
   });
 
   if (!tenant) {
@@ -188,7 +188,7 @@ export async function PATCH(
 
   return NextResponse.json({
     ok: true,
-    tenant: { id: tenant.id, username: tenant.username, areas },
+    tenant: { id: tenant.id, username: tenant.username, email: tenant.email ?? tenant.emailPending ?? null, areas },
   });
 }
 

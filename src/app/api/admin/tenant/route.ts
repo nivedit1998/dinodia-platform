@@ -149,6 +149,8 @@ export async function GET(req: NextRequest) {
     select: {
       id: true,
       username: true,
+      email: true,
+      emailPending: true,
       accessRules: { select: { area: true } },
     },
     orderBy: { username: 'asc' },
@@ -157,6 +159,7 @@ export async function GET(req: NextRequest) {
   const shaped = tenants.map((tenant) => ({
     id: tenant.id,
     username: tenant.username,
+    email: tenant.email ?? tenant.emailPending ?? null,
     areas: tenant.accessRules.map((rule) => rule.area),
   }));
 

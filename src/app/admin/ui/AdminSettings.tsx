@@ -19,7 +19,7 @@ type StatusMessage = { type: 'success' | 'error'; message: string } | null;
 type TenantForm = { username: string; email: string; password: string; areas: string[] };
 type TenantStringField = 'username' | 'email' | 'password';
 type SellingMode = 'FULL_RESET' | 'OWNER_TRANSFER';
-type TenantInfo = { id: number; username: string; areas: string[] };
+type TenantInfo = { id: number; username: string; email: string | null; areas: string[] };
 type TenantActionState = { saving: boolean; error: string | null };
 type DeviceOverride = {
   entityId: string;
@@ -134,7 +134,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
 
   const [overrides, setOverrides] = useState<DeviceOverride[]>([]);
   const allowedLabelOptions = useMemo(
-    () => ['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Doorbell', 'Home Security', 'TV', 'Speaker', 'Sockets'],
+    () => ['Light', 'Blind', 'Motion Sensor', 'Spotify', 'Boiler', 'Radiator', 'Doorbell', 'Home Security', 'TV', 'Speaker', 'Sockets'],
     []
   );
   const allowedLabels = useMemo(
@@ -734,9 +734,10 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
       }
       const list: TenantInfo[] = Array.isArray(data.tenants)
         ? data.tenants
-            .map((tenant: { id: number | string; username?: unknown; areas?: unknown }) => ({
+            .map((tenant: { id: number | string; username?: unknown; email?: unknown; areas?: unknown }) => ({
               id: typeof tenant.id === 'number' ? tenant.id : Number(tenant.id),
               username: typeof tenant.username === 'string' ? tenant.username : '',
+              email: typeof tenant.email === 'string' && tenant.email.trim().length > 0 ? tenant.email.trim() : null,
               areas: Array.isArray(tenant.areas)
                 ? tenant.areas
                     .filter((a: unknown): a is string => typeof a === 'string')
@@ -1155,6 +1156,9 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                                 <p className="text-sm font-semibold text-slate-900">
                                   {tenant.username}
                                 </p>
+                                {tenant.email ? (
+                                  <p className="mt-0.5 text-xs text-slate-600">{tenant.email}</p>
+                                ) : null}
                                 <div className="mt-1 flex flex-wrap gap-2">
                                   {tenant.areas.length > 0 ? (
                                     tenant.areas.map((area) => (

@@ -506,6 +506,7 @@ export async function GET(req: NextRequest) {
     .map(([entityId, buckets]) => ({
       entityId,
       name: displayName(entityId),
+      label: inferLabel(entityId, deviceByEntity.get(entityId)?.label),
       points: Array.from(buckets.values())
         .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime())
         .map((entry) => ({
