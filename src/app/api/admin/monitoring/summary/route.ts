@@ -502,6 +502,31 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const batteryLatestByEntity: Array<{
+    entityId: string;
+    name: string;
+    label: string | null;
+    area: string | null;
+    latestBatteryPercent: number;
+    capturedAt: string;
+  }> = [];
+  const seenLatestBattery = new Set<string>();
+  for (const row of batteryRows) {
+    if (seenLatestBattery.has(row.entityId)) continue;
+    seenLatestBattery.add(row.entityId);
+    if (!areaAllowed(row.entityId)) continue;
+    const numeric = isFiniteNumber(row.numericValue) ? row.numericValue : null;
+    if (numeric === null) continue;
+    batteryLatestByEntity.push({
+      entityId: row.entityId,
+      name: displayName(row.entityId),
+      label: inferLabel(row.entityId, deviceByEntity.get(row.entityId)?.label),
+      area: areaByEntity.get(row.entityId) || UNASSIGNED,
+      latestBatteryPercent: numeric,
+      capturedAt: row.capturedAt.toISOString(),
+    });
+  }
+
   const seriesBatteryByEntity = Array.from(batteryByEntity.entries())
     .map(([entityId, buckets]) => ({
       entityId,
@@ -560,5 +585,6 @@ export async function GET(req: NextRequest) {
     seriesBatteryAvgPercent,
     seriesBatteryByEntity,
     batteryLow,
+    batteryLatestByEntity,
   });
 }

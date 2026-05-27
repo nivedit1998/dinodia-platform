@@ -8,6 +8,7 @@ import { getGroupLabel } from '@/lib/deviceLabels';
 
 type Metric = 'minutesOn' | 'kwh' | 'costGbp';
 type HistoryBucket = 'daily' | 'weekly' | 'monthly';
+type HistoryGrain = 'bucket' | 'snapshot';
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
@@ -90,6 +91,12 @@ function normalizeBucket(value: string | null): HistoryBucket {
   return 'daily';
 }
 
+function normalizeGrain(value: string | null): HistoryGrain {
+  const normalized = (value ?? '').trim().toLowerCase();
+  if (normalized === 'snapshot') return 'snapshot';
+  return 'bucket';
+}
+
 const prettyEntityId = (id: string) => id.replace(/^[^.]+\./i, '').replace(/_/g, ' ');
 
 export async function GET(req: NextRequest) {
@@ -113,6 +120,7 @@ export async function GET(req: NextRequest) {
   const requestedLabel = normalizeHeatingLabel(searchParams.get('label'));
   const metric = normalizeMetric(searchParams.get('metric'));
   const bucket = normalizeBucket(searchParams.get('bucket'));
+  const grain = normalizeGrain(searchParams.get('grain'));
   const rawDays = searchParams.get('days');
   const rawFrom = searchParams.get('from');
   const rawTo = searchParams.get('to');
@@ -403,6 +411,83 @@ export async function GET(req: NextRequest) {
 
   const seriesByEntityBucketed = seriesByEntity.map((s) => ({ ...s, points: bucketPoints(s.points) }));
 
+  if (grain === 'snapshot') {
+    const seriesByEntitySnapshot = seriesByEntity.map((s) => ({
+      ...s,
+      points: (s.points ?? [])
+        .map((p) => {
+          const date = new Date(p.ts);
+          if (Number.isNaN(date.getTime())) return null;
+          const start = startOfDayUtc(date);
+          return {
+            ...p,
+            // UI requirement: x-axis is daily, but bars are per snapshot; label is day.
+            label: bucketLabel('daily', start),
+          };
+        })
+        .filter((p): p is NonNullable<typeof p> => p != null),
+    }));
+
+    if (groupBy === 'total') {
+      const combined = new Map<string, { ts: string; onMinutes: number | null; offMinutes: number | null; unknownMinutes: number | null; value: number }>();
+      for (const s of seriesByEntitySnapshot) {
+        for (const p of s.points) {
+          const existing = combined.get(p.ts);
+          const value = typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : 0;
+          if (existing) {
+            existing.value += value;
+          } else {
+            combined.set(p.ts, {
+              ts: p.ts,
+              onMinutes: null,
+              offMinutes: null,
+              unknownMinutes: null,
+              value,
+            });
+          }
+        }
+      }
+      return NextResponse.json({
+        ok: true,
+        unit: metric === 'minutesOn' ? 'min' : metric === 'kwh' ? 'kWh' : 'GBP',
+        metric,
+        seriesByEntity: [
+          {
+            entityId: 'total',
+            name: 'Total',
+            area: null,
+            label: requestedLabel,
+            points: Array.from(combined.values()).sort((a, b) => a.ts.localeCompare(b.ts)),
+          },
+        ],
+        meta: {
+          label: requestedLabel,
+          metric,
+          bucket,
+          grain,
+          from: from.toISOString(),
+          to: to.toISOString(),
+          boilerEntityIdsUsed: metric !== 'minutesOn' ? boilerEntityIdsOverride.length > 0 ? boilerEntityIdsOverride : undefined : undefined,
+        },
+      });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      unit: metric === 'minutesOn' ? 'min' : metric === 'kwh' ? 'kWh' : 'GBP',
+      metric,
+      seriesByEntity: seriesByEntitySnapshot,
+      meta: {
+        label: requestedLabel,
+        metric,
+        bucket,
+        grain,
+        from: from.toISOString(),
+        to: to.toISOString(),
+      },
+    });
+  }
+
   if (groupBy === 'total') {
     const combined = new Map<string, { ts: string; onMinutes: number | null; offMinutes: number | null; unknownMinutes: number | null; value: number }>();
     for (const s of seriesByEntityBucketed) {
@@ -439,6 +524,7 @@ export async function GET(req: NextRequest) {
         label: requestedLabel,
         metric,
         bucket,
+        grain,
         from: from.toISOString(),
         to: to.toISOString(),
         boilerEntityIdsUsed: metric !== 'minutesOn' ? boilerEntityIdsOverride.length > 0 ? boilerEntityIdsOverride : undefined : undefined,
@@ -455,6 +541,7 @@ export async function GET(req: NextRequest) {
       label: requestedLabel,
       metric,
       bucket,
+      grain,
       from: from.toISOString(),
       to: to.toISOString(),
     },

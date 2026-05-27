@@ -8,7 +8,7 @@ import { logout as performLogout } from '@/lib/logout';
 import { friendlyUnknownError } from '@/lib/clientError';
 import { MultiLineChart, MultiSeriesTrend } from './charts/LineAreaChart';
 import { BoilerTemperatureBandChart } from './charts/BoilerCharts';
-import { MetricPoint, MetricTotalsBarChart } from './charts/HeatingTotalsCharts';
+import { MetricPoint, MetricSeries, MetricGroupedBarChart, MetricTotalsBarChart } from './charts/HeatingTotalsCharts';
 
 type HistoryBucket = 'daily' | 'weekly' | 'monthly';
 type Preset = '7' | '30' | '90' | 'all' | 'custom';
@@ -18,6 +18,7 @@ type SummaryCostPoint = { bucketStart: string; label: string; estimatedCost: num
 type SummaryEntity = { entityId: string; name?: string; label?: string | null; totalKwhDelta: number; estimatedCost?: number; area?: string | null };
 type SummaryArea = { area: string; totalKwhDelta: number; estimatedCost?: number; topEntities: SummaryEntity[] };
 type BatteryRow = { entityId: string; name?: string; label?: string | null; latestBatteryPercent: number; capturedAt: string };
+type BatteryLatestRow = { entityId: string; name?: string; label?: string | null; area?: string | null; latestBatteryPercent: number; capturedAt: string };
 type BatteryPoint = { bucketStart: string; label: string; avgPercent: number; count: number };
 type SummaryAreaSeries = { area: string; points: SummaryPoint[] };
 type BatteryEntitySeries = { entityId: string; name?: string; label?: string | null; points: Array<{ bucketStart: string; label: string; avgPercent: number }> };
@@ -49,6 +50,7 @@ type SummaryResponse = {
   topEntities: SummaryEntity[];
   byArea: SummaryArea[];
   batteryLow: BatteryRow[];
+  batteryLatestByEntity?: BatteryLatestRow[];
 };
 type BoilerHistoryResponse = {
   ok: boolean;
@@ -95,13 +97,29 @@ type HeatingUsageHistoryResponse = {
   error?: string;
 };
 
+type EnergyByEntityPoint = { bucketStart: string; label: string; totalKwhDelta: number };
+type EnergyByEntitySeries = {
+  entityId: string;
+  name: string;
+  label?: string | null;
+  area?: string | null;
+  totalKwhDelta: number;
+  points: EnergyByEntityPoint[];
+};
+type EnergyByEntityResponse = {
+  ok: boolean;
+  bucket: HistoryBucket;
+  range: { from: string; to: string };
+  seriesByEntity: EnergyByEntitySeries[];
+  error?: string;
+};
+
 type Props = { username?: string };
 
 type EnergyTab = 'gas' | 'electric';
 
 const GAS_LABELS = new Set(['Boiler', 'Radiator']);
 const isGasLabel = (label: string | null | undefined) => (label ?? '').trim().length > 0 && GAS_LABELS.has((label ?? '').trim());
-const isRadiatorLabel = (label: string | null | undefined) => (label ?? '').trim().toLowerCase() === 'radiator';
 
 type GasTopEntity = { entityId: string; name: string; area: string | null; label: string | null; totalKwh: number; totalCost: number | null };
 
@@ -364,11 +382,17 @@ export default function AdminDashboard({ username }: Props) {
   const [radiatorTemperatureSeriesAll, setRadiatorTemperatureSeriesAll] = useState<BoilerTemperatureSeries[]>([]);
   const [boilerUsageMinutesTotals, setBoilerUsageMinutesTotals] = useState<MetricPoint[]>([]);
   const [radiatorUsageMinutesTotals, setRadiatorUsageMinutesTotals] = useState<MetricPoint[]>([]);
+  const [radiatorUsageMinutesByEntity, setRadiatorUsageMinutesByEntity] = useState<MetricSeries[]>([]);
   const [boilerUsageKwhTotals, setBoilerUsageKwhTotals] = useState<MetricPoint[]>([]);
   const [radiatorUsageKwhTotals, setRadiatorUsageKwhTotals] = useState<MetricPoint[]>([]);
+  const [radiatorUsageKwhByEntity, setRadiatorUsageKwhByEntity] = useState<MetricSeries[]>([]);
   const [boilerCostTotals, setBoilerCostTotals] = useState<MetricPoint[]>([]);
   const [radiatorCostTotals, setRadiatorCostTotals] = useState<MetricPoint[]>([]);
+  const [radiatorCostByEntity, setRadiatorCostByEntity] = useState<MetricSeries[]>([]);
   const [gasTopEntities, setGasTopEntities] = useState<GasTopEntity[]>([]);
+  const [electricEnergyByEntity, setElectricEnergyByEntity] = useState<EnergyByEntitySeries[]>([]);
+  const [electricEnergyLoading, setElectricEnergyLoading] = useState(false);
+  const [electricEnergyError, setElectricEnergyError] = useState<string | null>(null);
   const [boilerLoading, setBoilerLoading] = useState(false);
   const [boilerError, setBoilerError] = useState<string | null>(null);
   const [selectorsError, setSelectorsError] = useState<string | null>(null);
@@ -529,6 +553,18 @@ export default function AdminDashboard({ username }: Props) {
       }
     }
 
+    const batteryLatestByEntity = (summaryAllDaily.batteryLatestByEntity ?? [])
+      .filter((row) => {
+        if (selectedBatteryEntities.length > 0 && !batterySet.has(row.entityId)) return false;
+        if (!hasAreaFilter) return true;
+        const resolvedArea = (row.area ?? batteryEntityAreaMap.get(row.entityId) ?? '').trim();
+        return resolvedArea ? areaSet.has(resolvedArea) : false;
+      })
+      .map((row) => ({
+        ...row,
+        area: row.area ?? batteryEntityAreaMap.get(row.entityId) ?? null,
+      }));
+
     const areaTotals = new Map<string, number>();
     for (const series of energySeriesDaily) {
       const total = series.points.reduce((sum, p) => sum + (p.totalKwhDelta || 0), 0);
@@ -565,6 +601,7 @@ export default function AdminDashboard({ username }: Props) {
       topEntities,
       byArea,
       batteryLow,
+      batteryLatestByEntity,
     };
   }, [
     summaryAllDaily,
@@ -599,7 +636,7 @@ export default function AdminDashboard({ username }: Props) {
 
   const activeBatteryLowCount = useMemo(() => {
     const rows = summary?.batteryLow ?? [];
-    return rows.filter((row) => (energyTab === 'gas' ? isRadiatorLabel(row.label) : !isGasLabel(row.label))).length;
+    return rows.filter((row) => (energyTab === 'gas' ? isGasLabel(row.label) : !isGasLabel(row.label))).length;
   }, [summary, energyTab]);
 
   const energySeriesByArea: MultiSeriesTrend[] = useMemo(
@@ -616,9 +653,63 @@ export default function AdminDashboard({ username }: Props) {
     [summary]
   );
 
+  const energyBarSeriesByArea: MetricSeries[] = useMemo(() => {
+    const raw = summary?.seriesKwhByArea ?? [];
+    const ranked = raw
+      .map((s) => ({
+        area: s.area,
+        total: (s.points ?? []).reduce((sum, p) => sum + (p.totalKwhDelta ?? 0), 0),
+        points: s.points ?? [],
+      }))
+      .filter((s) => (s.area || '').toLowerCase() !== 'unassigned' && s.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8);
+
+    return ranked.map((s) => ({
+      id: s.area,
+      label: s.area,
+      points: s.points
+        .map((p) => {
+          const date = new Date(p.bucketStart);
+          return {
+            date,
+            label: p.label,
+            value: p.totalKwhDelta ?? 0,
+          };
+        })
+        .filter((p) => !Number.isNaN(p.date.getTime())),
+    }));
+  }, [summary]);
+
+  const energyBarSeriesByEntity: MetricSeries[] = useMemo(() => {
+    const ranked = (electricEnergyByEntity ?? [])
+      .map((s) => ({
+        ...s,
+        total: typeof s.totalKwhDelta === 'number' && Number.isFinite(s.totalKwhDelta) ? s.totalKwhDelta : 0,
+      }))
+      .filter((s) => s.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8);
+
+    return ranked.map((s) => ({
+      id: s.entityId,
+      label: s.name || s.entityId,
+      points: (s.points ?? [])
+        .map((p) => {
+          const date = new Date(p.bucketStart);
+          return {
+            date,
+            label: p.label,
+            value: p.totalKwhDelta ?? 0,
+          };
+        })
+        .filter((p) => !Number.isNaN(p.date.getTime())),
+    }));
+  }, [electricEnergyByEntity]);
+
   const batterySeriesByEntity: MultiSeriesTrend[] = useMemo(() => {
     const series = summary?.seriesBatteryByEntity ?? [];
-    const filtered = series.filter((s) => (energyTab === 'gas' ? isRadiatorLabel(s.label) : !isGasLabel(s.label)));
+    const filtered = series.filter((s) => (energyTab === 'gas' ? isGasLabel(s.label) : !isGasLabel(s.label)));
     return filtered.map((s) => ({
       id: s.entityId,
       label: s.name || s.entityId,
@@ -714,13 +805,48 @@ export default function AdminDashboard({ username }: Props) {
     return params.toString();
   }, []);
 
-  const buildRadiatorParams = useCallback(() => {
+  const buildElectricEnergyByEntityParams = useCallback(() => {
     const params = new URLSearchParams();
-    params.set('days', 'all');
-    params.set('groupBy', 'area');
-    params.set('label', 'Radiator');
+    params.set('bucket', bucket);
+    if (preset === 'custom') {
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+    } else {
+      params.set('days', preset);
+    }
+    for (const area of selectedAreas) params.append('areas', area);
+    for (const entityId of selectedEnergyEntities) params.append('entityIds', entityId);
+    params.append('excludeLabels', 'Boiler');
+    params.append('excludeLabels', 'Radiator');
     return params.toString();
-  }, []);
+  }, [bucket, preset, from, to, selectedAreas, selectedEnergyEntities]);
+
+  const loadElectricEnergyByEntity = useCallback(async () => {
+    if (energyTab !== 'electric') return;
+    if (preset === 'custom' && (!from || !to)) return;
+    if (rangeError) return;
+    setElectricEnergyLoading(true);
+    setElectricEnergyError(null);
+    try {
+      const params = buildElectricEnergyByEntityParams();
+      const res = await platformFetch(`/api/admin/monitoring/energy-by-entity?${params}`, {
+        cache: 'no-store',
+        credentials: 'include',
+      });
+      const data = (await res.json().catch(() => null)) as EnergyByEntityResponse | null;
+      if (!res.ok || !data?.ok) {
+        const message = data && typeof data.error === 'string' && data.error.length > 0 ? data.error : 'Unable to load device energy trends.';
+        throw new Error(message);
+      }
+      setElectricEnergyByEntity(Array.isArray(data.seriesByEntity) ? data.seriesByEntity : []);
+    } catch (err) {
+      console.error('Failed to load electric energy by entity', err);
+      setElectricEnergyError(friendlyUnknownError(err, 'Unable to load device energy trends.'));
+      setElectricEnergyByEntity([]);
+    } finally {
+      setElectricEnergyLoading(false);
+    }
+  }, [energyTab, preset, from, to, rangeError, buildElectricEnergyByEntityParams]);
 
   const loadSummary = async (paramsOverride?: string) => {
     setLoading(true);
@@ -822,7 +948,11 @@ export default function AdminDashboard({ username }: Props) {
         params.set('label', label);
         params.set('metric', metric);
         params.set('groupBy', groupBy);
-        params.set('bucket', metric === 'costGbp' ? 'daily' : bucket);
+        const resolvedBucket = metric === 'costGbp' ? 'daily' : bucket;
+        params.set('bucket', resolvedBucket);
+        if (metric !== 'costGbp') {
+          params.set('grain', resolvedBucket === 'daily' ? 'snapshot' : 'bucket');
+        }
 
         if (preset === 'all') {
           params.set('days', 'all');
@@ -842,6 +972,27 @@ export default function AdminDashboard({ username }: Props) {
         return params.toString();
       };
 
+      const buildBoilerHistoryParams = (label: 'Boiler' | 'Radiator', entityIds: string[]) => {
+        const params = new URLSearchParams();
+        params.set('label', label);
+        params.set('bucket', bucket);
+        if (preset === 'all') {
+          params.set('days', 'all');
+        } else if (preset === 'custom') {
+          if (from && to) {
+            params.set('from', from);
+            params.set('to', to);
+          } else {
+            params.set('days', '7');
+          }
+        } else {
+          params.set('days', preset);
+        }
+        selectedAreas.forEach((area) => params.append('areas', area));
+        entityIds.forEach((id) => params.append('entityIds', id));
+        return params.toString();
+      };
+
       const selectedRadiators =
         selectedRadiatorEntities.length > 0
           ? selectedRadiatorEntities
@@ -855,6 +1006,7 @@ export default function AdminDashboard({ username }: Props) {
         radiatorRes,
         boilerMinutesRes,
         radiatorMinutesRes,
+        radiatorMinutesByEntityRes,
         boilerKwhRes,
         radiatorKwhRes,
         boilerCostRes,
@@ -863,7 +1015,7 @@ export default function AdminDashboard({ username }: Props) {
         radiatorCostByEntityRes,
       ] =
         await Promise.all([
-        platformFetch(`/api/admin/monitoring/boiler-history?${buildRadiatorParams()}`, {
+        platformFetch(`/api/admin/monitoring/boiler-history?${buildBoilerHistoryParams('Radiator', selectedRadiators)}`, {
           cache: 'no-store',
           credentials: 'include',
         }),
@@ -873,6 +1025,10 @@ export default function AdminDashboard({ username }: Props) {
         ),
         platformFetch(
           `/api/admin/monitoring/heating-usage-history?${buildHistoryParams('Radiator', 'minutesOn', 'total', selectedRadiators)}`,
+          { cache: 'no-store', credentials: 'include' }
+        ),
+        platformFetch(
+          `/api/admin/monitoring/heating-usage-history?${buildHistoryParams('Radiator', 'minutesOn', 'entity', selectedRadiators, selectedBoilers)}`,
           { cache: 'no-store', credentials: 'include' }
         ),
         platformFetch(
@@ -926,12 +1082,16 @@ export default function AdminDashboard({ username }: Props) {
           }))
         : [];
 
-      const parseHistoryTotalPoints = async (res: Response, fallbackMessage: string) => {
+      const parseHistoryPayload = async (res: Response, fallbackMessage: string) => {
         const data = (await res.json().catch(() => null)) as HeatingUsageHistoryResponse | null;
         if (!res.ok || !data?.ok) {
           const message = data && typeof data.error === 'string' && data.error.length > 0 ? data.error : fallbackMessage;
           throw new Error(message);
         }
+        return data;
+      };
+
+      const parseHistoryTotalPoints = (data: HeatingUsageHistoryResponse) => {
         const series = Array.isArray(data.seriesByEntity) ? data.seriesByEntity : [];
         const total = series[0];
         const points: MetricPoint[] = (total?.points ?? [])
@@ -939,7 +1099,7 @@ export default function AdminDashboard({ username }: Props) {
             const date = new Date(p.ts);
             return {
               date,
-              label: Number.isNaN(date.getTime()) ? String(p.ts ?? '') : formatSnapshotLabel(date),
+              label: typeof p.label === 'string' && p.label.length > 0 ? p.label : Number.isNaN(date.getTime()) ? String(p.ts ?? '') : formatSnapshotLabel(date),
               value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : 0,
             };
           })
@@ -948,12 +1108,7 @@ export default function AdminDashboard({ username }: Props) {
         return points;
       };
 
-      const parseHistoryEntityTotals = async (res: Response, fallbackMessage: string) => {
-        const data = (await res.json().catch(() => null)) as HeatingUsageHistoryResponse | null;
-        if (!res.ok || !data?.ok) {
-          const message = data && typeof data.error === 'string' && data.error.length > 0 ? data.error : fallbackMessage;
-          throw new Error(message);
-        }
+      const parseHistoryEntityTotals = (data: HeatingUsageHistoryResponse) => {
         const series = Array.isArray(data.seriesByEntity) ? data.seriesByEntity : [];
         return series
           .filter((s) => (s.entityId ?? '').trim().toLowerCase() !== 'total')
@@ -968,18 +1123,63 @@ export default function AdminDashboard({ username }: Props) {
           .sort((a, b) => b.total - a.total);
       };
 
-      setRadiatorTemperatureSeriesAll(temperatureSeries);
-      setBoilerUsageMinutesTotals(await parseHistoryTotalPoints(boilerMinutesRes, 'Unable to load boiler usage.'));
-      setRadiatorUsageMinutesTotals(await parseHistoryTotalPoints(radiatorMinutesRes, 'Unable to load radiator usage.'));
-      setBoilerUsageKwhTotals(await parseHistoryTotalPoints(boilerKwhRes, 'Unable to load boiler kWh.'));
-      setRadiatorUsageKwhTotals(await parseHistoryTotalPoints(radiatorKwhRes, 'Unable to load radiator kWh.'));
-      setBoilerCostTotals(await parseHistoryTotalPoints(boilerCostRes, 'Unable to load boiler cost.'));
-      setRadiatorCostTotals(await parseHistoryTotalPoints(radiatorCostRes, 'Unable to load radiator cost.'));
+      const parseHistoryEntitySeries = (data: HeatingUsageHistoryResponse) => {
+        const series = Array.isArray(data.seriesByEntity) ? data.seriesByEntity : [];
+        return series
+          .filter((s) => (s.entityId ?? '').trim().toLowerCase() !== 'total')
+          .map((s) => ({
+            id: s.entityId,
+            label: (s.name || s.entityId).trim() || s.entityId,
+            points: (s.points ?? [])
+              .map((p) => {
+                const date = new Date(p.ts);
+                return {
+                  date,
+                  label: typeof p.label === 'string' && p.label.length > 0 ? p.label : Number.isNaN(date.getTime()) ? String(p.ts ?? '') : formatSnapshotLabel(date),
+                  value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : 0,
+                };
+              })
+              .filter((p) => !Number.isNaN(p.date.getTime()))
+              .sort((a, b) => a.date.getTime() - b.date.getTime()),
+          }))
+          .filter((s) => s.points.length > 0);
+      };
 
-      const [radiatorKwhByEntity, radiatorCostByEntity] = await Promise.all([
-        parseHistoryEntityTotals(radiatorKwhByEntityRes, 'Unable to load radiator kWh by entity.'),
-        parseHistoryEntityTotals(radiatorCostByEntityRes, 'Unable to load radiator cost by entity.'),
+      setRadiatorTemperatureSeriesAll(temperatureSeries);
+      const [
+        boilerMinutesData,
+        radiatorMinutesData,
+        radiatorMinutesByEntityData,
+        boilerKwhData,
+        radiatorKwhData,
+        boilerCostData,
+        radiatorCostData,
+        radiatorKwhByEntityData,
+        radiatorCostByEntityData,
+      ] = await Promise.all([
+        parseHistoryPayload(boilerMinutesRes, 'Unable to load boiler usage.'),
+        parseHistoryPayload(radiatorMinutesRes, 'Unable to load radiator usage.'),
+        parseHistoryPayload(radiatorMinutesByEntityRes, 'Unable to load radiator usage by entity.'),
+        parseHistoryPayload(boilerKwhRes, 'Unable to load boiler kWh.'),
+        parseHistoryPayload(radiatorKwhRes, 'Unable to load radiator kWh.'),
+        parseHistoryPayload(boilerCostRes, 'Unable to load boiler cost.'),
+        parseHistoryPayload(radiatorCostRes, 'Unable to load radiator cost.'),
+        parseHistoryPayload(radiatorKwhByEntityRes, 'Unable to load radiator kWh by entity.'),
+        parseHistoryPayload(radiatorCostByEntityRes, 'Unable to load radiator cost by entity.'),
       ]);
+
+      setBoilerUsageMinutesTotals(parseHistoryTotalPoints(boilerMinutesData));
+      setRadiatorUsageMinutesTotals(parseHistoryTotalPoints(radiatorMinutesData));
+      setRadiatorUsageMinutesByEntity(parseHistoryEntitySeries(radiatorMinutesByEntityData));
+      setBoilerUsageKwhTotals(parseHistoryTotalPoints(boilerKwhData));
+      setRadiatorUsageKwhTotals(parseHistoryTotalPoints(radiatorKwhData));
+      setBoilerCostTotals(parseHistoryTotalPoints(boilerCostData));
+      setRadiatorCostTotals(parseHistoryTotalPoints(radiatorCostData));
+      setRadiatorUsageKwhByEntity(parseHistoryEntitySeries(radiatorKwhByEntityData));
+      setRadiatorCostByEntity(parseHistoryEntitySeries(radiatorCostByEntityData));
+
+      const radiatorKwhByEntity = parseHistoryEntityTotals(radiatorKwhByEntityData);
+      const radiatorCostByEntity = parseHistoryEntityTotals(radiatorCostByEntityData);
 
       const costByEntity = new Map<string, number>();
       for (const row of radiatorCostByEntity) {
@@ -1001,21 +1201,24 @@ export default function AdminDashboard({ username }: Props) {
       setRadiatorTemperatureSeriesAll([]);
       setBoilerUsageMinutesTotals([]);
       setRadiatorUsageMinutesTotals([]);
+      setRadiatorUsageMinutesByEntity([]);
       setBoilerUsageKwhTotals([]);
       setRadiatorUsageKwhTotals([]);
+      setRadiatorUsageKwhByEntity([]);
       setBoilerCostTotals([]);
       setRadiatorCostTotals([]);
+      setRadiatorCostByEntity([]);
       setGasTopEntities([]);
     } finally {
       setBoilerLoading(false);
     }
   }, [
     boilerEntities,
-    buildRadiatorParams,
     bucket,
     from,
     preset,
     radiatorEntities,
+    selectedAreas,
     selectedBoilerEntities,
     selectedRadiatorEntities,
     to,
@@ -1029,14 +1232,25 @@ export default function AdminDashboard({ username }: Props) {
 
   useEffect(() => {
     if (!selectorsLoaded) return;
+    if (energyTab !== 'gas') return;
     void loadHeatingHistory();
-  }, [selectorsLoaded, loadHeatingHistory]);
+  }, [selectorsLoaded, loadHeatingHistory, energyTab]);
+
+  useEffect(() => {
+    if (!selectorsLoaded) return;
+    if (energyTab !== 'electric') return;
+    void loadElectricEnergyByEntity();
+  }, [selectorsLoaded, energyTab, loadElectricEnergyByEntity]);
 
   const lastSnapshotDisplay = summaryAllDaily ? formatDateTime(summaryAllDaily.lastSnapshotAt) : 'Not available';
   const lastFetchedDisplay = lastFetchedAt ? formatDateTime(lastFetchedAt) : 'Never';
   const handleRefresh = () => {
     void loadSummary();
-    void loadHeatingHistory();
+    if (energyTab === 'gas') {
+      void loadHeatingHistory();
+    } else {
+      void loadElectricEnergyByEntity();
+    }
   };
 
   return (
@@ -1123,7 +1337,7 @@ export default function AdminDashboard({ username }: Props) {
               type="button"
               onClick={() => setEnergyTab('gas')}
               className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                energyTab === 'gas' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50'
+                energyTab === 'gas' ? 'bg-orange-600 text-white' : 'text-slate-700 hover:bg-slate-50'
               }`}
             >
               Gas
@@ -1132,7 +1346,7 @@ export default function AdminDashboard({ username }: Props) {
               type="button"
               onClick={() => setEnergyTab('electric')}
               className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                energyTab === 'electric' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50'
+                energyTab === 'electric' ? 'bg-sky-600 text-white' : 'text-slate-700 hover:bg-slate-50'
               }`}
             >
               Electric
@@ -1387,41 +1601,6 @@ export default function AdminDashboard({ username }: Props) {
           )}
         </section>
 
-        {energyTab === 'electric' ? (
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">Energy trend</h2>
-            <span className="text-xs text-slate-500">
-              Bucket: {bucket}, points: {energyPointCount}
-            </span>
-          </div>
-          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
-            <MultiSelect
-              label="Energy entities"
-              options={energyEntities
-                .filter((e) => !isGasLabel(e.label))
-                .map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
-              selected={selectedEnergyEntities}
-              onChange={setSelectedEnergyEntities}
-              placeholder="All energy entities"
-            />
-          </div>
-          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
-            <MultiLineChart
-              id="energy-trend"
-              title="Energy by area"
-              series={energySeriesByArea}
-              valueUnit="kWh"
-              emptyLabel="No energy readings in this window."
-              formatValue={(v) => Number(v).toFixed(2)}
-            />
-          </div>
-          {summary?.seriesTotalCost?.length ? (
-            <div className="mt-2 text-sm text-slate-600">Cost trend mirrors energy using configured £/kWh.</div>
-          ) : null}
-        </section>
-        ) : null}
-
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-900">Battery trend</h2>
@@ -1433,7 +1612,7 @@ export default function AdminDashboard({ username }: Props) {
             <MultiSelect
               label="Battery entities"
               options={batteryEntities
-                .filter((e) => (energyTab === 'gas' ? isRadiatorLabel(e.label) : !isGasLabel(e.label)))
+                .filter((e) => (energyTab === 'gas' ? isGasLabel(e.label) : !isGasLabel(e.label)))
                 .map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
               selected={selectedBatteryEntities}
               onChange={setSelectedBatteryEntities}
@@ -1452,6 +1631,57 @@ export default function AdminDashboard({ username }: Props) {
           </div>
           <p className="text-xs text-slate-500">Average of latest battery % per entity per bucket.</p>
         </section>
+
+        {energyTab === 'electric' ? (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">Energy trends</h2>
+              <span className="text-xs text-slate-500">
+                Bucket: {bucket}, points: {energyPointCount}
+              </span>
+            </div>
+            <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+              <MultiSelect
+                label="Energy entities"
+                options={energyEntities
+                  .filter((e) => !isGasLabel(e.label))
+                  .map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
+                selected={selectedEnergyEntities}
+                onChange={setSelectedEnergyEntities}
+                placeholder="All energy entities"
+              />
+            </div>
+            {electricEnergyError ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {electricEnergyError}
+              </div>
+            ) : null}
+            <MetricGroupedBarChart
+              id="electric-energy-by-area"
+              title="Energy trends by area"
+              unitLabel="kWh"
+              series={energyBarSeriesByArea}
+              emptyLabel="No energy readings in this window."
+              formatValue={(v) => v.toFixed(2)}
+              xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+            />
+            {electricEnergyLoading ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                Loading device energy…
+              </div>
+            ) : (
+              <MetricGroupedBarChart
+                id="electric-energy-by-device"
+                title="Energy trends per device"
+                unitLabel="kWh"
+                series={energyBarSeriesByEntity}
+                emptyLabel="No device energy readings in this window."
+                formatValue={(v) => v.toFixed(2)}
+                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+              />
+            )}
+          </section>
+        ) : null}
 
         {energyTab === 'gas' ? (
         <section className="space-y-4">
@@ -1497,6 +1727,7 @@ export default function AdminDashboard({ username }: Props) {
                 id="radiator-temperature-current"
                 title="Radiator current temperature"
                 series={radiatorTemperatureSeriesByEntity}
+                bucket={bucket}
                 emptyLabel="No radiator readings in this window."
                 showTarget={false}
               />
@@ -1556,6 +1787,29 @@ export default function AdminDashboard({ username }: Props) {
               </div>
             ) : boilerLoading ? (
               <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                Loading radiator usage by radiator…
+              </div>
+            ) : radiatorUsageMinutesByEntity.length === 0 ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                No radiator usage by radiator in this window.
+              </div>
+            ) : (
+              <MetricGroupedBarChart
+                id="radiator-usage-minutes-by-entity"
+                title="Radiator usage (minutes ON) by radiator"
+                unitLabel="min"
+                series={radiatorUsageMinutesByEntity}
+                formatValue={(v) => v.toFixed(0)}
+                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+              />
+            )}
+
+            {boilerError ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                {boilerError}
+              </div>
+            ) : boilerLoading ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
                 Loading boiler kWh…
               </div>
             ) : boilerUsageKwhTotals.length === 0 ? (
@@ -1595,6 +1849,29 @@ export default function AdminDashboard({ username }: Props) {
                 color="#34c759"
                 formatValue={(v) => v.toFixed(2)}
                 xTickMode="day"
+              />
+            )}
+
+            {boilerError ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                {boilerError}
+              </div>
+            ) : boilerLoading ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                Loading radiator energy by radiator…
+              </div>
+            ) : radiatorUsageKwhByEntity.length === 0 ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                No radiator energy by radiator in this window.
+              </div>
+            ) : (
+              <MetricGroupedBarChart
+                id="radiator-usage-kwh-by-entity"
+                title="Radiator energy (kWh) by radiator"
+                unitLabel="kWh"
+                series={radiatorUsageKwhByEntity}
+                formatValue={(v) => v.toFixed(2)}
+                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
               />
             )}
 
@@ -1645,45 +1922,86 @@ export default function AdminDashboard({ username }: Props) {
                 xTickMode="day"
               />
             )}
+
+            {boilerError ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                {boilerError}
+              </div>
+            ) : boilerLoading ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                Loading radiator cost by radiator…
+              </div>
+            ) : radiatorCostByEntity.length === 0 ? (
+              <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
+                No radiator cost by radiator in this window.
+              </div>
+            ) : (
+              <MetricGroupedBarChart
+                id="radiator-cost-by-entity"
+                title="Radiator cost (GBP) by radiator"
+                unitLabel="GBP"
+                series={radiatorCostByEntity}
+                formatValue={(v) => costFmt.format(v)}
+                xTickMode="day"
+              />
+            )}
           </div>
         </section>
         ) : null}
 
         <section className="space-y-3 rounded-3xl border border-slate-200/70 bg-white/90 p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-slate-900">Battery health</h3>
-            <span className="text-xs text-slate-500">Latest values per entity</span>
+            <h3 className="text-lg font-semibold text-slate-900">Device Battery Levels</h3>
+            <span className="text-xs text-slate-500">Latest per device</span>
           </div>
           <div className="overflow-hidden rounded-2xl border border-slate-100">
             <table className="w-full text-sm text-slate-700">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-3 py-2 text-left">Entity</th>
-                  <th className="px-3 py-2 text-left">Percent</th>
+                  <th className="px-3 py-2 text-left">Battery</th>
                   <th className="px-3 py-2 text-left">Captured at (UTC)</th>
                 </tr>
               </thead>
               <tbody>
-                {(summary?.batteryLow ?? [])
-                  .filter((row) => (energyTab === 'gas' ? isRadiatorLabel(row.label) : !isGasLabel(row.label)))
-                  .map((row) => (
-                  <tr key={row.entityId} className="odd:bg-white even:bg-slate-50/60">
-                    <td className="px-3 py-2 font-mono text-xs">{row.entityId}</td>
-                    <td className="px-3 py-2 text-red-600 font-semibold">{row.latestBatteryPercent}%</td>
-                    <td className="px-3 py-2 text-slate-600">{new Date(row.capturedAt).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
-                  </tr>
-                ))}
-                {((summary?.batteryLow ?? []).filter((row) => (energyTab === 'gas' ? isRadiatorLabel(row.label) : !isGasLabel(row.label))).length ?? 0) === 0 && (
+                {(summary?.batteryLatestByEntity ?? [])
+                  .filter((row) => (energyTab === 'gas' ? isGasLabel(row.label) : !isGasLabel(row.label)))
+                  .slice()
+                  .sort((a, b) => (a.latestBatteryPercent ?? 0) - (b.latestBatteryPercent ?? 0))
+                  .map((row) => {
+                    const pct = Math.max(0, Math.min(100, row.latestBatteryPercent ?? 0));
+                    const barClass = pct < 25 ? 'bg-red-500' : pct < 50 ? 'bg-amber-500' : 'bg-emerald-500';
+                    return (
+                      <tr key={row.entityId} className="odd:bg-white even:bg-slate-50/60">
+                        <td className="px-3 py-2">
+                          <div className="font-mono text-xs">{row.entityId}</div>
+                          <div className="text-xs text-slate-500">{row.name || row.entityId}</div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-3">
+                            <div className="h-2 w-28 rounded-full bg-slate-100">
+                              <div className={`h-2 rounded-full ${barClass}`} style={{ width: `${pct}%` }} />
+                            </div>
+                            <div className="w-10 text-right font-semibold tabular-nums">{pct.toFixed(0)}%</div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-slate-600">
+                          {new Date(row.capturedAt).toLocaleString('en-GB', { timeZone: 'UTC' })}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                {((summary?.batteryLatestByEntity ?? []).filter((row) => (energyTab === 'gas' ? isGasLabel(row.label) : !isGasLabel(row.label))).length ?? 0) === 0 && (
                   <tr>
                     <td colSpan={3} className="px-3 py-4 text-center text-slate-500">
-                      No batteries below 25% in this window.
+                      No battery readings found for this selection.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-slate-500">Battery entities are detected by unit % and an entity id containing “battery”. Threshold fixed at 25%.</p>
+          <p className="text-xs text-slate-500">Color thresholds: ≥50% green, &lt;50% amber, &lt;25% red.</p>
         </section>
       </div>
     </div>

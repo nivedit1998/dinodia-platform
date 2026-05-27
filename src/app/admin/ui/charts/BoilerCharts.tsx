@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { bisector, extent } from 'd3-array';
 import { scaleLinear, scaleTime } from 'd3-scale';
 import { curveMonotoneX, curveStepAfter, line } from 'd3-shape';
-import { timeHour } from 'd3-time';
+import { timeDay, timeMonth, timeWeek } from 'd3-time';
 
 const chartPadding = { top: 24, right: 24, bottom: 34, left: 56 };
 const palette = ['#0ea5e9', '#34c759', '#ff9500', '#af52de', '#ff3b30', '#5ac8fa', '#5856d6', '#30d158'];
@@ -56,6 +56,13 @@ const formatDateTime = (date: Date) =>
     minute: '2-digit',
     hour12: false,
   });
+
+const formatBucketTick = (bucket: 'daily' | 'weekly' | 'monthly', date: Date) => {
+  if (bucket === 'monthly') {
+    return date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+  }
+  return date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+};
 
 const isValidTargetTemp = (value: number | null): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
@@ -142,6 +149,7 @@ export function BoilerTemperatureBandChart({
   id,
   title,
   series,
+  bucket = 'daily',
   height = 340,
   forcedWidth,
   emptyLabel,
@@ -150,6 +158,7 @@ export function BoilerTemperatureBandChart({
   id: string;
   title: string;
   series: BoilerTemperatureSeries[];
+  bucket?: 'daily' | 'weekly' | 'monthly';
   height?: number;
   forcedWidth?: number;
   emptyLabel?: string;
@@ -231,7 +240,13 @@ export function BoilerTemperatureBandChart({
     });
   }, [hoverDate, preparedSeries, colorMap]);
 
-  const ticksX = (timeHour.every(2) ? xScale.ticks(timeHour.every(2)!) : xScale.ticks(6)).slice(-12);
+  const ticksXBase =
+    bucket === 'monthly'
+      ? (timeMonth.every(1) ? xScale.ticks(timeMonth.every(1)!) : xScale.ticks(6))
+      : bucket === 'weekly'
+      ? (timeWeek.every(1) ? xScale.ticks(timeWeek.every(1)!) : xScale.ticks(6))
+      : (timeDay.every(1) ? xScale.ticks(timeDay.every(1)!) : xScale.ticks(6));
+  const ticksX = ticksXBase.slice(-12);
   const ticksY = yScale.ticks(4);
 
   const handlePointer = (evt: PointerEvent<SVGRectElement>) => {
@@ -369,7 +384,7 @@ export function BoilerTemperatureBandChart({
               <g key={`x-${idx}`} transform={`translate(${xScale(tick)},${innerHeight})`}>
                 <line y2={6} stroke="#cbd5e1" />
                 <text dy="1.3em" textAnchor="middle" className="text-[11px] fill-slate-500">
-                  {formatDateTime(tick)}
+                  {formatBucketTick(bucket, tick)}
                 </text>
               </g>
             ))}
@@ -402,6 +417,7 @@ export function BoilerHeatingStateChart({
   id,
   title,
   series,
+  bucket = 'daily',
   height = 320,
   forcedWidth,
   emptyLabel,
@@ -409,6 +425,7 @@ export function BoilerHeatingStateChart({
   id: string;
   title: string;
   series: HeatingStateSeries[];
+  bucket?: 'daily' | 'weekly' | 'monthly';
   height?: number;
   forcedWidth?: number;
   emptyLabel?: string;
@@ -489,7 +506,13 @@ export function BoilerHeatingStateChart({
     if (nearest) setHoverDate(nearest.date);
   };
 
-  const ticksX = (timeHour.every(2) ? xScale.ticks(timeHour.every(2)!) : xScale.ticks(6)).slice(-12);
+  const ticksXBase =
+    bucket === 'monthly'
+      ? (timeMonth.every(1) ? xScale.ticks(timeMonth.every(1)!) : xScale.ticks(6))
+      : bucket === 'weekly'
+      ? (timeWeek.every(1) ? xScale.ticks(timeWeek.every(1)!) : xScale.ticks(6))
+      : (timeDay.every(1) ? xScale.ticks(timeDay.every(1)!) : xScale.ticks(6));
+  const ticksX = ticksXBase.slice(-12);
 
   if (orderedSeries.length === 0 || allDates.length === 0) {
     return (
@@ -554,7 +577,7 @@ export function BoilerHeatingStateChart({
             <g key={`x-${idx}`} transform={`translate(${xScale(tick)},${innerHeight})`}>
               <line y2={6} stroke="#cbd5e1" />
               <text dy="1.3em" textAnchor="middle" className="text-[11px] fill-slate-500">
-                {formatDateTime(tick)}
+                {formatBucketTick(bucket, tick)}
               </text>
             </g>
           ))}
