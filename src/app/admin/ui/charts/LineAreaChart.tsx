@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { scaleBand, scaleLinear, scaleTime } from 'd3-scale';
 import { area, line, curveMonotoneX } from 'd3-shape';
 import { bisector, extent, max } from 'd3-array';
-import { timeHour } from 'd3-time';
+import { timeDay, timeHour, timeMonday, timeMonth } from 'd3-time';
 
 export type TrendPoint = { date: Date; label: string; value: number };
 
@@ -314,6 +314,7 @@ export function MultiLineChart({
   formatValue = defaultFormat,
   forcedWidth,
   xTickIntervalHours,
+  xTickBucket,
   xTickLabelFormat,
 }: {
   id: string;
@@ -325,6 +326,7 @@ export function MultiLineChart({
   formatValue?: (value: number) => string;
   forcedWidth?: number;
   xTickIntervalHours?: number;
+  xTickBucket?: 'daily' | 'weekly' | 'monthly';
   xTickLabelFormat?: (date: Date) => string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -413,7 +415,15 @@ export function MultiLineChart({
 
   const tickCount = innerWidth < 420 ? 4 : Math.min(6, Math.max(3, allDates.length));
   const interval = xTickIntervalHours ? timeHour.every(xTickIntervalHours) : null;
-  const ticksX = interval ? xScaleTime.ticks(interval) : xScaleTime.ticks(tickCount);
+  const ticksX = interval
+    ? xScaleTime.ticks(interval)
+    : xTickBucket === 'monthly'
+      ? (timeMonth.every(1) ? xScaleTime.ticks(timeMonth.every(1)!) : xScaleTime.ticks(tickCount))
+      : xTickBucket === 'weekly'
+        ? (timeMonday.every(1) ? xScaleTime.ticks(timeMonday.every(1)!) : xScaleTime.ticks(tickCount))
+        : xTickBucket === 'daily'
+          ? (timeDay.every(1) ? xScaleTime.ticks(timeDay.every(1)!) : xScaleTime.ticks(tickCount))
+          : xScaleTime.ticks(tickCount);
   const ticksY = yScale.ticks(4);
   const defaultHeaderLabel = (date: Date) =>
     date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' });

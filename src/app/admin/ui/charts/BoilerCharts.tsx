@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { bisector, extent } from 'd3-array';
 import { scaleLinear, scaleTime } from 'd3-scale';
 import { curveMonotoneX, curveStepAfter, line } from 'd3-shape';
-import { timeDay, timeMonth, timeWeek } from 'd3-time';
+import { timeDay, timeMonday, timeMonth } from 'd3-time';
 
 const chartPadding = { top: 24, right: 24, bottom: 34, left: 56 };
 const palette = ['#0ea5e9', '#34c759', '#ff9500', '#af52de', '#ff3b30', '#5ac8fa', '#5856d6', '#30d158'];
@@ -58,10 +58,12 @@ const formatDateTime = (date: Date) =>
   });
 
 const formatBucketTick = (bucket: 'daily' | 'weekly' | 'monthly', date: Date) => {
-  if (bucket === 'monthly') {
-    return date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+  if (bucket === 'monthly') return date.toLocaleDateString('en-GB', { timeZone: 'UTC', month: 'short' });
+  if (bucket === 'weekly') {
+    const end = new Date(date.getTime() + 6 * 86400000);
+    return end.toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short' });
   }
-  return date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric' });
 };
 
 const isValidTargetTemp = (value: number | null): value is number =>
@@ -244,8 +246,8 @@ export function BoilerTemperatureBandChart({
     bucket === 'monthly'
       ? (timeMonth.every(1) ? xScale.ticks(timeMonth.every(1)!) : xScale.ticks(6))
       : bucket === 'weekly'
-      ? (timeWeek.every(1) ? xScale.ticks(timeWeek.every(1)!) : xScale.ticks(6))
-      : (timeDay.every(1) ? xScale.ticks(timeDay.every(1)!) : xScale.ticks(6));
+        ? (timeMonday.every(1) ? xScale.ticks(timeMonday.every(1)!) : xScale.ticks(6))
+        : (timeDay.every(1) ? xScale.ticks(timeDay.every(1)!) : xScale.ticks(6));
   const ticksX = ticksXBase.slice(-12);
   const ticksY = yScale.ticks(4);
 
@@ -510,8 +512,8 @@ export function BoilerHeatingStateChart({
     bucket === 'monthly'
       ? (timeMonth.every(1) ? xScale.ticks(timeMonth.every(1)!) : xScale.ticks(6))
       : bucket === 'weekly'
-      ? (timeWeek.every(1) ? xScale.ticks(timeWeek.every(1)!) : xScale.ticks(6))
-      : (timeDay.every(1) ? xScale.ticks(timeDay.every(1)!) : xScale.ticks(6));
+        ? (timeMonday.every(1) ? xScale.ticks(timeMonday.every(1)!) : xScale.ticks(6))
+        : (timeDay.every(1) ? xScale.ticks(timeDay.every(1)!) : xScale.ticks(6));
   const ticksX = ticksXBase.slice(-12);
 
   if (orderedSeries.length === 0 || allDates.length === 0) {

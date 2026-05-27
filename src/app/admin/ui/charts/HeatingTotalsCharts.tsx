@@ -4,7 +4,7 @@ import type { PointerEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { bisector, extent } from 'd3-array';
 import { scaleLinear, scaleTime } from 'd3-scale';
-import { timeDay } from 'd3-time';
+import { timeDay, timeMonday, timeMonth } from 'd3-time';
 
 const chartPadding = { top: 24, right: 24, bottom: 34, left: 56 };
 const palette = ['#0ea5e9', '#34c759', '#ff9500', '#af52de', '#ff3b30', '#5ac8fa', '#5856d6', '#30d158', '#ff2d55', '#ffd60a'];
@@ -35,13 +35,24 @@ function findNearestDate(points: Array<{ date: Date }>, target: Date) {
   return points[Math.max(0, Math.min(points.length - 1, idx))] ?? null;
 }
 
-const formatDateLabel = (date: Date) => date.toLocaleString('en-GB', { month: 'short', day: 'numeric' });
+type Bucket = 'daily' | 'weekly' | 'monthly';
+
+const formatBucketTick = (bucket: Bucket | undefined, date: Date) => {
+  if (bucket === 'monthly') return date.toLocaleDateString('en-GB', { timeZone: 'UTC', month: 'short' });
+  if (bucket === 'weekly') {
+    const end = new Date(date.getTime() + 6 * 86400000);
+    return end.toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short' });
+  }
+  if (bucket === 'daily') return date.toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric' });
+  return date.toLocaleDateString('en-GB', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+};
 
 export function MetricTotalsBarChart({
   id,
   title,
   unitLabel,
   points,
+  bucket,
   color = '#0ea5e9',
   height = 340,
   emptyLabel,
@@ -52,6 +63,7 @@ export function MetricTotalsBarChart({
   title: string;
   unitLabel: string;
   points: MetricPoint[];
+  bucket?: Bucket;
   color?: string;
   height?: number;
   emptyLabel?: string;
@@ -92,9 +104,13 @@ export function MetricTotalsBarChart({
   const yScale = scaleLinear().domain(yDomain).range([innerHeight, 0]);
 
   const ticksX =
-    xTickMode === 'day'
-      ? (timeDay.every(1) ? xScale.ticks(timeDay.every(1)!) : xScale.ticks(6))
-      : xScale.ticks(Math.min(10, Math.max(3, prepared.length)));
+    bucket === 'monthly'
+      ? (timeMonth.every(1) ? xScale.ticks(timeMonth.every(1)!) : xScale.ticks(6))
+      : bucket === 'weekly'
+        ? (timeMonday.every(1) ? xScale.ticks(timeMonday.every(1)!) : xScale.ticks(6))
+        : xTickMode === 'day'
+          ? (timeDay.every(1) ? xScale.ticks(timeDay.every(1)!) : xScale.ticks(6))
+          : xScale.ticks(Math.min(10, Math.max(3, prepared.length)));
   const ticksY = yScale.ticks(4);
 
   const activePoint = useMemo(() => {
@@ -150,7 +166,7 @@ export function MetricTotalsBarChart({
               <g key={`x-${t.toISOString()}`} transform={`translate(${xScale(t)},${innerHeight})`}>
                 <line y1={0} y2={6} stroke="rgba(148,163,184,0.4)" />
                 <text y={18} textAnchor="middle" className="fill-slate-400 text-[11px]">
-                  {formatDateLabel(t)}
+                  {formatBucketTick(bucket, t)}
                 </text>
               </g>
             ))}
@@ -197,6 +213,7 @@ export function MetricGroupedBarChart({
   title,
   unitLabel,
   series,
+  bucket,
   height = 340,
   emptyLabel,
   formatValue,
@@ -206,6 +223,7 @@ export function MetricGroupedBarChart({
   title: string;
   unitLabel: string;
   series: MetricSeries[];
+  bucket?: Bucket;
   height?: number;
   emptyLabel?: string;
   formatValue?: (value: number) => string;
@@ -258,9 +276,13 @@ export function MetricGroupedBarChart({
   const yScale = scaleLinear().domain(yDomain).range([innerHeight, 0]);
 
   const ticksX =
-    xTickMode === 'day'
-      ? (timeDay.every(1) ? xScale.ticks(timeDay.every(1)!) : xScale.ticks(6))
-      : xScale.ticks(Math.min(10, Math.max(3, uniqueDates.length)));
+    bucket === 'monthly'
+      ? (timeMonth.every(1) ? xScale.ticks(timeMonth.every(1)!) : xScale.ticks(6))
+      : bucket === 'weekly'
+        ? (timeMonday.every(1) ? xScale.ticks(timeMonday.every(1)!) : xScale.ticks(6))
+        : xTickMode === 'day'
+          ? (timeDay.every(1) ? xScale.ticks(timeDay.every(1)!) : xScale.ticks(6))
+          : xScale.ticks(Math.min(10, Math.max(3, uniqueDates.length)));
   const ticksY = yScale.ticks(4);
 
   const activeDate = useMemo(() => {
@@ -304,7 +326,11 @@ export function MetricGroupedBarChart({
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{title}</p>
           <p className="text-lg font-semibold text-slate-900">
-            {activeDate ? formatDateLabel(activeDate) : uniqueDates[uniqueDates.length - 1] ? formatDateLabel(uniqueDates[uniqueDates.length - 1]) : ''}
+            {activeDate
+              ? formatBucketTick(bucket, activeDate)
+              : uniqueDates[uniqueDates.length - 1]
+                ? formatBucketTick(bucket, uniqueDates[uniqueDates.length - 1])
+                : ''}
           </p>
         </div>
         <div className="text-xs text-slate-500">{unitLabel}</div>
@@ -326,7 +352,7 @@ export function MetricGroupedBarChart({
               <g key={`x-${t.toISOString()}`} transform={`translate(${xScale(t)},${innerHeight})`}>
                 <line y1={0} y2={6} stroke="rgba(148,163,184,0.4)" />
                 <text y={18} textAnchor="middle" className="fill-slate-400 text-[11px]">
-                  {formatDateLabel(t)}
+                  {formatBucketTick(bucket, t)}
                 </text>
               </g>
             ))}
@@ -377,7 +403,7 @@ export function MetricGroupedBarChart({
 
         {activeDate ? (
           <div className="pointer-events-none absolute right-4 top-4 max-w-[320px] rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm">
-            <div className="font-semibold text-slate-900">{formatDateLabel(activeDate)}</div>
+            <div className="font-semibold text-slate-900">{formatBucketTick(bucket, activeDate)}</div>
             <div className="mt-1 flex flex-col gap-0.5">
               {tooltipRows.slice(0, 10).map((row) => (
                 <div key={row.id} className="flex items-center justify-between gap-3">
