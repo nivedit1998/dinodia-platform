@@ -7,6 +7,7 @@ import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { getGroupLabel } from '@/lib/deviceLabels';
 
 type Metric = 'minutesOn' | 'kwh' | 'costGbp';
+type HistoryBucket = 'daily' | 'weekly' | 'monthly';
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
@@ -17,6 +18,38 @@ const startOfDayUtc = (date: Date) =>
 
 const endOfDayUtc = (date: Date) =>
   new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+
+const startOfWeekUtc = (date: Date) => {
+  const d = startOfDayUtc(date);
+  const day = d.getUTCDay();
+  const isoDay = day === 0 ? 7 : day; // 1..7 (Mon..Sun)
+  d.setUTCDate(d.getUTCDate() - (isoDay - 1));
+  return d;
+};
+
+const startOfMonthUtc = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
+
+const formatDateUtc = (date: Date) => {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const bucketStartUtc = (bucket: HistoryBucket, date: Date) => {
+  if (bucket === 'weekly') return startOfWeekUtc(date);
+  if (bucket === 'monthly') return startOfMonthUtc(date);
+  return startOfDayUtc(date);
+};
+
+const bucketLabel = (bucket: HistoryBucket, start: Date) => {
+  if (bucket === 'weekly') return `Week of ${formatDateUtc(start)}`;
+  if (bucket === 'monthly') {
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${monthNames[start.getUTCMonth()]} ${start.getUTCFullYear()}`;
+  }
+  return formatDateUtc(start);
+};
 
 const parseDateOnly = (value: string | null, endOfDay = false): Date | null => {
   if (!value) return null;
@@ -50,6 +83,13 @@ function normalizeMetric(value: string | null): Metric {
   return 'minutesOn';
 }
 
+function normalizeBucket(value: string | null): HistoryBucket {
+  const normalized = (value ?? '').trim().toLowerCase();
+  if (normalized === 'weekly') return 'weekly';
+  if (normalized === 'monthly') return 'monthly';
+  return 'daily';
+}
+
 const prettyEntityId = (id: string) => id.replace(/^[^.]+\./i, '').replace(/_/g, ' ');
 
 export async function GET(req: NextRequest) {
@@ -72,6 +112,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const requestedLabel = normalizeHeatingLabel(searchParams.get('label'));
   const metric = normalizeMetric(searchParams.get('metric'));
+  const bucket = normalizeBucket(searchParams.get('bucket'));
   const rawDays = searchParams.get('days');
   const rawFrom = searchParams.get('from');
   const rawTo = searchParams.get('to');
@@ -323,9 +364,48 @@ export async function GET(req: NextRequest) {
     }))
     .filter((s) => s.points.length > 0);
 
+  const bucketPoints = (
+    points: Array<{ ts: string; label?: string; onMinutes: number | null; offMinutes: number | null; unknownMinutes: number | null; value?: number | null }>
+  ) => {
+    const byKey = new Map<
+      string,
+      { ts: string; label: string; onMinutes: number | null; offMinutes: number | null; unknownMinutes: number | null; value: number }
+    >();
+    for (const p of points) {
+      const date = new Date(p.ts);
+      if (Number.isNaN(date.getTime())) continue;
+      const start = bucketStartUtc(bucket, date);
+      const key = start.toISOString();
+      const existing = byKey.get(key);
+      const value = typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : 0;
+      const onMinutes = typeof p.onMinutes === 'number' && Number.isFinite(p.onMinutes) ? p.onMinutes : 0;
+      const offMinutes = typeof p.offMinutes === 'number' && Number.isFinite(p.offMinutes) ? p.offMinutes : 0;
+      const unknownMinutes = typeof p.unknownMinutes === 'number' && Number.isFinite(p.unknownMinutes) ? p.unknownMinutes : 0;
+      if (existing) {
+        existing.value += value;
+        if (existing.onMinutes != null) existing.onMinutes += onMinutes;
+        if (existing.offMinutes != null) existing.offMinutes += offMinutes;
+        if (existing.unknownMinutes != null) existing.unknownMinutes += unknownMinutes;
+      } else {
+        byKey.set(key, {
+          ts: key,
+          label: bucketLabel(bucket, start),
+          onMinutes: metric === 'minutesOn' ? onMinutes : null,
+          offMinutes: metric === 'minutesOn' ? offMinutes : null,
+          unknownMinutes: metric === 'minutesOn' ? unknownMinutes : null,
+          value,
+        });
+      }
+    }
+
+    return Array.from(byKey.values()).sort((a, b) => a.ts.localeCompare(b.ts));
+  };
+
+  const seriesByEntityBucketed = seriesByEntity.map((s) => ({ ...s, points: bucketPoints(s.points) }));
+
   if (groupBy === 'total') {
     const combined = new Map<string, { ts: string; onMinutes: number | null; offMinutes: number | null; unknownMinutes: number | null; value: number }>();
-    for (const s of seriesByEntity) {
+    for (const s of seriesByEntityBucketed) {
       for (const p of s.points) {
         const existing = combined.get(p.ts);
         const value = typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : 0;
@@ -358,6 +438,7 @@ export async function GET(req: NextRequest) {
       meta: {
         label: requestedLabel,
         metric,
+        bucket,
         from: from.toISOString(),
         to: to.toISOString(),
         boilerEntityIdsUsed: metric !== 'minutesOn' ? boilerEntityIdsOverride.length > 0 ? boilerEntityIdsOverride : undefined : undefined,
@@ -369,10 +450,11 @@ export async function GET(req: NextRequest) {
     ok: true,
     unit: metric === 'minutesOn' ? 'min' : metric === 'kwh' ? 'kWh' : 'GBP',
     metric,
-    seriesByEntity,
+    seriesByEntity: seriesByEntityBucketed,
     meta: {
       label: requestedLabel,
       metric,
+      bucket,
       from: from.toISOString(),
       to: to.toISOString(),
     },

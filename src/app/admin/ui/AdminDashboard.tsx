@@ -9,7 +9,6 @@ import { friendlyUnknownError } from '@/lib/clientError';
 import { MultiLineChart, MultiSeriesTrend } from './charts/LineAreaChart';
 import { BoilerTemperatureBandChart } from './charts/BoilerCharts';
 import { MetricPoint, MetricTotalsBarChart } from './charts/HeatingTotalsCharts';
-import { DailyCostTable } from './charts/DailyCostTable';
 
 type HistoryBucket = 'daily' | 'weekly' | 'monthly';
 type Preset = '7' | '30' | '90' | 'all' | 'custom';
@@ -102,6 +101,7 @@ type EnergyTab = 'gas' | 'electric';
 
 const GAS_LABELS = new Set(['Boiler', 'Radiator']);
 const isGasLabel = (label: string | null | undefined) => (label ?? '').trim().length > 0 && GAS_LABELS.has((label ?? '').trim());
+const isRadiatorLabel = (label: string | null | undefined) => (label ?? '').trim().toLowerCase() === 'radiator';
 
 type GasTopEntity = { entityId: string; name: string; area: string | null; label: string | null; totalKwh: number; totalCost: number | null };
 
@@ -345,7 +345,7 @@ export default function AdminDashboard({ username }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [energyTab, setEnergyTab] = useState<EnergyTab>('electric');
   const [bucket, setBucket] = useState<HistoryBucket>('daily');
-  const [preset, setPreset] = useState<Preset>('all');
+  const [preset, setPreset] = useState<Preset>('30');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
@@ -591,21 +591,15 @@ export default function AdminDashboard({ username }: Props) {
     return totalKwh * summary.pricePerKwh;
   }, [summary, totalKwh]);
 
-  const gasTotalKwh = useMemo(
-    () => sumMetricPoints(boilerUsageKwhTotals) + sumMetricPoints(radiatorUsageKwhTotals),
-    [boilerUsageKwhTotals, radiatorUsageKwhTotals]
-  );
-  const gasTotalCost = useMemo(
-    () => sumMetricPoints(boilerCostTotals) + sumMetricPoints(radiatorCostTotals),
-    [boilerCostTotals, radiatorCostTotals]
-  );
+  const gasTotalKwh = useMemo(() => sumMetricPoints(radiatorUsageKwhTotals), [radiatorUsageKwhTotals]);
+  const gasTotalCost = useMemo(() => sumMetricPoints(radiatorCostTotals), [radiatorCostTotals]);
 
   const activeTotalKwh = energyTab === 'gas' ? gasTotalKwh : totalKwh;
   const activeTotalCost = energyTab === 'gas' ? gasTotalCost : totalCost;
 
   const activeBatteryLowCount = useMemo(() => {
     const rows = summary?.batteryLow ?? [];
-    return rows.filter((row) => (energyTab === 'gas' ? isGasLabel(row.label) : !isGasLabel(row.label))).length;
+    return rows.filter((row) => (energyTab === 'gas' ? isRadiatorLabel(row.label) : !isGasLabel(row.label))).length;
   }, [summary, energyTab]);
 
   const energySeriesByArea: MultiSeriesTrend[] = useMemo(
@@ -624,7 +618,7 @@ export default function AdminDashboard({ username }: Props) {
 
   const batterySeriesByEntity: MultiSeriesTrend[] = useMemo(() => {
     const series = summary?.seriesBatteryByEntity ?? [];
-    const filtered = series.filter((s) => (energyTab === 'gas' ? isGasLabel(s.label) : !isGasLabel(s.label)));
+    const filtered = series.filter((s) => (energyTab === 'gas' ? isRadiatorLabel(s.label) : !isGasLabel(s.label)));
     return filtered.map((s) => ({
       id: s.entityId,
       label: s.name || s.entityId,
@@ -828,6 +822,7 @@ export default function AdminDashboard({ username }: Props) {
         params.set('label', label);
         params.set('metric', metric);
         params.set('groupBy', groupBy);
+        params.set('bucket', metric === 'costGbp' ? 'daily' : bucket);
 
         if (preset === 'all') {
           params.set('days', 'all');
@@ -864,9 +859,7 @@ export default function AdminDashboard({ username }: Props) {
         radiatorKwhRes,
         boilerCostRes,
         radiatorCostRes,
-        boilerKwhByEntityRes,
         radiatorKwhByEntityRes,
-        boilerCostByEntityRes,
         radiatorCostByEntityRes,
       ] =
         await Promise.all([
@@ -899,15 +892,7 @@ export default function AdminDashboard({ username }: Props) {
           { cache: 'no-store', credentials: 'include' }
         ),
         platformFetch(
-          `/api/admin/monitoring/heating-usage-history?${buildHistoryParams('Boiler', 'kwh', 'entity', selectedBoilers)}`,
-          { cache: 'no-store', credentials: 'include' }
-        ),
-        platformFetch(
           `/api/admin/monitoring/heating-usage-history?${buildHistoryParams('Radiator', 'kwh', 'entity', selectedRadiators, selectedBoilers)}`,
-          { cache: 'no-store', credentials: 'include' }
-        ),
-        platformFetch(
-          `/api/admin/monitoring/heating-usage-history?${buildHistoryParams('Boiler', 'costGbp', 'entity', selectedBoilers)}`,
           { cache: 'no-store', credentials: 'include' }
         ),
         platformFetch(
@@ -991,18 +976,16 @@ export default function AdminDashboard({ username }: Props) {
       setBoilerCostTotals(await parseHistoryTotalPoints(boilerCostRes, 'Unable to load boiler cost.'));
       setRadiatorCostTotals(await parseHistoryTotalPoints(radiatorCostRes, 'Unable to load radiator cost.'));
 
-      const [boilerKwhByEntity, radiatorKwhByEntity, boilerCostByEntity, radiatorCostByEntity] = await Promise.all([
-        parseHistoryEntityTotals(boilerKwhByEntityRes, 'Unable to load boiler kWh by entity.'),
+      const [radiatorKwhByEntity, radiatorCostByEntity] = await Promise.all([
         parseHistoryEntityTotals(radiatorKwhByEntityRes, 'Unable to load radiator kWh by entity.'),
-        parseHistoryEntityTotals(boilerCostByEntityRes, 'Unable to load boiler cost by entity.'),
         parseHistoryEntityTotals(radiatorCostByEntityRes, 'Unable to load radiator cost by entity.'),
       ]);
 
       const costByEntity = new Map<string, number>();
-      for (const row of [...boilerCostByEntity, ...radiatorCostByEntity]) {
+      for (const row of radiatorCostByEntity) {
         costByEntity.set(row.entityId, row.total);
       }
-      const merged: GasTopEntity[] = [...boilerKwhByEntity, ...radiatorKwhByEntity].map((row) => ({
+      const merged: GasTopEntity[] = radiatorKwhByEntity.map((row) => ({
         entityId: row.entityId,
         name: row.name,
         area: row.area,
@@ -1029,6 +1012,7 @@ export default function AdminDashboard({ username }: Props) {
   }, [
     boilerEntities,
     buildRadiatorParams,
+    bucket,
     from,
     preset,
     radiatorEntities,
@@ -1133,31 +1117,31 @@ export default function AdminDashboard({ username }: Props) {
           </div>
         </header>
 
+        <div className="flex justify-center">
+          <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setEnergyTab('gas')}
+              className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                energyTab === 'gas' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              Gas
+            </button>
+            <button
+              type="button"
+              onClick={() => setEnergyTab('electric')}
+              className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                energyTab === 'electric' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              Electric
+            </button>
+          </div>
+        </div>
+
         <section className="rounded-3xl border border-slate-200/70 bg-white/90 p-5 shadow-sm backdrop-blur">
           <div className="flex flex-wrap gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs uppercase tracking-[0.2em] text-slate-400">Dashboard</span>
-              <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setEnergyTab('electric')}
-                  className={`rounded-full px-3 py-1 text-sm font-semibold ${
-                    energyTab === 'electric' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  Electric
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEnergyTab('gas')}
-                  className={`rounded-full px-3 py-1 text-sm font-semibold ${
-                    energyTab === 'gas' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  Gas
-                </button>
-              </div>
-            </div>
             <div className="flex items-center gap-2">
               <span className="text-xs uppercase tracking-[0.2em] text-slate-400">Range</span>
               {(['7', '30', '90', 'all'] as Preset[]).map((p) => (
@@ -1449,7 +1433,7 @@ export default function AdminDashboard({ username }: Props) {
             <MultiSelect
               label="Battery entities"
               options={batteryEntities
-                .filter((e) => (energyTab === 'gas' ? isGasLabel(e.label) : !isGasLabel(e.label)))
+                .filter((e) => (energyTab === 'gas' ? isRadiatorLabel(e.label) : !isGasLabel(e.label)))
                 .map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
               selected={selectedBatteryEntities}
               onChange={setSelectedBatteryEntities}
@@ -1627,10 +1611,14 @@ export default function AdminDashboard({ username }: Props) {
                 No boiler cost totals in this window.
               </div>
             ) : (
-              <DailyCostTable
+              <MetricTotalsBarChart
                 id="boiler-cost-daily"
                 title="Boiler running cost"
+                unitLabel="GBP"
                 points={boilerCostTotals}
+                color="#ff3b30"
+                formatValue={(v) => costFmt.format(v)}
+                xTickMode="day"
               />
             )}
 
@@ -1647,10 +1635,14 @@ export default function AdminDashboard({ username }: Props) {
                 No radiator cost data in this window.
               </div>
             ) : (
-              <DailyCostTable
+              <MetricTotalsBarChart
                 id="radiator-cost-daily"
                 title="Radiator cost (daily total)"
+                unitLabel="GBP"
                 points={radiatorCostTotals}
+                color="#af52de"
+                formatValue={(v) => costFmt.format(v)}
+                xTickMode="day"
               />
             )}
           </div>
@@ -1673,7 +1665,7 @@ export default function AdminDashboard({ username }: Props) {
               </thead>
               <tbody>
                 {(summary?.batteryLow ?? [])
-                  .filter((row) => (energyTab === 'gas' ? isGasLabel(row.label) : !isGasLabel(row.label)))
+                  .filter((row) => (energyTab === 'gas' ? isRadiatorLabel(row.label) : !isGasLabel(row.label)))
                   .map((row) => (
                   <tr key={row.entityId} className="odd:bg-white even:bg-slate-50/60">
                     <td className="px-3 py-2 font-mono text-xs">{row.entityId}</td>
@@ -1681,7 +1673,7 @@ export default function AdminDashboard({ username }: Props) {
                     <td className="px-3 py-2 text-slate-600">{new Date(row.capturedAt).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
                   </tr>
                 ))}
-                {((summary?.batteryLow ?? []).filter((row) => (energyTab === 'gas' ? isGasLabel(row.label) : !isGasLabel(row.label))).length ?? 0) === 0 && (
+                {((summary?.batteryLow ?? []).filter((row) => (energyTab === 'gas' ? isRadiatorLabel(row.label) : !isGasLabel(row.label))).length ?? 0) === 0 && (
                   <tr>
                     <td colSpan={3} className="px-3 py-4 text-center text-slate-500">
                       No batteries below 25% in this window.
