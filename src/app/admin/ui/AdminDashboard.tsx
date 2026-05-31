@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { platformFetch } from '@/lib/platformFetchClient';
@@ -900,7 +900,6 @@ export default function AdminDashboard({ username }: Props) {
   }, [preset, from, to]);
 
   const loadElectricEnergyByEntity = useCallback(async () => {
-    if (energyTab !== 'electric') return;
     if (preset === 'custom' && (!from || !to)) return;
     if (rangeError) return;
     setElectricEnergyLoading(true);
@@ -924,10 +923,9 @@ export default function AdminDashboard({ username }: Props) {
     } finally {
       setElectricEnergyLoading(false);
     }
-  }, [energyTab, preset, from, to, rangeError, buildElectricEnergyByEntityParams]);
+  }, [preset, from, to, rangeError, buildElectricEnergyByEntityParams]);
 
-  const loadSummary = async (paramsOverride?: string) => {
-    setLoading(true);
+  const loadSummary = useCallback(async (paramsOverride?: string) => {
     setError(null);
     try {
       const params = paramsOverride ?? buildSummaryParams();
@@ -967,10 +965,8 @@ export default function AdminDashboard({ username }: Props) {
       setSummaryAllDaily(null);
       setHubStatusPoints([]);
       setHubStatusError(null);
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [buildHubStatusParams, buildSummaryParams]);
 
   const loadSelectors = useCallback(async () => {
     try {
@@ -1320,33 +1316,65 @@ export default function AdminDashboard({ username }: Props) {
     to,
   ]);
 
+  const hardReloadAll = useCallback(async () => {
+    setSummaryAllDaily(null);
+    setError(null);
+    setLastFetchedAt(null);
+    setHubStatusPoints([]);
+    setHubStatusError(null);
+
+    setSelectorsLoaded(false);
+    setSelectorsError(null);
+    setAreas([]);
+    setEnergyEntities([]);
+    setBatteryEntities([]);
+    setRadiatorEntities([]);
+    setBoilerEntities([]);
+
+    setRadiatorTemperatureSeriesAll([]);
+    setBoilerUsageMinutesTotals([]);
+    setRadiatorUsageMinutesTotals([]);
+    setRadiatorUsageMinutesByEntity([]);
+    setBoilerUsageKwhTotals([]);
+    setRadiatorUsageKwhTotals([]);
+    setRadiatorUsageKwhByEntity([]);
+    setBoilerCostTotals([]);
+    setRadiatorCostTotals([]);
+    setRadiatorCostByEntity([]);
+    setGasTopEntities([]);
+    setBoilerError(null);
+
+    setElectricEnergyByEntity([]);
+    setElectricEnergyError(null);
+
+    setLoading(true);
+    setBoilerLoading(true);
+    setElectricEnergyLoading(true);
+
+    try {
+      await Promise.all([loadSummary(), loadSelectors()]);
+      await Promise.all([loadHeatingHistory(), loadElectricEnergyByEntity()]);
+    } finally {
+      setLoading(false);
+      setBoilerLoading(false);
+      setElectricEnergyLoading(false);
+    }
+  }, [loadSelectors, loadHeatingHistory, loadElectricEnergyByEntity, loadSummary]);
+
+  const hardReloadAllRef = useRef(hardReloadAll);
   useEffect(() => {
-    void loadSummary();
-    void loadSelectors();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    hardReloadAllRef.current = hardReloadAll;
+  }, [hardReloadAll]);
+
+  useEffect(() => {
+    void hardReloadAllRef.current();
   }, []);
-
-  useEffect(() => {
-    if (!selectorsLoaded) return;
-    if (energyTab !== 'gas') return;
-    void loadHeatingHistory();
-  }, [selectorsLoaded, loadHeatingHistory, energyTab]);
-
-  useEffect(() => {
-    if (!selectorsLoaded) return;
-    if (energyTab !== 'electric') return;
-    void loadElectricEnergyByEntity();
-  }, [selectorsLoaded, energyTab, loadElectricEnergyByEntity]);
 
   const lastSnapshotDisplay = summaryAllDaily ? formatDateTime(summaryAllDaily.lastSnapshotAt) : 'Not available';
   const lastFetchedDisplay = lastFetchedAt ? formatDateTime(lastFetchedAt) : 'Never';
+  const isRefreshing = loading || boilerLoading || electricEnergyLoading;
   const handleRefresh = () => {
-    void loadSummary();
-    if (energyTab === 'gas') {
-      void loadHeatingHistory();
-    } else {
-      void loadElectricEnergyByEntity();
-    }
+    void hardReloadAll();
   };
 
   return (
@@ -1511,15 +1539,15 @@ export default function AdminDashboard({ username }: Props) {
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleRefresh}
-                disabled={loading}
-                className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
-              >
-                {loading && <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/60 border-t-white" />}
-                Refresh
-              </button>
+	              <button
+	                type="button"
+	                onClick={handleRefresh}
+	                disabled={isRefreshing}
+	                className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
+	              >
+	                {isRefreshing && <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/60 border-t-white" />}
+	                Refresh
+	              </button>
               <p className="text-xs text-slate-500">Last refresh: {lastFetchedDisplay}</p>
             </div>
           </div>
@@ -1551,7 +1579,7 @@ export default function AdminDashboard({ username }: Props) {
             options={areas.map((a) => ({ id: a, label: a, hint: a }))}
             selected={selectedAreas}
             onChange={setSelectedAreas}
-            placeholder="All areas"
+            placeholder={selectorsLoaded ? 'All areas' : 'Loading areas…'}
           />
         </section>
 
