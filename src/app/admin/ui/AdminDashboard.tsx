@@ -1035,37 +1035,38 @@ export default function AdminDashboard({ username }: Props) {
     setBoilerLoading(true);
     setBoilerError(null);
     try {
-        const buildHistoryParams = (
-          label: 'Boiler' | 'Radiator',
-          metric: 'minutesOn' | 'kwh' | 'costGbp',
-          groupBy: 'total' | 'entity',
-          entityIds?: string[],
-          boilerEntityIds?: string[]
-        ) => {
-          const params = new URLSearchParams();
-          params.set('label', label);
-          params.set('metric', metric);
-          params.set('groupBy', groupBy);
-          params.set('bucket', bucket);
-          if (metric !== 'costGbp') params.set('grain', bucket === 'daily' ? 'snapshot' : 'bucket');
+	        const buildHistoryParams = (
+	          label: 'Boiler' | 'Radiator',
+	          metric: 'minutesOn' | 'kwh' | 'costGbp',
+	          groupBy: 'total' | 'entity',
+	          entityIds?: string[],
+	          boilerEntityIds?: string[]
+	        ) => {
+	          const params = new URLSearchParams();
+	          params.set('label', label);
+	          params.set('metric', metric);
+	          params.set('groupBy', groupBy);
+	          params.set('bucket', bucket);
+	          if (metric !== 'costGbp') params.set('grain', bucket === 'daily' ? 'snapshot' : 'bucket');
 
-        if (preset === 'all') {
-          params.set('days', 'all');
-        } else if (preset === 'custom') {
-          if (from && to) {
-            params.set('from', from);
-            params.set('to', to);
-          } else {
-            params.set('days', '7');
-          }
-        } else {
-          params.set('days', preset);
-        }
+	        if (preset === 'all') {
+	          params.set('days', 'all');
+	        } else if (preset === 'custom') {
+	          if (from && to) {
+	            params.set('from', from);
+	            params.set('to', to);
+	          } else {
+	            params.set('days', '7');
+	          }
+	        } else {
+	          params.set('days', preset);
+	        }
 
-        (entityIds ?? []).forEach((id) => params.append('entityIds', id));
-        (boilerEntityIds ?? []).forEach((id) => params.append('boilerEntityIds', id));
-        return params.toString();
-      };
+	        selectedAreas.forEach((area) => params.append('areas', area));
+	        (entityIds ?? []).forEach((id) => params.append('entityIds', id));
+	        (boilerEntityIds ?? []).forEach((id) => params.append('boilerEntityIds', id));
+	        return params.toString();
+	      };
 
       const buildBoilerHistoryParams = (label: 'Boiler' | 'Radiator', entityIds: string[]) => {
         const params = new URLSearchParams();

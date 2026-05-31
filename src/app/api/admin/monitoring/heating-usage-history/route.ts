@@ -130,6 +130,9 @@ export async function GET(req: NextRequest) {
 
   const selectedEntityIds = parseMulti(searchParams, 'entityIds');
   const boilerEntityIdsOverride = parseMulti(searchParams, 'boilerEntityIds');
+  const selectedAreas = parseMulti(searchParams, 'areas');
+  const areasFilter = new Set(selectedAreas.map((a) => a.trim()).filter(Boolean));
+  const hasAreaFilter = areasFilter.size > 0;
   const groupBy = (searchParams.get('groupBy') ?? '').trim().toLowerCase() === 'total' ? 'total' : 'entity';
 
   let from = startOfDayUtc(new Date(Date.now() - (days - 1) * MS_PER_DAY));
@@ -209,12 +212,19 @@ export async function GET(req: NextRequest) {
   }
 
   const baseEntityIds = selectedEntityIds.length > 0 ? selectedEntityIds : inferredEntityIds;
-  const allowedEntityIds = requestedLabel
+  let allowedEntityIds = requestedLabel
     ? baseEntityIds.filter((id) => {
         const label = resolveLabel(id);
         return label ? label.toLowerCase() === requestedLabel.toLowerCase() : true; // degrade gracefully when HA labels unavailable
       })
     : baseEntityIds;
+
+  if (hasAreaFilter) {
+    allowedEntityIds = allowedEntityIds.filter((id) => {
+      const area = resolveArea(id);
+      return area ? areasFilter.has(area.trim()) : false;
+    });
+  }
 
   if (allowedEntityIds.length === 0) {
     return NextResponse.json({ ok: true, unit: metric === 'minutesOn' ? 'min' : metric === 'kwh' ? 'kWh' : 'GBP', metric, seriesByEntity: [], meta: { label: requestedLabel } });
@@ -289,7 +299,13 @@ export async function GET(req: NextRequest) {
       boilerEntityIdsOverride.length > 0
         ? boilerEntityIdsOverride
         : haDevices.filter((d) => (getGroupLabel(d) || '').toLowerCase() === 'boiler').map((d) => d.entityId)
-    ).filter((id) => (resolveLabel(id) || '').toLowerCase() === 'boiler');
+    )
+      .filter((id) => (resolveLabel(id) || '').toLowerCase() === 'boiler')
+      .filter((id) => {
+        if (!hasAreaFilter) return true;
+        const area = resolveArea(id);
+        return area ? areasFilter.has(area.trim()) : false;
+      });
 
     const boilerReadings = boilerEntityIds.length
       ? await prisma.boilerTemperatureReading.findMany({
