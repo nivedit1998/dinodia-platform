@@ -77,6 +77,7 @@ export function MetricTotalsBarChart({
   unitLabel,
   points,
   bucket,
+  unknownRanges,
   color = '#0ea5e9',
   height = 340,
   emptyLabel,
@@ -88,6 +89,7 @@ export function MetricTotalsBarChart({
   unitLabel: string;
   points: MetricPoint[];
   bucket?: Bucket;
+  unknownRanges?: Array<{ start: Date; end: Date }>;
   color?: string;
   height?: number;
   emptyLabel?: string;
@@ -177,6 +179,16 @@ export function MetricTotalsBarChart({
       <div className="relative">
         <svg width={measuredWidth} height={height} className="block w-full">
           <g transform={`translate(${chartPadding.left},${chartPadding.top})`}>
+            {(unknownRanges ?? []).map((r) => {
+              const x0 = xScale(r.start);
+              const x1 = xScale(r.end);
+              const left = Math.max(0, Math.min(innerWidth, Math.min(x0, x1)));
+              const right = Math.max(0, Math.min(innerWidth, Math.max(x0, x1)));
+              const w = right - left;
+              if (w <= 0) return null;
+              return <rect key={`unknown-${r.start.toISOString()}-${r.end.toISOString()}`} x={left} y={0} width={w} height={innerHeight} fill="rgba(148,163,184,0.14)" />;
+            })}
+
             {ticksY.map((t) => (
               <g key={`y-${t}`} transform={`translate(0,${yScale(t)})`}>
                 <line x1={0} x2={innerWidth} stroke="rgba(148,163,184,0.25)" />
@@ -238,6 +250,7 @@ export function MetricGroupedBarChart({
   unitLabel,
   series,
   bucket,
+  unknownRanges,
   height = 340,
   emptyLabel,
   formatValue,
@@ -248,6 +261,7 @@ export function MetricGroupedBarChart({
   unitLabel: string;
   series: MetricSeries[];
   bucket?: Bucket;
+  unknownRanges?: Array<{ start: Date; end: Date }>;
   height?: number;
   emptyLabel?: string;
   formatValue?: (value: number) => string;
@@ -360,13 +374,23 @@ export function MetricGroupedBarChart({
         <div className="text-xs text-slate-500">{unitLabel}</div>
       </div>
 
-      <div className="relative">
-        <svg width={measuredWidth} height={height} className="block w-full">
-          <g transform={`translate(${chartPadding.left},${chartPadding.top})`}>
-            {ticksY.map((t) => (
-              <g key={`y-${t}`} transform={`translate(0,${yScale(t)})`}>
-                <line x1={0} x2={innerWidth} stroke="rgba(148,163,184,0.25)" />
-                <text x={-10} dy="0.32em" textAnchor="end" className="fill-slate-400 text-[11px]">
+	      <div className="relative">
+	        <svg width={measuredWidth} height={height} className="block w-full">
+	          <g transform={`translate(${chartPadding.left},${chartPadding.top})`}>
+	            {(unknownRanges ?? []).map((r) => {
+	              const x0 = xScale(r.start);
+	              const x1 = xScale(r.end);
+	              const left = Math.max(0, Math.min(innerWidth, Math.min(x0, x1)));
+	              const right = Math.max(0, Math.min(innerWidth, Math.max(x0, x1)));
+	              const w = right - left;
+	              if (w <= 0) return null;
+	              return <rect key={`unknown-${r.start.toISOString()}-${r.end.toISOString()}`} x={left} y={0} width={w} height={innerHeight} fill="rgba(148,163,184,0.14)" />;
+	            })}
+
+	            {ticksY.map((t) => (
+	              <g key={`y-${t}`} transform={`translate(0,${yScale(t)})`}>
+	                <line x1={0} x2={innerWidth} stroke="rgba(148,163,184,0.25)" />
+	                <text x={-10} dy="0.32em" textAnchor="end" className="fill-slate-400 text-[11px]">
                   {t.toFixed(0)}
                 </text>
               </g>

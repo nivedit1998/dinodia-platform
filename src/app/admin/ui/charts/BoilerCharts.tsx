@@ -152,6 +152,7 @@ export function BoilerTemperatureBandChart({
   title,
   series,
   bucket = 'daily',
+  unknownRanges,
   height = 340,
   forcedWidth,
   emptyLabel,
@@ -161,6 +162,7 @@ export function BoilerTemperatureBandChart({
   title: string;
   series: BoilerTemperatureSeries[];
   bucket?: 'daily' | 'weekly' | 'monthly';
+  unknownRanges?: Array<{ start: Date; end: Date }>;
   height?: number;
   forcedWidth?: number;
   emptyLabel?: string;
@@ -283,12 +285,22 @@ export function BoilerTemperatureBandChart({
       {!preparedSeries.length ? (
         <ChartEmpty label={emptyLabel} />
       ) : (
-        <svg width={measuredWidth} height={height} className="overflow-visible">
-          <g transform={`translate(${chartPadding.left},${chartPadding.top})`}>
-            {ticksY.map((t) => (
-              <line
-                key={`y-${t}`}
-                x1={0}
+	        <svg width={measuredWidth} height={height} className="overflow-visible">
+	          <g transform={`translate(${chartPadding.left},${chartPadding.top})`}>
+	            {(unknownRanges ?? []).map((r) => {
+	              const x0 = xScale(r.start);
+	              const x1 = xScale(r.end);
+	              const left = Math.max(0, Math.min(innerWidth, Math.min(x0, x1)));
+	              const right = Math.max(0, Math.min(innerWidth, Math.max(x0, x1)));
+	              const w = right - left;
+	              if (w <= 0) return null;
+	              return <rect key={`unknown-${r.start.toISOString()}-${r.end.toISOString()}`} x={left} y={0} width={w} height={innerHeight} fill="rgba(148,163,184,0.12)" />;
+	            })}
+
+	            {ticksY.map((t) => (
+	              <line
+	                key={`y-${t}`}
+	                x1={0}
                 x2={innerWidth}
                 y1={yScale(t)}
                 y2={yScale(t)}

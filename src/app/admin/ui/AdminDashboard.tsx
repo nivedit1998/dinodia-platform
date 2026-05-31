@@ -115,6 +115,8 @@ type EnergyByEntityResponse = {
 };
 
 type Props = { username?: string };
+type HubStatusPoint = { ts: string; hubOnline: boolean };
+type HubStatusResponse = { ok: boolean; range?: { from: string; to: string }; points: HubStatusPoint[]; error?: string };
 
 type EnergyTab = 'gas' | 'electric';
 
@@ -218,6 +220,50 @@ const getBucketInfoUtc = (bucket: HistoryBucket, capturedAt: Date) => {
   const start = startOfDayUtc(capturedAt);
   return { key: formatDateUtc(start), bucketStart: start, label: formatDateUtc(start) };
 };
+
+type TimeRange = { start: Date; end: Date };
+
+function computeOfflineRanges(points: HubStatusPoint[], window: { from: Date; to: Date }): TimeRange[] {
+  const ordered = (points ?? [])
+    .map((p) => ({ date: new Date(p.ts), hubOnline: p.hubOnline === true }))
+    .filter((p) => Number.isFinite(p.date.getTime()))
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  const out: TimeRange[] = [];
+  let offlineStart: Date | null = null;
+
+  for (const p of ordered) {
+    if (!p.hubOnline) {
+      offlineStart = p.date;
+      continue;
+    }
+    if (offlineStart) {
+      const start = new Date(Math.max(offlineStart.getTime(), window.from.getTime()));
+      const end = new Date(Math.min(p.date.getTime(), window.to.getTime()));
+      if (end.getTime() > start.getTime()) out.push({ start, end });
+      offlineStart = null;
+    }
+  }
+
+  if (offlineStart) {
+    const start = new Date(Math.max(offlineStart.getTime(), window.from.getTime()));
+    const end = window.to;
+    if (end.getTime() > start.getTime()) out.push({ start, end });
+  }
+
+  // Merge overlaps (defensive).
+  const merged: TimeRange[] = [];
+  for (const r of out.sort((a, b) => a.start.getTime() - b.start.getTime())) {
+    const last = merged[merged.length - 1];
+    if (!last) merged.push(r);
+    else if (r.start.getTime() <= last.end.getTime()) {
+      last.end = new Date(Math.max(last.end.getTime(), r.end.getTime()));
+    } else {
+      merged.push(r);
+    }
+  }
+  return merged;
+}
 
 const aggregateKwhPoints = (points: SummaryPoint[], bucket: HistoryBucket) => {
   const buckets = new Map<string, { bucketStart: Date; label: string; total: number }>();
@@ -369,6 +415,8 @@ export default function AdminDashboard({ username }: Props) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
+  const [hubStatusPoints, setHubStatusPoints] = useState<HubStatusPoint[]>([]);
+  const [hubStatusError, setHubStatusError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [areas, setAreas] = useState<string[]>([]);
   const [selectorsLoaded, setSelectorsLoaded] = useState(false);
@@ -625,6 +673,14 @@ export default function AdminDashboard({ username }: Props) {
     rangeState.window,
   ]);
 
+  const hubUnknownRanges = useMemo(() => {
+    if (!summary || hubStatusPoints.length === 0) return [];
+    const fromDate = new Date(summary.range?.from ?? '');
+    const toDate = new Date(summary.range?.to ?? '');
+    if (!Number.isFinite(fromDate.getTime()) || !Number.isFinite(toDate.getTime())) return [];
+    return computeOfflineRanges(hubStatusPoints, { from: fromDate, to: toDate });
+  }, [hubStatusPoints, summary]);
+
   const totalKwh = useMemo(() => {
     if (!summary) return 0;
     return summary.seriesKwhByArea
@@ -832,6 +888,17 @@ export default function AdminDashboard({ username }: Props) {
     return params.toString();
   }, [bucket, preset, from, to, selectedAreas, selectedEnergyEntities]);
 
+  const buildHubStatusParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (preset === 'custom') {
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+    } else {
+      params.set('days', preset);
+    }
+    return params.toString();
+  }, [preset, from, to]);
+
   const loadElectricEnergyByEntity = useCallback(async () => {
     if (energyTab !== 'electric') return;
     if (preset === 'custom' && (!from || !to)) return;
@@ -864,22 +931,42 @@ export default function AdminDashboard({ username }: Props) {
     setError(null);
     try {
       const params = paramsOverride ?? buildSummaryParams();
-      const res = await platformFetch(`/api/admin/monitoring/summary?${params}`, {
-        cache: 'no-store',
-        credentials: 'include',
-      });
-      const data = (await res.json().catch(() => null)) as (SummaryResponse & { error?: string }) | null;
-      if (!res.ok || !data?.ok) {
+      const [summaryRes, hubRes] = await Promise.all([
+        platformFetch(`/api/admin/monitoring/summary?${params}`, {
+          cache: 'no-store',
+          credentials: 'include',
+        }),
+        platformFetch(`/api/admin/monitoring/hub-status?${buildHubStatusParams()}`, {
+          cache: 'no-store',
+          credentials: 'include',
+        }),
+      ]);
+
+      const summaryData = (await summaryRes.json().catch(() => null)) as (SummaryResponse & { error?: string }) | null;
+      if (!summaryRes.ok || !summaryData?.ok) {
         const message =
-          data && typeof data.error === 'string' && data.error.length > 0 ? data.error : 'Unable to load analytics right now.';
+          summaryData && typeof summaryData.error === 'string' && summaryData.error.length > 0 ? summaryData.error : 'Unable to load analytics right now.';
         throw new Error(message);
       }
-      setSummaryAllDaily(data);
+      setSummaryAllDaily(summaryData);
+
+      const hubData = (await hubRes.json().catch(() => null)) as HubStatusResponse | null;
+      if (hubRes.ok && hubData?.ok) {
+        setHubStatusError(null);
+        setHubStatusPoints(Array.isArray(hubData.points) ? hubData.points : []);
+      } else {
+        setHubStatusPoints([]);
+        const message = hubData && typeof hubData.error === 'string' && hubData.error.length > 0 ? hubData.error : 'Unable to load hub status.';
+        setHubStatusError(message);
+      }
+
       setLastFetchedAt(new Date().toISOString());
     } catch (err) {
       console.error('Failed to load summary', err);
       setError(friendlyUnknownError(err, 'Unable to load analytics right now.'));
       setSummaryAllDaily(null);
+      setHubStatusPoints([]);
+      setHubStatusError(null);
     } finally {
       setLoading(false);
     }
@@ -1450,6 +1537,11 @@ export default function AdminDashboard({ username }: Props) {
               {selectorsError}
             </div>
           )}
+          {hubStatusError && (
+            <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Hub status unavailable; unknown/offline shading may be missing. {hubStatusError}
+            </div>
+          )}
         </section>
 
         <section className="rounded-3xl border border-slate-200/70 bg-white/90 p-4 shadow-sm">
@@ -1633,31 +1725,33 @@ export default function AdminDashboard({ username }: Props) {
                 {electricEnergyError}
               </div>
             ) : null}
-            <MetricGroupedBarChart
-              id="electric-energy-by-area"
-              title="Energy trends by area"
-              unitLabel="kWh"
-              series={energyBarSeriesByArea}
-              bucket={bucket}
-              emptyLabel="No energy readings in this window."
-              formatValue={(v) => v.toFixed(2)}
-              xTickMode={bucket === 'daily' ? 'day' : 'auto'}
-            />
+	            <MetricGroupedBarChart
+	              id="electric-energy-by-area"
+	              title="Energy trends by area"
+	              unitLabel="kWh"
+	              series={energyBarSeriesByArea}
+	              bucket={bucket}
+	              unknownRanges={hubUnknownRanges}
+	              emptyLabel="No energy readings in this window."
+	              formatValue={(v) => v.toFixed(2)}
+	              xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+	            />
             {electricEnergyLoading ? (
               <div className="flex h-56 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/80 text-sm text-slate-400">
                 Loading device energy…
               </div>
             ) : (
-              <MetricGroupedBarChart
-                id="electric-energy-by-device"
-                title="Energy trends per device"
-                unitLabel="kWh"
-                series={energyBarSeriesByEntity}
-                bucket={bucket}
-                emptyLabel="No device energy readings in this window."
-                formatValue={(v) => v.toFixed(2)}
-                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
-              />
+	              <MetricGroupedBarChart
+	                id="electric-energy-by-device"
+	                title="Energy trends per device"
+	                unitLabel="kWh"
+	                series={energyBarSeriesByEntity}
+	                bucket={bucket}
+	                unknownRanges={hubUnknownRanges}
+	                emptyLabel="No device energy readings in this window."
+	                formatValue={(v) => v.toFixed(2)}
+	                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+	              />
             )}
           </section>
         ) : null}
@@ -1702,14 +1796,15 @@ export default function AdminDashboard({ username }: Props) {
                 No radiator readings in this window.
               </div>
             ) : (
-              <BoilerTemperatureBandChart
-                id="radiator-temperature-current"
-                title="Radiator current temperature"
-                series={radiatorTemperatureSeriesByEntity}
-                bucket={bucket}
-                emptyLabel="No radiator readings in this window."
-                showTarget={false}
-              />
+	              <BoilerTemperatureBandChart
+	                id="radiator-temperature-current"
+	                title="Radiator current temperature"
+	                series={radiatorTemperatureSeriesByEntity}
+	                bucket={bucket}
+	                unknownRanges={hubUnknownRanges}
+	                emptyLabel="No radiator readings in this window."
+	                showTarget={false}
+	              />
             )}
 
             {boilerError ? (
@@ -1725,16 +1820,17 @@ export default function AdminDashboard({ username }: Props) {
                 No boiler usage totals in this window.
               </div>
             ) : (
-	              <MetricTotalsBarChart
-	                id="boiler-usage-minutes"
-	                title="Boiler usage (minutes ON)"
-	                unitLabel="min"
-	                points={boilerUsageMinutesTotals}
-	                bucket={bucket}
-	                color="#f97316"
-	                formatValue={(v) => v.toFixed(0)}
-	                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
-	              />
+		              <MetricTotalsBarChart
+		                id="boiler-usage-minutes"
+		                title="Boiler usage (minutes ON)"
+		                unitLabel="min"
+		                points={boilerUsageMinutesTotals}
+		                bucket={bucket}
+		                unknownRanges={hubUnknownRanges}
+		                color="#f97316"
+		                formatValue={(v) => v.toFixed(0)}
+		                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+		              />
             )}
 
             {boilerError ? (
@@ -1750,16 +1846,17 @@ export default function AdminDashboard({ username }: Props) {
                 No radiator usage totals in this window.
               </div>
             ) : (
-	              <MetricTotalsBarChart
-	                id="radiator-usage-minutes"
-	                title="Radiator usage (minutes ON)"
-	                unitLabel="min"
-	                points={radiatorUsageMinutesTotals}
-	                bucket={bucket}
-	                color="#0ea5e9"
-	                formatValue={(v) => v.toFixed(0)}
-	                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
-	              />
+		              <MetricTotalsBarChart
+		                id="radiator-usage-minutes"
+		                title="Radiator usage (minutes ON)"
+		                unitLabel="min"
+		                points={radiatorUsageMinutesTotals}
+		                bucket={bucket}
+		                unknownRanges={hubUnknownRanges}
+		                color="#0ea5e9"
+		                formatValue={(v) => v.toFixed(0)}
+		                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+		              />
             )}
 
             {boilerError ? (
@@ -1775,15 +1872,16 @@ export default function AdminDashboard({ username }: Props) {
                 No radiator usage by radiator in this window.
               </div>
             ) : (
-	              <MetricGroupedBarChart
-	                id="radiator-usage-minutes-by-entity"
-	                title="Radiator usage (minutes ON) by radiator"
-	                unitLabel="min"
-	                series={radiatorUsageMinutesByEntity}
-	                bucket={bucket}
-	                formatValue={(v) => v.toFixed(0)}
-	                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
-	              />
+		              <MetricGroupedBarChart
+		                id="radiator-usage-minutes-by-entity"
+		                title="Radiator usage (minutes ON) by radiator"
+		                unitLabel="min"
+		                series={radiatorUsageMinutesByEntity}
+		                bucket={bucket}
+		                unknownRanges={hubUnknownRanges}
+		                formatValue={(v) => v.toFixed(0)}
+		                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+		              />
             )}
 
             {boilerError ? (
@@ -1799,16 +1897,17 @@ export default function AdminDashboard({ username }: Props) {
                 No boiler kWh totals in this window.
               </div>
             ) : (
-	              <MetricTotalsBarChart
-	                id="boiler-usage-kwh"
-	                title="Boiler energy (kWh)"
-	                unitLabel="kWh"
-	                points={boilerUsageKwhTotals}
-	                bucket={bucket}
-	                color="#ff9500"
-	                formatValue={(v) => v.toFixed(2)}
-	                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
-	              />
+		              <MetricTotalsBarChart
+		                id="boiler-usage-kwh"
+		                title="Boiler energy (kWh)"
+		                unitLabel="kWh"
+		                points={boilerUsageKwhTotals}
+		                bucket={bucket}
+		                unknownRanges={hubUnknownRanges}
+		                color="#ff9500"
+		                formatValue={(v) => v.toFixed(2)}
+		                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+		              />
             )}
 
             {boilerError ? (
@@ -1824,16 +1923,17 @@ export default function AdminDashboard({ username }: Props) {
                 No radiator kWh totals in this window.
               </div>
             ) : (
-	              <MetricTotalsBarChart
-	                id="radiator-usage-kwh"
-	                title="Radiator energy (kWh, allocated)"
-	                unitLabel="kWh"
-	                points={radiatorUsageKwhTotals}
-	                bucket={bucket}
-	                color="#34c759"
-	                formatValue={(v) => v.toFixed(2)}
-	                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
-	              />
+		              <MetricTotalsBarChart
+		                id="radiator-usage-kwh"
+		                title="Radiator energy (kWh, allocated)"
+		                unitLabel="kWh"
+		                points={radiatorUsageKwhTotals}
+		                bucket={bucket}
+		                unknownRanges={hubUnknownRanges}
+		                color="#34c759"
+		                formatValue={(v) => v.toFixed(2)}
+		                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+		              />
             )}
 
             {boilerError ? (
@@ -1849,15 +1949,16 @@ export default function AdminDashboard({ username }: Props) {
                 No radiator energy by radiator in this window.
               </div>
             ) : (
-	              <MetricGroupedBarChart
-	                id="radiator-usage-kwh-by-entity"
-	                title="Radiator energy (kWh) by radiator"
-	                unitLabel="kWh"
-	                series={radiatorUsageKwhByEntity}
-	                bucket={bucket}
-	                formatValue={(v) => v.toFixed(2)}
-	                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
-	              />
+		              <MetricGroupedBarChart
+		                id="radiator-usage-kwh-by-entity"
+		                title="Radiator energy (kWh) by radiator"
+		                unitLabel="kWh"
+		                series={radiatorUsageKwhByEntity}
+		                bucket={bucket}
+		                unknownRanges={hubUnknownRanges}
+		                formatValue={(v) => v.toFixed(2)}
+		                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+		              />
             )}
 
             {boilerError ? (
@@ -1873,16 +1974,17 @@ export default function AdminDashboard({ username }: Props) {
                 No boiler cost totals in this window.
               </div>
             ) : (
-	              <MetricTotalsBarChart
-	                id="boiler-cost-daily"
-	                title="Boiler running cost"
-	                unitLabel="GBP"
-	                points={boilerCostTotals}
-	                bucket={bucket}
-	                color="#ff3b30"
-	                formatValue={(v) => costFmt.format(v)}
-	                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
-	              />
+		              <MetricTotalsBarChart
+		                id="boiler-cost-daily"
+		                title="Boiler running cost"
+		                unitLabel="GBP"
+		                points={boilerCostTotals}
+		                bucket={bucket}
+		                unknownRanges={hubUnknownRanges}
+		                color="#ff3b30"
+		                formatValue={(v) => costFmt.format(v)}
+		                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+		              />
             )}
 
             {boilerError ? (
@@ -1898,16 +2000,17 @@ export default function AdminDashboard({ username }: Props) {
                 No radiator cost data in this window.
               </div>
             ) : (
-	              <MetricTotalsBarChart
-	                id="radiator-cost-daily"
-	                title="Radiator cost (daily total)"
-	                unitLabel="GBP"
-	                points={radiatorCostTotals}
-	                bucket={bucket}
-	                color="#af52de"
-	                formatValue={(v) => costFmt.format(v)}
-	                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
-	              />
+		              <MetricTotalsBarChart
+		                id="radiator-cost-daily"
+		                title="Radiator cost (daily total)"
+		                unitLabel="GBP"
+		                points={radiatorCostTotals}
+		                bucket={bucket}
+		                unknownRanges={hubUnknownRanges}
+		                color="#af52de"
+		                formatValue={(v) => costFmt.format(v)}
+		                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+		              />
             )}
 
             {boilerError ? (
@@ -1923,15 +2026,16 @@ export default function AdminDashboard({ username }: Props) {
                 No radiator cost by radiator in this window.
               </div>
             ) : (
-	              <MetricGroupedBarChart
-	                id="radiator-cost-by-entity"
-	                title="Radiator cost (GBP) by radiator"
-	                unitLabel="GBP"
-	                series={radiatorCostByEntity}
-	                bucket={bucket}
-	                formatValue={(v) => costFmt.format(v)}
-	                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
-	              />
+		              <MetricGroupedBarChart
+		                id="radiator-cost-by-entity"
+		                title="Radiator cost (GBP) by radiator"
+		                unitLabel="GBP"
+		                series={radiatorCostByEntity}
+		                bucket={bucket}
+		                unknownRanges={hubUnknownRanges}
+		                formatValue={(v) => costFmt.format(v)}
+		                xTickMode={bucket === 'daily' ? 'day' : 'auto'}
+		              />
             )}
           </div>
         </section>
@@ -2022,15 +2126,16 @@ export default function AdminDashboard({ username }: Props) {
             />
           </div>
           <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
-            <MultiLineChart
-              id="battery-trend"
-              title="Battery by entity"
-              series={batterySeriesByEntity}
-              valueUnit="%"
-              emptyLabel="No battery readings in this window."
-              formatValue={(v) => v.toFixed(0)}
-              xTickBucket={bucket}
-              xTickLabelFormat={(date) => {
+	            <MultiLineChart
+	              id="battery-trend"
+	              title="Battery by entity"
+	              series={batterySeriesByEntity}
+	              valueUnit="%"
+	              unknownRanges={hubUnknownRanges}
+	              emptyLabel="No battery readings in this window."
+	              formatValue={(v) => v.toFixed(0)}
+	              xTickBucket={bucket}
+	              xTickLabelFormat={(date) => {
                 if (bucket === 'monthly') return date.toLocaleDateString('en-GB', { timeZone: 'UTC', month: 'short' });
                 if (bucket === 'weekly') {
                   const end = new Date(date.getTime() + 6 * 86400000);

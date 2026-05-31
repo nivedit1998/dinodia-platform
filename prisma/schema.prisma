@@ -595,6 +595,9 @@ model MonitoringReading {
   state          String
   numericValue   Float?
   unit           String?
+  hubOnline      Boolean?
+  hubOfflineGraceSeconds Int?
+  hubStatusSource String?
   capturedAt     DateTime     @default(now())
 
   @@index([haConnectionId, entityId, capturedAt])

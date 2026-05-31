@@ -208,12 +208,13 @@ export function LineAreaChart({
           ) : (
             prepared.map((p) => {
               const x = (xScaleBand(p.label) ?? 0) + barWidth / 2;
-              const barHeight = innerHeight - yScale(p.value);
+              const barHeight = Math.max(1, innerHeight - yScale(p.value));
+              const y = innerHeight - barHeight;
               return (
                 <g key={p.label}>
                   <rect
                     x={x - barWidth / 2}
-                    y={yScale(p.value)}
+                    y={y}
                     width={barWidth}
                     height={barHeight}
                     rx={4}
@@ -310,6 +311,7 @@ export function MultiLineChart({
   series,
   height = 320,
   valueUnit,
+  unknownRanges,
   emptyLabel,
   formatValue = defaultFormat,
   forcedWidth,
@@ -322,6 +324,7 @@ export function MultiLineChart({
   series: MultiSeriesTrend[];
   height?: number;
   valueUnit?: string;
+  unknownRanges?: Array<{ start: Date; end: Date }>;
   emptyLabel?: string;
   formatValue?: (value: number) => string;
   forcedWidth?: number;
@@ -473,6 +476,16 @@ export function MultiLineChart({
 
       <svg width={measuredWidth} height={height} className="overflow-visible">
         <g transform={`translate(${chartPadding.left},${chartPadding.top})`}>
+          {(unknownRanges ?? []).map((r) => {
+            const x0 = xScaleTime(r.start);
+            const x1 = xScaleTime(r.end);
+            const left = Math.max(0, Math.min(innerWidth, Math.min(x0, x1)));
+            const right = Math.max(0, Math.min(innerWidth, Math.max(x0, x1)));
+            const w = right - left;
+            if (w <= 0) return null;
+            return <rect key={`unknown-${r.start.toISOString()}-${r.end.toISOString()}`} x={left} y={0} width={w} height={innerHeight} fill="rgba(148,163,184,0.12)" />;
+          })}
+
           {ticksY.map((t) => (
             <line
               key={`y-${t}`}
