@@ -18,6 +18,7 @@ const inferLabel = (entityId: string, existing?: string | null) => {
   if (id.includes('motion')) return 'Motion Sensor';
   if (id.includes('spotify')) return 'Spotify';
   if (id.includes('boiler')) return 'Boiler';
+  if (id.includes('radiator')) return 'Radiator';
   if (id.includes('doorbell')) return 'Doorbell';
   if (id.includes('security')) return 'Home Security';
   if (id.includes('tv')) return 'TV';

@@ -47,6 +47,30 @@ const formatBucketTick = (bucket: Bucket | undefined, date: Date) => {
   return date.toLocaleDateString('en-GB', { timeZone: 'UTC', month: 'short', day: 'numeric' });
 };
 
+const formatTooltipDate = (bucket: Bucket | undefined, date: Date) => {
+  if (bucket === 'monthly') return date.toLocaleDateString('en-GB', { timeZone: 'UTC', month: 'short' });
+  if (bucket === 'weekly') {
+    const end = new Date(date.getTime() + 6 * 86400000);
+    return end.toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short' });
+  }
+  if (bucket === 'daily') {
+    const hours = date.getUTCHours();
+    const minutes = date.getUTCMinutes();
+    if (hours !== 0 || minutes !== 0) {
+      return date.toLocaleString('en-GB', {
+        timeZone: 'UTC',
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+    }
+    return date.toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short' });
+  }
+  return date.toLocaleDateString('en-GB', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+};
+
 export function MetricTotalsBarChart({
   id,
   title,
@@ -327,9 +351,9 @@ export function MetricGroupedBarChart({
           <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{title}</p>
           <p className="text-lg font-semibold text-slate-900">
             {activeDate
-              ? formatBucketTick(bucket, activeDate)
+              ? formatTooltipDate(bucket, activeDate)
               : uniqueDates[uniqueDates.length - 1]
-                ? formatBucketTick(bucket, uniqueDates[uniqueDates.length - 1])
+                ? formatTooltipDate(bucket, uniqueDates[uniqueDates.length - 1])
                 : ''}
           </p>
         </div>
@@ -403,7 +427,7 @@ export function MetricGroupedBarChart({
 
         {activeDate ? (
           <div className="pointer-events-none absolute right-4 top-4 max-w-[320px] rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm">
-            <div className="font-semibold text-slate-900">{formatBucketTick(bucket, activeDate)}</div>
+            <div className="font-semibold text-slate-900">{formatTooltipDate(bucket, activeDate)}</div>
             <div className="mt-1 flex flex-col gap-0.5">
               {tooltipRows.slice(0, 10).map((row) => (
                 <div key={row.id} className="flex items-center justify-between gap-3">

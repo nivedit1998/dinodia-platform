@@ -417,6 +417,12 @@ export default function AdminDashboard({ username }: Props) {
 
   const energyEntityAreaMap = useMemo(() => new Map(energyEntities.map((e) => [e.entityId, e.area])), [energyEntities]);
   const batteryEntityAreaMap = useMemo(() => new Map(batteryEntities.map((e) => [e.entityId, e.area])), [batteryEntities]);
+  const gasEntityIds = useMemo(() => {
+    const ids = new Set<string>();
+    radiatorEntities.forEach((e) => ids.add(e.entityId));
+    boilerEntities.forEach((e) => ids.add(e.entityId));
+    return ids;
+  }, [radiatorEntities, boilerEntities]);
   const rangeState = useMemo(() => {
     if (preset === 'all') {
       return { window: null as { from: Date; to: Date } | null, error: null as string | null };
@@ -711,7 +717,10 @@ export default function AdminDashboard({ username }: Props) {
 
   const batterySeriesByEntity: MultiSeriesTrend[] = useMemo(() => {
     const series = summary?.seriesBatteryByEntity ?? [];
-    const filtered = series.filter((s) => (energyTab === 'gas' ? isGasLabel(s.label) : !isGasLabel(s.label)));
+    const filtered = series.filter((s) => {
+      const isGas = isGasLabel(s.label) || gasEntityIds.has(s.entityId);
+      return energyTab === 'gas' ? isGas : !isGas;
+    });
     return filtered.map((s) => ({
       id: s.entityId,
       label: s.name || s.entityId,
@@ -722,7 +731,7 @@ export default function AdminDashboard({ username }: Props) {
         value: p.avgPercent ?? 0,
       })),
     }));
-  }, [summary, energyTab]);
+  }, [summary, energyTab, gasEntityIds]);
 
   const radiatorTemperatureSeriesFiltered = useMemo(() => {
     const hasAreaFilter = selectedAreas.length > 0;
@@ -1944,7 +1953,10 @@ export default function AdminDashboard({ username }: Props) {
               </thead>
               <tbody>
                 {(summary?.batteryLatestByEntity ?? [])
-                  .filter((row) => (energyTab === 'gas' ? isGasLabel(row.label) : !isGasLabel(row.label)))
+                  .filter((row) => {
+                    const isGas = isGasLabel(row.label) || gasEntityIds.has(row.entityId);
+                    return energyTab === 'gas' ? isGas : !isGas;
+                  })
                   .slice()
                   .sort((a, b) => (a.latestBatteryPercent ?? 0) - (b.latestBatteryPercent ?? 0))
                   .map((row) => {
@@ -1970,7 +1982,12 @@ export default function AdminDashboard({ username }: Props) {
                       </tr>
                     );
                   })}
-                {((summary?.batteryLatestByEntity ?? []).filter((row) => (energyTab === 'gas' ? isGasLabel(row.label) : !isGasLabel(row.label))).length ?? 0) === 0 && (
+                {((summary?.batteryLatestByEntity ?? [])
+                  .filter((row) => {
+                    const isGas = isGasLabel(row.label) || gasEntityIds.has(row.entityId);
+                    return energyTab === 'gas' ? isGas : !isGas;
+                  })
+                  .length ?? 0) === 0 && (
                   <tr>
                     <td colSpan={3} className="px-3 py-4 text-center text-slate-500">
                       No battery readings found for this selection.
@@ -1994,7 +2011,10 @@ export default function AdminDashboard({ username }: Props) {
             <MultiSelect
               label="Battery entities"
               options={batteryEntities
-                .filter((e) => (energyTab === 'gas' ? isGasLabel(e.label) : !isGasLabel(e.label)))
+                .filter((e) => {
+                  const isGas = isGasLabel(e.label) || gasEntityIds.has(e.entityId);
+                  return energyTab === 'gas' ? isGas : !isGas;
+                })
                 .map((e) => ({ id: e.entityId, label: e.name || e.entityId, hint: e.entityId }))}
               selected={selectedBatteryEntities}
               onChange={setSelectedBatteryEntities}
