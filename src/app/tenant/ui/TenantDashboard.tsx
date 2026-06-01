@@ -13,7 +13,6 @@ import { subscribeToRefresh } from '@/lib/refreshBus';
 import { logout as performLogout } from '@/lib/logout';
 import Image from 'next/image';
 import { getTenantDashboardDevices } from '@/lib/deviceCapabilities';
-import { buildBatteryPercentByDeviceGroup, getBatteryPercentForDevice } from '@/lib/deviceBattery';
 import { useDevicesVersionPolling } from '@/lib/useDevicesVersionPolling';
 import TenantAccessRosterDialog from './TenantAccessRosterDialog';
 import { friendlyUnknownError } from '@/lib/clientError';
@@ -402,11 +401,6 @@ export default function TenantDashboard(props: Props) {
     return summary;
   }, [username, roster]);
 
-  const batteryByGroup = useMemo(
-    () => buildBatteryPercentByDeviceGroup(devices),
-    [devices]
-  );
-
   const visibleDevices = useMemo(
     () =>
       eligibleDevices.filter((d) => {
@@ -716,7 +710,7 @@ export default function TenantDashboard(props: Props) {
                       <DeviceTile
                         key={device.entityId}
                         device={device}
-                        batteryPercent={getBatteryPercentForDevice(device, batteryByGroup)}
+                        batteryPercent={device.batteryPercent ?? null}
                         onOpenDetails={() => setOpenDeviceId(device.entityId)}
                         onActionComplete={() => loadDevices({ silent: true, force: true })}
                       />
