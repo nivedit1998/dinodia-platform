@@ -4,19 +4,22 @@ type RoomAccessRequestEmailParams = {
   rejectUrl: string;
   requestedName: string;
   requestedEmail: string;
+  requestedPhoneNumber?: string | null;
   roomDisplayName: string;
 };
 
 export function buildRoomAccessRequestEmail(params: RoomAccessRequestEmailParams) {
-  const { approveUrl, rejectUrl, requestedName, requestedEmail, roomDisplayName } = params;
+  const { approveUrl, rejectUrl, requestedName, requestedEmail, requestedPhoneNumber, roomDisplayName } = params;
 
   const subject = `Approve room access request: ${roomDisplayName}`;
+  const phoneLine = requestedPhoneNumber ? `<p style="margin: 0 0 16px 0; color: #334155;">Phone: ${escapeHtml(requestedPhoneNumber)}</p>` : '';
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 520px; color: #0f172a;">
       <h2 style="color: #0f172a; margin-bottom: 12px;">Dinodia Smart Living</h2>
       <p style="margin: 0 0 12px 0;">A tenant requested access to <strong>${roomDisplayName}</strong>.</p>
       <p style="margin: 0 0 12px 0; color: #334155;">Name: ${escapeHtml(requestedName)}</p>
       <p style="margin: 0 0 16px 0; color: #334155;">Email: ${escapeHtml(requestedEmail)}</p>
+      ${phoneLine}
       <p style="margin: 0 0 16px 0;">Approve or reject this request:</p>
       <p style="margin: 0 0 12px 0;">
         <a href="${approveUrl}" style="background:#111827;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Approve</a>
@@ -37,6 +40,7 @@ export function buildRoomAccessRequestEmail(params: RoomAccessRequestEmailParams
     `A tenant requested access to ${roomDisplayName}.`,
     `Name: ${requestedName}`,
     `Email: ${requestedEmail}`,
+    ...(requestedPhoneNumber ? [`Phone: ${requestedPhoneNumber}`] : []),
     '',
     `Approve: ${approveUrl}`,
     `Reject: ${rejectUrl}`,
@@ -96,4 +100,3 @@ function escapeHtml(value: string) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
-

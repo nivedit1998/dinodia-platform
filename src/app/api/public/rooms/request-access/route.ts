@@ -4,6 +4,7 @@ import { apiFailFromStatus } from '@/lib/apiError';
 import { prisma } from '@/lib/prisma';
 import { parseRoomQrPayload, hashRoomQrSecret, safeEqualHex } from '@/lib/roomQr';
 import { createRoomAccessRequestEmails, resolveSingleHomeownerAdmin } from '@/lib/roomAccess';
+import { normalizePhoneNumberE164 } from '@/lib/phoneNumber';
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -20,11 +21,16 @@ export async function POST(req: NextRequest) {
   const qr = typeof obj.qr === 'string' ? obj.qr.trim() : '';
   const requestedName = typeof obj.name === 'string' ? obj.name.trim() : '';
   const requestedEmail = typeof obj.email === 'string' ? obj.email.trim() : '';
-  if (!qr || !requestedName || !requestedEmail) {
-    return apiFailFromStatus(400, 'Name, email, and QR code are required.');
+  const requestedPhoneRaw = typeof obj.phoneNumber === 'string' ? obj.phoneNumber.trim() : '';
+  if (!qr || !requestedName || !requestedEmail || !requestedPhoneRaw) {
+    return apiFailFromStatus(400, 'Name, email, phone number, and QR code are required.');
   }
   if (!EMAIL_REGEX.test(requestedEmail)) {
     return apiFailFromStatus(400, 'Please enter a valid email address.');
+  }
+  const requestedPhoneNumber = normalizePhoneNumberE164(requestedPhoneRaw);
+  if (!requestedPhoneNumber) {
+    return apiFailFromStatus(400, 'Please enter a valid phone number (include country code, e.g. +44...).');
   }
 
   const parsed = parseRoomQrPayload(qr);
@@ -74,6 +80,17 @@ export async function POST(req: NextRequest) {
     return apiFailFromStatus(409, 'This email already has a tenant account. Please login and add the area from Settings.');
   }
 
+  const existingTenantPhone = await prisma.user.findFirst({
+    where: { role: Role.TENANT, phoneNumber: requestedPhoneNumber },
+    select: { id: true },
+  });
+  if (existingTenantPhone) {
+    return apiFailFromStatus(
+      409,
+      'This phone number already has a tenant account. Please login and add the area from Settings.'
+    );
+  }
+
   const request = await prisma.roomAccessRequest.create({
     data: {
       hubInstallId: hub.id,
@@ -81,6 +98,7 @@ export async function POST(req: NextRequest) {
       homeIdSnapshot: home.id,
       requestedName,
       requestedEmail,
+      requestedPhoneNumber,
       status: RoomAccessRequestStatus.PENDING,
     },
     select: { id: true },
@@ -93,6 +111,7 @@ export async function POST(req: NextRequest) {
       roomDisplayName: room.displayName,
       requestedName,
       requestedEmail,
+      requestedPhoneNumber,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unable to send approval emails.';

@@ -17,6 +17,7 @@ export default function ScanRoomPage() {
   const [roomName, setRoomName] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -52,8 +53,8 @@ export default function ScanRoomPage() {
       setError('Please scan the room QR code first.');
       return;
     }
-    if (!name.trim() || !email.trim()) {
-      setError('Please enter your name and email.');
+    if (!name.trim() || !email.trim() || !phoneNumber.trim()) {
+      setError('Please enter your name, email, and phone number.');
       return;
     }
 
@@ -61,7 +62,7 @@ export default function ScanRoomPage() {
     const res = await fetch('/api/public/rooms/request-access', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ qr, name: name.trim(), email: email.trim() }),
+      body: JSON.stringify({ qr, name: name.trim(), email: email.trim(), phoneNumber: phoneNumber.trim() }),
     });
     const data = await res.json().catch(() => ({}));
     setLoading(false);
@@ -109,6 +110,14 @@ export default function ScanRoomPage() {
         <form onSubmit={handleRequest} className="space-y-4">
           <Field label="Your name" value={name} onChange={(e) => setName(e.target.value)} required />
           <Field label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <Field
+            label="Phone number"
+            type="tel"
+            value={phoneNumber}
+            onChange={(e) => setPhoneNumber(e.target.value)}
+            hint="Use E.164 format, e.g. +44..."
+            required
+          />
           <Button type="submit" loading={loading} fullWidth>
             Request access
           </Button>
@@ -117,4 +126,3 @@ export default function ScanRoomPage() {
     </AuthShell>
   );
 }
-

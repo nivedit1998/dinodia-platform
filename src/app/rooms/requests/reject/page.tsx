@@ -63,6 +63,9 @@ export default async function RoomRequestRejectPage({
             <div className="font-semibold">
               {(preview.requestedName ?? 'Unknown')} · {(preview.requestedEmail ?? 'Unknown')}
             </div>
+            {preview.requestedPhoneNumber ? (
+              <div className="mt-1 font-semibold">{preview.requestedPhoneNumber}</div>
+            ) : null}
           </div>
           {expiresAt ? (
             <div>
@@ -83,4 +86,3 @@ export default async function RoomRequestRejectPage({
     </AuthShell>
   );
 }
-

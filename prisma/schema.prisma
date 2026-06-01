@@ -195,6 +195,7 @@ model User {
   email                          String?
   emailPending                   String?
   emailVerifiedAt                DateTime?
+  phoneNumber                    String?
   homeownerPolicyAcceptedVersion String?
   homeownerPolicyAcceptedAt      DateTime?
   email2faEnabled                Boolean                         @default(false)
@@ -538,6 +539,7 @@ model RoomAccessRequest {
   homeIdSnapshot Int?
   requestedName  String
   requestedEmail String
+  requestedPhoneNumber String?
   tenantUser     User?                     @relation(fields: [tenantUserId], references: [id], onDelete: SetNull)
   tenantUserId   Int?
   status         RoomAccessRequestStatus   @default(PENDING)

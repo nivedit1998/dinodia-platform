@@ -58,6 +58,7 @@ export default function RegisterAdminPage() {
     password: '',
     email: '',
     confirmEmail: '',
+    phoneNumber: '',
     dinodiaSerial: '',
     bootstrapSecret: '',
   });
@@ -294,6 +295,10 @@ export default function RegisterAdminPage() {
       setError('Email addresses must match.');
       return;
     }
+    if (!form.phoneNumber.trim()) {
+      setError('Please enter a phone number (include country code, e.g. +44...).');
+      return;
+    }
     if (!form.dinodiaSerial.trim() || !form.bootstrapSecret.trim()) {
       setError('Enter the Dinodia serial and bootstrap secret from the installer.');
       return;
@@ -305,6 +310,7 @@ export default function RegisterAdminPage() {
         username: form.username,
         password: form.password,
         email: form.email,
+        phoneNumber: form.phoneNumber,
         deviceId,
         deviceLabel,
         dinodiaSerial: form.dinodiaSerial.trim(),
@@ -407,6 +413,14 @@ export default function RegisterAdminPage() {
                 type="email"
                 value={form.confirmEmail}
                 onChange={(e) => updateField('confirmEmail', e.target.value)}
+                required
+              />
+              <Field
+                label="Phone number"
+                type="tel"
+                value={form.phoneNumber}
+                onChange={(e) => updateField('phoneNumber', e.target.value)}
+                hint="Use E.164 format, e.g. +44..."
                 required
               />
               <Field

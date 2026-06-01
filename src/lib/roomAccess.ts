@@ -106,6 +106,7 @@ export async function createRoomAccessRequestEmails(args: {
   roomDisplayName: string;
   requestedName: string;
   requestedEmail: string;
+  requestedPhoneNumber?: string | null;
 }) {
   const homeowner = await resolveSingleHomeownerAdmin(args.homeId);
   const propertyManagerEmail = await getPropertyManagerEmail(args.homeId);
@@ -165,6 +166,7 @@ export async function createRoomAccessRequestEmails(args: {
       rejectUrl,
       requestedName: args.requestedName,
       requestedEmail: args.requestedEmail,
+      requestedPhoneNumber: args.requestedPhoneNumber ?? null,
       roomDisplayName: args.roomDisplayName,
     });
     return { to: entry.recipientEmail, content };
@@ -189,6 +191,7 @@ export async function createRoomAccessRequestEmails(args: {
         requestId: args.requestId,
         requestedName: args.requestedName,
         requestedEmail: args.requestedEmail,
+        requestedPhoneNumber: args.requestedPhoneNumber ?? null,
         room: args.roomDisplayName,
         recipients,
         expiresAt: expiresAt.toISOString(),
@@ -279,6 +282,7 @@ export async function approveOrRejectRoomAccessByToken(args: { tokenRaw: string;
         id: true,
         requestedName: true,
         requestedEmail: true,
+        requestedPhoneNumber: true,
         tenantUserId: true,
         room: { select: { displayName: true, haAreaName: true } },
         hubInstall: { select: { homeId: true, home: { select: { haConnectionId: true } } } },
@@ -310,6 +314,10 @@ export async function approveOrRejectRoomAccessByToken(args: { tokenRaw: string;
 
     if (!tenantUserId) {
       const requestedEmailNormalized = updatedRequest.requestedEmail.trim();
+      const requestedPhoneNumber = (updatedRequest.requestedPhoneNumber ?? '').trim() || null;
+      if (!requestedPhoneNumber) {
+        throw new Error('Tenant phone number is missing for this room access request.');
+      }
 
       // Defensive: public scan flow should block if a tenant already exists for this email, but
       // older requests may still exist. In that case, do NOT create a second tenant—attach to
@@ -322,7 +330,7 @@ export async function approveOrRejectRoomAccessByToken(args: { tokenRaw: string;
             { emailPending: { equals: requestedEmailNormalized, mode: 'insensitive' } },
           ],
         },
-        select: { id: true, homeId: true },
+        select: { id: true, homeId: true, phoneNumber: true },
       });
 
       if (existingTenant) {
@@ -334,6 +342,19 @@ export async function approveOrRejectRoomAccessByToken(args: { tokenRaw: string;
           where: { id: updatedRequest.id },
           data: { tenantUserId },
         });
+        if (!existingTenant.phoneNumber) {
+          const phoneConflict = await tx.user.findFirst({
+            where: { role: Role.TENANT, phoneNumber: requestedPhoneNumber, id: { not: existingTenant.id } },
+            select: { id: true },
+          });
+          if (phoneConflict) {
+            throw new Error('This phone number is already linked to a tenant account for a different user.');
+          }
+          await tx.user.update({
+            where: { id: existingTenant.id },
+            data: { phoneNumber: requestedPhoneNumber },
+          });
+        }
       } else {
         username = await generateUniqueUsername({
           requestedName: updatedRequest.requestedName,
@@ -353,6 +374,7 @@ export async function approveOrRejectRoomAccessByToken(args: { tokenRaw: string;
             emailPending: requestedEmailNormalized,
             emailVerifiedAt: null,
             email2faEnabled: false,
+            phoneNumber: requestedPhoneNumber,
           },
           select: { id: true },
         });
@@ -437,6 +459,7 @@ export type RoomAccessDecisionPreview = {
   roomDisplayName: string | null;
   requestedName: string | null;
   requestedEmail: string | null;
+  requestedPhoneNumber: string | null;
   requestStatus: RoomAccessRequestStatus | null;
   expiresAt: string | null;
   consumedAt: string | null;
@@ -457,6 +480,7 @@ export async function previewRoomAccessDecisionByToken(args: { tokenRaw: string;
           status: true,
           requestedName: true,
           requestedEmail: true,
+          requestedPhoneNumber: true,
           room: { select: { displayName: true } },
           hubInstall: { select: { homeId: true } },
         },
@@ -471,6 +495,7 @@ export async function previewRoomAccessDecisionByToken(args: { tokenRaw: string;
       roomDisplayName: null,
       requestedName: null,
       requestedEmail: null,
+      requestedPhoneNumber: null,
       requestStatus: null,
       expiresAt: null,
       consumedAt: null,
@@ -484,6 +509,7 @@ export async function previewRoomAccessDecisionByToken(args: { tokenRaw: string;
       roomDisplayName: null,
       requestedName: null,
       requestedEmail: null,
+      requestedPhoneNumber: null,
       requestStatus: null,
       expiresAt: null,
       consumedAt: null,
@@ -498,6 +524,7 @@ export async function previewRoomAccessDecisionByToken(args: { tokenRaw: string;
       roomDisplayName: tokenRow.request.room.displayName,
       requestedName: tokenRow.request.requestedName,
       requestedEmail: tokenRow.request.requestedEmail,
+      requestedPhoneNumber: tokenRow.request.requestedPhoneNumber ?? null,
       requestStatus: tokenRow.request.status,
       expiresAt: tokenRow.expiresAt.toISOString(),
       consumedAt: tokenRow.consumedAt?.toISOString() ?? null,
@@ -512,6 +539,7 @@ export async function previewRoomAccessDecisionByToken(args: { tokenRaw: string;
       roomDisplayName: tokenRow.request.room.displayName,
       requestedName: tokenRow.request.requestedName,
       requestedEmail: tokenRow.request.requestedEmail,
+      requestedPhoneNumber: tokenRow.request.requestedPhoneNumber ?? null,
       requestStatus: tokenRow.request.status,
       expiresAt: tokenRow.expiresAt.toISOString(),
       consumedAt: tokenRow.consumedAt?.toISOString() ?? null,
@@ -525,6 +553,7 @@ export async function previewRoomAccessDecisionByToken(args: { tokenRaw: string;
       roomDisplayName: tokenRow.request.room.displayName,
       requestedName: tokenRow.request.requestedName,
       requestedEmail: tokenRow.request.requestedEmail,
+      requestedPhoneNumber: tokenRow.request.requestedPhoneNumber ?? null,
       requestStatus: tokenRow.request.status,
       expiresAt: tokenRow.expiresAt.toISOString(),
       consumedAt: tokenRow.consumedAt?.toISOString() ?? null,
@@ -538,6 +567,7 @@ export async function previewRoomAccessDecisionByToken(args: { tokenRaw: string;
       roomDisplayName: tokenRow.request.room.displayName,
       requestedName: tokenRow.request.requestedName,
       requestedEmail: tokenRow.request.requestedEmail,
+      requestedPhoneNumber: tokenRow.request.requestedPhoneNumber ?? null,
       requestStatus: tokenRow.request.status,
       expiresAt: tokenRow.expiresAt.toISOString(),
       consumedAt: tokenRow.consumedAt.toISOString(),
@@ -551,6 +581,7 @@ export async function previewRoomAccessDecisionByToken(args: { tokenRaw: string;
       roomDisplayName: tokenRow.request.room.displayName,
       requestedName: tokenRow.request.requestedName,
       requestedEmail: tokenRow.request.requestedEmail,
+      requestedPhoneNumber: tokenRow.request.requestedPhoneNumber ?? null,
       requestStatus: tokenRow.request.status,
       expiresAt: tokenRow.expiresAt.toISOString(),
       consumedAt: null,
@@ -563,6 +594,7 @@ export async function previewRoomAccessDecisionByToken(args: { tokenRaw: string;
     roomDisplayName: tokenRow.request.room.displayName,
     requestedName: tokenRow.request.requestedName,
     requestedEmail: tokenRow.request.requestedEmail,
+    requestedPhoneNumber: tokenRow.request.requestedPhoneNumber ?? null,
     requestStatus: tokenRow.request.status,
     expiresAt: tokenRow.expiresAt.toISOString(),
     consumedAt: null,

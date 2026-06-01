@@ -21,6 +21,8 @@ export default function TenantSetup2FA() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [confirmEmail, setConfirmEmail] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [confirmPhoneNumber, setConfirmPhoneNumber] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -164,6 +166,17 @@ export default function TenantSetup2FA() {
         setError('Email addresses must match.');
         return;
       }
+      const hasPhoneCopy = phoneNumber || confirmPhoneNumber;
+      if (hasPhoneCopy) {
+        if (!phoneNumber || !confirmPhoneNumber) {
+          setError('Please enter your phone number twice (include country code, e.g. +44...).');
+          return;
+        }
+        if (phoneNumber !== confirmPhoneNumber) {
+          setError('Phone numbers must match.');
+          return;
+        }
+      }
 
       setLoading(true);
       try {
@@ -175,6 +188,7 @@ export default function TenantSetup2FA() {
             email,
             deviceLabel: saved.deviceLabel,
             confirmEmail,
+            ...(phoneNumber ? { phoneNumber, confirmPhoneNumber } : {}),
           }),
         });
         const data = await res.json();
@@ -204,7 +218,7 @@ export default function TenantSetup2FA() {
         setLoading(false);
       }
     },
-    [clearSavedState, confirmEmail, email, loadPending, pending, router, startPolling]
+    [clearSavedState, confirmEmail, confirmPhoneNumber, email, loadPending, pending, phoneNumber, router, startPolling]
   );
 
   const handleResend = useCallback(async () => {
@@ -312,6 +326,31 @@ export default function TenantSetup2FA() {
                 onChange={(e) => setConfirmEmail(e.target.value)}
                 autoComplete="email"
                 required
+              />
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Phone number may be required to finish setup. Use E.164 format (e.g. +44...).
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Phone number</label>
+              <input
+                type="tel"
+                className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                autoComplete="tel"
+                placeholder="+44..."
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Confirm phone number</label>
+              <input
+                type="tel"
+                className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                value={confirmPhoneNumber}
+                onChange={(e) => setConfirmPhoneNumber(e.target.value)}
+                autoComplete="tel"
+                placeholder="+44..."
               />
             </div>
             <button
