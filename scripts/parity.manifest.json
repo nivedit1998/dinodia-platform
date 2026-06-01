@@ -26,7 +26,11 @@
     { "src": "src/app/api/automations/route.ts", "dest": "src/app/api/automations/route.ts", "mode": "file" },
     { "src": "src/app/api/auth/login/route.ts", "dest": "src/app/api/auth/login/route.ts", "mode": "file" },
     { "src": "src/app/api/auth/mobile-login/route.ts", "dest": "src/app/api/auth/mobile-login/route.ts", "mode": "file" },
-    { "src": "src/app/api/public/rooms", "dest": "src/app/api/public/rooms", "mode": "dir" }
+    { "src": "src/app/api/public/rooms", "dest": "src/app/api/public/rooms", "mode": "dir" },
+
+    { "src": "src/app/installer/GDPR_Status", "dest": "src/app/installer/GDPR_Status", "mode": "dir" },
+    { "src": "src/app/installer/provision/provisionClient.tsx", "dest": "src/app/installer/provision/provisionClient.tsx", "mode": "file" },
+    { "src": "src/app/installer/HomeSupport/HomeSupportClient.tsx", "dest": "src/app/installer/HomeSupport/HomeSupportClient.tsx", "mode": "file" }
   ],
   "excludeGlobs": [
     "**/.DS_Store"
