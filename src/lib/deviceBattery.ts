@@ -43,6 +43,20 @@ function isBatteryVoltageLike(device: UIDevice) {
   return false;
 }
 
+function batteryRank(device: UIDevice): number | null {
+  const deviceClass = normalize(device.attributes?.['device_class']);
+  if (deviceClass === 'battery') return 0;
+
+  const entityObjectId = device.entityId.split('.')[1] ?? device.entityId;
+  const entity = normalize(entityObjectId);
+  if (entity.includes('battery')) return 1;
+
+  const name = normalize(device.name);
+  if (name.includes('battery')) return 2;
+
+  return null;
+}
+
 export function extractBatteryPercent(device: UIDevice): number | null {
   const deviceClass = normalize(device.attributes?.['device_class']);
   const unit = normalize(device.attributes?.['unit_of_measurement']);
@@ -80,7 +94,7 @@ export function extractBatteryPercent(device: UIDevice): number | null {
 }
 
 export function buildBatteryPercentByDeviceGroup(devices: UIDevice[]) {
-  const map = new Map<string, number>();
+  const map = new Map<string, { rank: number; percent: number }>();
 
   for (const device of devices) {
     const deviceClass = normalize(device.attributes?.['device_class']);
@@ -91,16 +105,19 @@ export function buildBatteryPercentByDeviceGroup(devices: UIDevice[]) {
     const percent = extractBatteryPercent(device);
     if (percent == null) continue;
 
+    const rank = batteryRank(device);
+    if (rank == null) continue;
+
     const groupId = getDeviceGroupingId(device);
     if (!groupId) continue;
 
     const prev = map.get(groupId);
-    if (prev == null || percent < prev) {
-      map.set(groupId, percent);
+    if (!prev || rank < prev.rank || (rank === prev.rank && percent < prev.percent)) {
+      map.set(groupId, { rank, percent });
     }
   }
 
-  return map;
+  return new Map(Array.from(map.entries()).map(([k, v]) => [k, v.percent]));
 }
 
 export function getBatteryPercentForDevice(

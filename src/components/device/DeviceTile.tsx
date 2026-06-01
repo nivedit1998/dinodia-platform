@@ -58,7 +58,15 @@ export function DeviceTile({
   );
   const primaryAction = getPrimaryAction(label, device, actions);
   const tileControls = getTileControlSpecs(label, device, actions);
-  const batteryDisplay = batteryPercent != null ? formatBatteryForTile(batteryPercent) : null;
+  const batteryPct = batteryPercent != null && Number.isFinite(batteryPercent) ? Math.max(0, Math.min(100, Math.round(batteryPercent))) : null;
+  const batteryBarClass =
+    batteryPct == null
+      ? null
+      : batteryPct < 25
+        ? 'bg-red-500'
+        : batteryPct < 50
+          ? 'bg-amber-500'
+          : 'bg-emerald-500';
   const stateChipLabel =
     device.state && device.state.trim()
       ? device.state.replace(/_/g, ' ')
@@ -85,6 +93,21 @@ export function DeviceTile({
         isActive ? 'ring-1 ring-white/40' : 'ring-1 ring-white/60'
       }`}
     >
+      {batteryPct != null && batteryBarClass && (
+        <div
+          className={`pointer-events-none absolute top-4 flex items-center ${
+            showAdminControls ? 'right-16' : 'right-4'
+          }`}
+          aria-hidden="true"
+        >
+          <div className="h-2 w-14 rounded-full bg-slate-100/80 shadow-sm ring-1 ring-white/50">
+            <div
+              className={`h-2 rounded-full ${batteryBarClass}`}
+              style={{ width: `${batteryPct}%` }}
+            />
+          </div>
+        </div>
+      )}
       {showAdminControls && (
         <button
           type="button"
@@ -117,13 +140,6 @@ export function DeviceTile({
           {kwhTotal !== null && Number.isFinite(kwhTotal) && (
             <p className="inline-flex w-fit items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
               Energy (Total): {kwhTotal.toFixed(2)} kWh
-            </p>
-          )}
-          {batteryDisplay && (
-            <p
-              className={`inline-flex w-fit items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${batteryDisplay.className}`}
-            >
-              {batteryDisplay.text}
             </p>
           )}
         </div>
@@ -335,25 +351,4 @@ function getPrimaryAction(
       break;
   }
   return null;
-}
-
-function formatBatteryForTile(percent: number) {
-  if (!Number.isFinite(percent)) return null;
-  const rounded = Math.round(percent);
-  if (rounded <= 0) {
-    return {
-      text: `Battery ${rounded}% • Change Batteries !`,
-      className: 'bg-rose-100/90 text-rose-700',
-    };
-  }
-  if (rounded < 20) {
-    return {
-      text: `Battery ${rounded}% • Low Battery !`,
-      className: 'bg-amber-100/90 text-amber-800',
-    };
-  }
-  return {
-    text: `Battery ${rounded}%`,
-    className: 'bg-slate-100/80 text-slate-600',
-  };
 }

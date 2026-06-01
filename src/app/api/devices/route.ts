@@ -79,12 +79,38 @@ export async function GET(req: NextRequest) {
     return Boolean(device.areaName && allowedAreas.has(device.areaName));
   });
 
+  // Ensure linked sensor entities (e.g., battery %) are returned even when they lack areaName metadata.
+  // Tenant dashboards derive battery by grouping entities via deviceId; without this, cloud mode may omit
+  // a battery sensor even though the primary controllable entity is visible.
+  let finalResult = result;
+  const allowedDeviceIds = new Set(
+    result
+      .map((d) => (d.deviceId ?? '').toString().trim())
+      .filter((v) => v.length > 0)
+  );
+  if (allowedDeviceIds.size > 0) {
+    const merged = new Map(result.map((d) => [d.entityId, d]));
+    for (const device of devices) {
+      const deviceId = (device.deviceId ?? '').toString().trim();
+      if (!deviceId || !allowedDeviceIds.has(deviceId)) continue;
+      if (ownTenantOwnedEntityIds.has(device.entityId)) {
+        merged.set(device.entityId, device);
+        continue;
+      }
+      if (allTenantOwnedEntityIds.has(device.entityId)) {
+        continue;
+      }
+      merged.set(device.entityId, device);
+    }
+    finalResult = Array.from(merged.values());
+  }
+
   if (debugServicesForTarget && debugEntityId) {
-    const isAccessible = result.some((d) => d.entityId === debugEntityId);
+    const isAccessible = finalResult.some((d) => d.entityId === debugEntityId);
     if (!isAccessible) {
       safeLog('warn', '[api/devices] debug_services_for_target skipped (entity not accessible)', {
         entityId: debugEntityId,
-        resultCount: result.length,
+        resultCount: finalResult.length,
       });
     } else {
       const normalizeUrl = (url: string) => url.trim().replace(/\/+$/, '');
@@ -154,5 +180,5 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ devices: result });
+  return NextResponse.json({ devices: finalResult });
 }
