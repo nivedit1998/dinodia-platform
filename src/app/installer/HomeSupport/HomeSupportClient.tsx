@@ -130,9 +130,42 @@ export default function HomeSupportClient({ installerName }: { installerName: st
     });
   }
 
+  async function loadAllHomes() {
+    setLoading(true);
+    setError(null);
+    setHasSearched(true);
+    try {
+      const data = await platformFetchJson<{ ok?: boolean; homes?: HomeSummary[] }>(
+        '/api/installer/home-support/homes',
+        undefined,
+        'Failed to load homes.'
+      );
+      if (!data?.ok) throw new Error('Failed to load homes.');
+      const nextHomes = data.homes ?? [];
+      setHomes(nextHomes);
+      setExpandedHomeId(null);
+      setDetails({});
+      setDetailLoading({});
+      setDetailError({});
+      setHomeRequests({});
+      setUserRequests({});
+      if (nextHomes.length === 0) {
+        setError('No homes found yet.');
+      }
+    } catch (err) {
+      setError(friendlyUnknownError(err, 'Failed to load homes.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    void loadAllHomes();
   }, []);
 
   async function loadRooms(homeId: number) {
@@ -260,7 +293,11 @@ export default function HomeSupportClient({ installerName }: { installerName: st
     const homeId = lookupHomeId.trim();
     const serial = lookupSerial.trim();
 
-    if ((homeId && serial) || (!homeId && !serial)) {
+    if (!homeId && !serial) {
+      await loadAllHomes();
+      return;
+    }
+    if (homeId && serial) {
       setError('Enter either Home ID or Hub Serial.');
       return;
     }
@@ -597,15 +634,15 @@ export default function HomeSupportClient({ installerName }: { installerName: st
                 type="submit"
                 className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
               >
-                Find home
+                Search / refresh
               </button>
             </div>
             <p className="mt-2 text-xs text-slate-500">
-              Enter either a Home ID or a Hub Serial. Browsing all homes is disabled.
+              Leave both fields blank to list homes. Enter Home ID or Hub Serial to filter.
             </p>
           </form>
 
-          {loading && <p className="mt-4 text-sm text-slate-600">Searching homes…</p>}
+          {loading && <p className="mt-4 text-sm text-slate-600">Loading homes…</p>}
           {error && <p className="mt-4 text-sm text-rose-600">{error}</p>}
 
           <div className="mt-6 space-y-4">
@@ -1019,9 +1056,7 @@ export default function HomeSupportClient({ installerName }: { installerName: st
 
             {!loading && homesSorted.length === 0 && (
               <p className="text-sm text-slate-600">
-                {hasSearched
-                  ? 'No homes found for that lookup.'
-                  : 'Search using Home ID or Hub Serial to begin.'}
+                {hasSearched ? 'No homes found.' : 'Loading homes…'}
               </p>
             )}
           </div>
