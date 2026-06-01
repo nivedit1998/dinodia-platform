@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AuditEventType, Role } from '@prisma/client';
 import { apiFailFromStatus } from '@/lib/apiError';
-import { getCurrentUserFromRequest } from '@/lib/auth';
+import { requireUserFromRequest } from '@/lib/apiGuards';
 import { getUserWithHaConnection, resolveHaForRequestedMode } from '@/lib/haConnection';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { summarizeAutomation } from '@/lib/automationSummaries';
@@ -228,8 +228,10 @@ async function guardAdminDevice(req: NextRequest, user: { id: number; role: Role
 }
 
 export async function GET(req: NextRequest) {
-  const user = await getCurrentUserFromRequest(req);
-  if (!user) {
+  let user;
+  try {
+    user = await requireUserFromRequest(req);
+  } catch {
     return apiFailFromStatus(401, 'Your session has ended. Please sign in again.');
   }
 
@@ -354,8 +356,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const user = await getCurrentUserFromRequest(req);
-  if (!user) {
+  let user;
+  try {
+    user = await requireUserFromRequest(req);
+  } catch {
     return apiFailFromStatus(401, 'Your session has ended. Please sign in again.');
   }
 

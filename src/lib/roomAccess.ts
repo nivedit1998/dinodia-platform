@@ -77,24 +77,6 @@ export async function resolveSingleHomeownerAdmin(homeId: number): Promise<{ id:
   return { id: admins[0].id, username: admins[0].username, email };
 }
 
-export async function ensureHubHomeReady(hubInstallId: string) {
-  const hub = await prisma.hubInstall.findUnique({
-    where: { id: hubInstallId },
-    select: {
-      id: true,
-      home: { select: { id: true, status: true, haConnectionId: true } },
-    },
-  });
-  const home = hub?.home;
-  if (!hub || !home) {
-    throw new Error('This Dinodia Hub is not linked to a home yet.');
-  }
-  if (home.status === HomeStatus.UNCLAIMED) {
-    throw new Error('This home is not claimed yet. Ask the homeowner to set up the home first.');
-  }
-  return { hubInstallId: hub.id, homeId: home.id, haConnectionId: home.haConnectionId };
-}
-
 function generateApprovalToken(): { raw: string; hash: string } {
   const raw = crypto.randomBytes(32).toString('hex');
   return { raw, hash: hashSha256(raw) };
