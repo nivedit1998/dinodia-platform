@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "check:logs": "node scripts/check_no_unsafe_logs.mjs",
     "parity:check": "node scripts/parity_check.mjs",
     "parity:sync-aws": "node scripts/sync_aws_parity.mjs",
     "prisma:deploy": "prisma migrate deploy",

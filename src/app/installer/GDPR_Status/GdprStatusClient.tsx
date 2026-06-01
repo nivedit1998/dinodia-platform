@@ -1,6 +1,13 @@
 'use client';
 
 import Link from 'next/link';
+import type { Route } from 'next';
+
+type InstallerRunbookRoute =
+  | '/installer/SECURITY_CHECKLIST'
+  | '/installer/SUPABASE_PRIVACY_HARDENING'
+  | '/installer/ICO_EVIDENCE_PACK'
+  | '/installer/LOGGING_POLICY';
 
 type Section = {
   id: string;
@@ -8,7 +15,8 @@ type Section = {
   currentGood: string[];
   currentBad: string[];
   improvements: string[];
-  steps: Array<{ label: string; href?: string }>;
+  steps: Array<{ label: string; href?: string; internal?: boolean }>;
+  runbooks?: Array<{ label: string; href: InstallerRunbookRoute }>;
 };
 
 function ExternalLink({ href, label }: { href: string; label: string }) {
@@ -64,12 +72,47 @@ function SectionCard({ section }: { section: Section }) {
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
             {section.steps.map((step) => (
               <li key={step.label}>
-                {step.href ? <ExternalLink href={step.href} label={step.label} /> : step.label}
+                {step.href ? (
+                  step.internal ? (
+                    <a
+                      href={step.href}
+                      className="font-semibold text-slate-900 underline underline-offset-2 hover:text-slate-700"
+                    >
+                      {step.label}
+                    </a>
+                  ) : (
+                    <ExternalLink href={step.href} label={step.label} />
+                  )
+                ) : (
+                  step.label
+                )}
               </li>
             ))}
           </ul>
         </div>
       </div>
+
+      {section.runbooks?.length ? (
+        <div className="mt-4">
+          <div className="rounded-lg bg-slate-50 p-4 ring-1 ring-slate-200">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Runbooks (print / save as PDF)
+            </p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+              {section.runbooks.map((item) => (
+                <li key={item.href}>
+                  <Link
+                    href={item.href as Route}
+                    className="font-semibold text-slate-900 underline underline-offset-2 hover:text-slate-700"
+                  >
+                    {item.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -81,15 +124,17 @@ export default function GdprStatusClient({ installerName }: { installerName: str
       title: 'ICO registration',
       currentGood: [
         'Security runbooks exist for database privacy hardening and break-glass access logging.',
-        'Server logging has a sanitiser and hashing helpers to reduce PII exposure in logs.',
+        'Server logging is sanitised and stable identifiers are hashed/pseudonymised for safer diagnostics.',
+        'Error logging is standardised to avoid logging raw OAuth/token response bodies.',
       ],
       currentBad: [
-        'Some server routes still log raw errors and third-party response text, which can accidentally include personal data or secrets.',
         'Log retention, access control, and production log review workflow must be defined operationally (treat logs as personal data).',
+        'Retention schedule and processor/subprocessor list must be finalised for the ICO evidence pack.',
       ],
       improvements: [
-        'Standardise production logging on a safe logger and forbid raw OAuth/body logging.',
-        'Set explicit log retention periods and restrict log access to least privilege.',
+        'Complete ICO fee registration and keep the registration certificate on file.',
+        'Set explicit log retention periods in each provider and restrict log access to least privilege.',
+        'Fill in retention periods and processor list in the ICO evidence pack page.',
       ],
       steps: [
         {
@@ -104,6 +149,12 @@ export default function GdprStatusClient({ installerName }: { installerName: str
           label: 'ICO register of fee payers (download certificate)',
           href: 'https://ico.org.uk/about-the-ico/what-we-do/register-of-fee-payers/',
         },
+      ],
+      runbooks: [
+        { label: 'Security checklist (DB visibility lockdown + break-glass)', href: '/installer/SECURITY_CHECKLIST' },
+        { label: 'Supabase privacy hardening (SQL)', href: '/installer/SUPABASE_PRIVACY_HARDENING' },
+        { label: 'ICO registration evidence pack (internal)', href: '/installer/ICO_EVIDENCE_PACK' },
+        { label: 'Logging policy (no PII / no secrets)', href: '/installer/LOGGING_POLICY' },
       ],
     },
     {
@@ -238,4 +289,3 @@ export default function GdprStatusClient({ installerName }: { installerName: str
     </div>
   );
 }
-
