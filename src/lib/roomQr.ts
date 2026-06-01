@@ -27,12 +27,20 @@ export function hashRoomQrSecret(secret: string): string {
   return hashSha256(secret);
 }
 
+function getQrLaunchBaseUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (envUrl) return envUrl.replace(/\/$/, '');
+  const vercel = process.env.VERCEL_URL?.trim();
+  if (vercel) return `https://${vercel}`.replace(/\/$/, '');
+  return 'http://localhost:3000';
+}
+
 export function buildRoomQrPayload(args: { roomId: string; token: string; version?: string }): string {
   const roomId = args.roomId.trim();
   const token = args.token.trim();
   const version = (args.version ?? ROOM_QR_VERSION).trim();
   const query = new URLSearchParams({ v: version, rid: roomId, t: token });
-  return `dinodia://room?${query.toString()}`;
+  return `${getQrLaunchBaseUrl()}/qr/room?${query.toString()}`;
 }
 
 export function parseRoomQrPayload(raw: string): ParsedRoomQr | null {
@@ -47,6 +55,22 @@ export function parseRoomQrPayload(raw: string): ParsedRoomQr | null {
       return null;
     }
     if (parsed.hostname.toLowerCase() !== 'room') return null;
+    const version = parsed.searchParams.get('v') ?? ROOM_QR_VERSION;
+    const roomId = parsed.searchParams.get('rid') ?? '';
+    const token = parsed.searchParams.get('t') ?? '';
+    if (!roomId.trim() || !token.trim()) return null;
+    return { version, roomId: roomId.trim(), token: token.trim() };
+  }
+
+  if (text.toLowerCase().startsWith('http://') || text.toLowerCase().startsWith('https://')) {
+    let parsed: URL;
+    try {
+      parsed = new URL(text);
+    } catch {
+      return null;
+    }
+    const pathname = parsed.pathname.replace(/\/+$/, '');
+    if (pathname !== '/qr/room') return null;
     const version = parsed.searchParams.get('v') ?? ROOM_QR_VERSION;
     const roomId = parsed.searchParams.get('rid') ?? '';
     const token = parsed.searchParams.get('t') ?? '';
@@ -84,4 +108,3 @@ export function safeEqualHex(a: string, b: string): boolean {
     return false;
   }
 }
-
