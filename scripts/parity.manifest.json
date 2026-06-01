@@ -36,13 +36,22 @@
     { "src": "src/app/installer/SUPABASE_PRIVACY_HARDENING", "dest": "src/app/installer/SUPABASE_PRIVACY_HARDENING", "mode": "dir" },
     { "src": "src/app/installer/ICO_EVIDENCE_PACK", "dest": "src/app/installer/ICO_EVIDENCE_PACK", "mode": "dir" },
     { "src": "src/app/installer/LOGGING_POLICY", "dest": "src/app/installer/LOGGING_POLICY", "mode": "dir" },
+    { "src": "src/app/installer/CYBER_ESSENTIALS_PLUS", "dest": "src/app/installer/CYBER_ESSENTIALS_PLUS", "mode": "dir" },
+    { "src": "src/app/installer/CEPLUS_ASSET_INVENTORY", "dest": "src/app/installer/CEPLUS_ASSET_INVENTORY", "mode": "dir" },
+    { "src": "src/app/installer/CEPLUS_ACCESS_CONTROL", "dest": "src/app/installer/CEPLUS_ACCESS_CONTROL", "mode": "dir" },
+    { "src": "src/app/installer/CEPLUS_SECURE_CONFIGURATION", "dest": "src/app/installer/CEPLUS_SECURE_CONFIGURATION", "mode": "dir" },
+    { "src": "src/app/installer/CEPLUS_PATCH_MANAGEMENT", "dest": "src/app/installer/CEPLUS_PATCH_MANAGEMENT", "mode": "dir" },
+    { "src": "src/app/installer/CEPLUS_MALWARE_PROTECTION", "dest": "src/app/installer/CEPLUS_MALWARE_PROTECTION", "mode": "dir" },
+    { "src": "src/app/installer/CEPLUS_FIREWALLS", "dest": "src/app/installer/CEPLUS_FIREWALLS", "mode": "dir" },
 
     { "src": "src/lib/serverErrorLog.ts", "dest": "src/lib/serverErrorLog.ts", "mode": "file" },
     { "src": "src/lib/alexaEvents.ts", "dest": "src/lib/alexaEvents.ts", "mode": "file" },
     { "src": "src/app/api/auth/register-admin/route.ts", "dest": "src/app/api/auth/register-admin/route.ts", "mode": "file" },
     { "src": "src/app/api/hub-agent/token-state/route.ts", "dest": "src/app/api/hub-agent/token-state/route.ts", "mode": "file" },
 
-    { "src": "scripts/check_no_unsafe_logs.mjs", "dest": "scripts/check_no_unsafe_logs.mjs", "mode": "file" }
+    { "src": "scripts/check_no_unsafe_logs.mjs", "dest": "scripts/check_no_unsafe_logs.mjs", "mode": "file" },
+    { "src": "scripts/check_security_headers.mjs", "dest": "scripts/check_security_headers.mjs", "mode": "file" },
+    { "src": "scripts/generate_surface_inventory.mjs", "dest": "scripts/generate_surface_inventory.mjs", "mode": "file" }
   ],
   "excludeGlobs": [
     "**/.DS_Store"
