@@ -9,6 +9,13 @@
 
     { "src": "src/app/admin/ui", "dest": "src/app/admin/ui", "mode": "dir" },
     { "src": "src/app/tenant/layout.tsx", "dest": "src/app/tenant/layout.tsx", "mode": "file" },
+    { "src": "src/app/tenant/page.tsx", "dest": "src/app/tenant/page.tsx", "mode": "file" },
+    { "src": "src/app/tenant/dashboard/page.tsx", "dest": "src/app/tenant/dashboard/page.tsx", "mode": "file" },
+    { "src": "src/app/tenant/automations/page.tsx", "dest": "src/app/tenant/automations/page.tsx", "mode": "file" },
+    { "src": "src/app/tenant/settings/page.tsx", "dest": "src/app/tenant/settings/page.tsx", "mode": "file" },
+    { "src": "src/app/tenant/devices/add/page.tsx", "dest": "src/app/tenant/devices/add/page.tsx", "mode": "file" },
+    { "src": "src/app/tenant/devices/discovered/page.tsx", "dest": "src/app/tenant/devices/discovered/page.tsx", "mode": "file" },
+    { "src": "src/app/tenant/policy", "dest": "src/app/tenant/policy", "mode": "dir" },
 
     { "src": "src/components/ui", "dest": "src/components/ui", "mode": "dir" },
     { "src": "src/lib/theme.ts", "dest": "src/lib/theme.ts", "mode": "file" },
@@ -21,12 +28,21 @@
     { "src": "src/lib/roomAccess.ts", "dest": "src/lib/roomAccess.ts", "mode": "file" },
     { "src": "src/lib/accessScope.ts", "dest": "src/lib/accessScope.ts", "mode": "file" },
     { "src": "src/lib/apiGuards.ts", "dest": "src/lib/apiGuards.ts", "mode": "file" },
+    { "src": "src/lib/policyVersions.ts", "dest": "src/lib/policyVersions.ts", "mode": "file" },
+    { "src": "src/lib/policyAcceptance.ts", "dest": "src/lib/policyAcceptance.ts", "mode": "file" },
 
     { "src": "src/app/api/devices/route.ts", "dest": "src/app/api/devices/route.ts", "mode": "file" },
     { "src": "src/app/api/automations/route.ts", "dest": "src/app/api/automations/route.ts", "mode": "file" },
     { "src": "src/app/api/auth/login/route.ts", "dest": "src/app/api/auth/login/route.ts", "mode": "file" },
+    { "src": "src/app/api/auth/me/route.ts", "dest": "src/app/api/auth/me/route.ts", "mode": "file" },
     { "src": "src/app/api/auth/mobile-login/route.ts", "dest": "src/app/api/auth/mobile-login/route.ts", "mode": "file" },
     { "src": "src/app/api/public/rooms", "dest": "src/app/api/public/rooms", "mode": "dir" },
+    { "src": "src/app/api/policy/status/route.ts", "dest": "src/app/api/policy/status/route.ts", "mode": "file" },
+    { "src": "src/app/api/policy/accept/route.ts", "dest": "src/app/api/policy/accept/route.ts", "mode": "file" },
+    { "src": "src/app/api/homeowner/policy/accept/route.ts", "dest": "src/app/api/homeowner/policy/accept/route.ts", "mode": "file" },
+
+    { "src": "src/app/privacy", "dest": "src/app/privacy", "mode": "dir" },
+    { "src": "src/app/terms", "dest": "src/app/terms", "mode": "dir" },
 
     { "src": "src/app/installer/GDPR_Status", "dest": "src/app/installer/GDPR_Status", "mode": "dir" },
     { "src": "src/app/installer/provision/provisionClient.tsx", "dest": "src/app/installer/provision/provisionClient.tsx", "mode": "file" },
@@ -43,6 +59,9 @@
     { "src": "src/app/installer/CEPLUS_PATCH_MANAGEMENT", "dest": "src/app/installer/CEPLUS_PATCH_MANAGEMENT", "mode": "dir" },
     { "src": "src/app/installer/CEPLUS_MALWARE_PROTECTION", "dest": "src/app/installer/CEPLUS_MALWARE_PROTECTION", "mode": "dir" },
     { "src": "src/app/installer/CEPLUS_FIREWALLS", "dest": "src/app/installer/CEPLUS_FIREWALLS", "mode": "dir" },
+    { "src": "src/app/installer/PRIVACY_POLICY_EVIDENCE", "dest": "src/app/installer/PRIVACY_POLICY_EVIDENCE", "mode": "dir" },
+    { "src": "src/app/installer/POLICY_ACCEPTANCE_EVIDENCE", "dest": "src/app/installer/POLICY_ACCEPTANCE_EVIDENCE", "mode": "dir" },
+    { "src": "src/app/installer/RETENTION_DSAR_RUNBOOK", "dest": "src/app/installer/RETENTION_DSAR_RUNBOOK", "mode": "dir" },
 
     { "src": "src/lib/serverErrorLog.ts", "dest": "src/lib/serverErrorLog.ts", "mode": "file" },
     { "src": "src/lib/alexaEvents.ts", "dest": "src/lib/alexaEvents.ts", "mode": "file" },
