@@ -13,7 +13,7 @@ export default async function InstallerProvisionPage() {
 
   return (
     <CompanyPortalShell username={user.username} role={user.role}>
-      <ProvisionClient installerName={user.username} />
+      <ProvisionClient installerName={user.username} role={user.role} />
     </CompanyPortalShell>
   );
 }

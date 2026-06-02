@@ -13,7 +13,7 @@ export default async function InstallerHomeSupportPage() {
 
   return (
     <CompanyPortalShell username={user.username} role={user.role}>
-      <HomeSupportClient installerName={user.username} />
+      <HomeSupportClient installerName={user.username} role={user.role} />
     </CompanyPortalShell>
   );
 }
