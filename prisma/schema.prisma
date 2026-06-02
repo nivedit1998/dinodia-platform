@@ -11,6 +11,9 @@ datasource db {
 enum Role {
   ADMIN
   INSTALLER
+  SENIOR_OPERATIONS_MANAGER
+  SENIOR_CUSTOMER_SUPPORT
+  CXO
   TENANT
 }
 
@@ -204,6 +207,7 @@ model User {
   homeownerPolicyAcceptedVersion String?
   homeownerPolicyAcceptedAt      DateTime?
   email2faEnabled                Boolean                         @default(false)
+  isActive                       Boolean                         @default(true)
   role                           Role                            @default(TENANT)
   home                           Home?                           @relation(fields: [homeId], references: [id])
   homeId                         Int?

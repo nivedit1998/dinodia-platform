@@ -86,7 +86,7 @@ export default function InstallerVerifyPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Check your email</h1>
           <p className="mt-2 text-sm text-slate-600">Missing verification request. Please sign in again.</p>
           <button
-            onClick={() => router.push('/installer/login')}
+            onClick={() => router.push('/companylogin/login')}
             className="mt-4 w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
           >
             Back to login
@@ -118,7 +118,7 @@ export default function InstallerVerifyPage() {
             I clicked the link
           </button>
           <button
-            onClick={() => router.push('/installer/login')}
+            onClick={() => router.push('/companylogin/login')}
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
           >
             Back to login

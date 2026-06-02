@@ -241,7 +241,7 @@ export default function ProvisionClient({ installerName }: { installerName: stri
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => null);
-    router.push('/installer/login');
+    router.push('/companylogin/login');
   }
 
   return (
