@@ -98,6 +98,12 @@
     { "src": "src/app/installer/PRIVACY_POLICY_EVIDENCE", "dest": "src/app/installer/PRIVACY_POLICY_EVIDENCE", "mode": "dir" },
     { "src": "src/app/installer/POLICY_ACCEPTANCE_EVIDENCE", "dest": "src/app/installer/POLICY_ACCEPTANCE_EVIDENCE", "mode": "dir" },
     { "src": "src/app/installer/RETENTION_DSAR_RUNBOOK", "dest": "src/app/installer/RETENTION_DSAR_RUNBOOK", "mode": "dir" },
+    { "src": "src/app/installer/ISO27001_SCOPE", "dest": "src/app/installer/ISO27001_SCOPE", "mode": "dir" },
+    { "src": "src/app/installer/ISO27001_RISK_REGISTER", "dest": "src/app/installer/ISO27001_RISK_REGISTER", "mode": "dir" },
+    { "src": "src/app/installer/ISO27001_SUPPLIER_REGISTER", "dest": "src/app/installer/ISO27001_SUPPLIER_REGISTER", "mode": "dir" },
+    { "src": "src/app/installer/ISO27001_INCIDENT_RESPONSE", "dest": "src/app/installer/ISO27001_INCIDENT_RESPONSE", "mode": "dir" },
+    { "src": "src/app/installer/ISO27001_INTERNAL_AUDIT", "dest": "src/app/installer/ISO27001_INTERNAL_AUDIT", "mode": "dir" },
+    { "src": "src/app/installer/ISO27001_CERTIFICATION_ROADMAP", "dest": "src/app/installer/ISO27001_CERTIFICATION_ROADMAP", "mode": "dir" },
     { "src": "src/app/installer/PENTEST_SCOPE_ROE", "dest": "src/app/installer/PENTEST_SCOPE_ROE", "mode": "dir" },
     { "src": "src/app/installer/PENTEST_REMEDIATION_LOG", "dest": "src/app/installer/PENTEST_REMEDIATION_LOG", "mode": "dir" },
 
