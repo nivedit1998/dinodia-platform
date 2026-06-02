@@ -3,6 +3,7 @@ import { resolveAlexaAuthUser } from '@/app/api/alexa/auth';
 import { prisma } from '@/lib/prisma';
 import { checkRateLimit } from '@/lib/rateLimit';
 import { Role } from '@prisma/client';
+import { logServerError } from '@/lib/serverErrorLog';
 
 export async function GET(req: NextRequest) {
   const authUser = await resolveAlexaAuthUser(req);
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ linked, reason });
   } catch (err) {
-    console.error('[api/alexa/link-status] error', err);
+    logServerError('[api/alexa/link-status] error', err, { userId: authUser.id });
     return NextResponse.json(
       { error: 'Unable to check Alexa link status right now.' },
       { status: 500 }

@@ -10,6 +10,7 @@ import { prisma } from '@/lib/prisma';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { getGroupLabel } from '@/lib/deviceLabels';
 import { normalizeAlexaEndpointId } from '@/lib/alexaEndpointId';
+import { hashForLog, safeLog } from '@/lib/safeLogger';
 
 const BLIND_GLOBAL_CONTROLLER_SCRIPT_ENTITY_ID =
   process.env.HA_BLIND_GLOBAL_CONTROLLER_SCRIPT_ENTITY_ID ||
@@ -461,7 +462,11 @@ export async function executeDeviceCommand(
         delayMs,
       });
     } catch (err) {
-      console.error('AlexaChangeReport: failed to enqueue job', err);
+      safeLog('error', 'AlexaChangeReport: failed to enqueue job', {
+        err,
+        haConnectionIdHash: hashForLog(String(haConnectionId ?? '')),
+        entityIdHash: hashForLog(entityId),
+      });
     }
   }
 }
@@ -526,7 +531,11 @@ export async function executeDeviceService(
         delayMs,
       });
     } catch (err) {
-      console.error('AlexaChangeReport: failed to enqueue service job', err);
+      safeLog('error', 'AlexaChangeReport: failed to enqueue service job', {
+        err,
+        haConnectionIdHash: hashForLog(String(haConnectionId ?? '')),
+        entityIdHash: hashForLog(entityId),
+      });
     }
   }
 }
@@ -863,7 +872,10 @@ async function resolveLabelFromDatabase(entityId: string): Promise<string | null
     });
     return normalizeAlexaLabel(device?.label ?? null);
   } catch (err) {
-    console.warn('[deviceControl] Failed to resolve label from DB', { entityId, err });
+    safeLog('warn', '[deviceControl] Failed to resolve label from DB', {
+      entityIdHash: hashForLog(entityId),
+      err,
+    });
     return null;
   }
 }

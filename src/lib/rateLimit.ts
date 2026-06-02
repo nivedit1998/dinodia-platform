@@ -1,4 +1,5 @@
 import { kv } from '@vercel/kv';
+import { safeLog } from '@/lib/safeLogger';
 
 export type RateLimitKey = string;
 
@@ -57,7 +58,7 @@ export async function checkRateLimit(
     try {
       return await checkRateLimitKv(key, options);
     } catch (err) {
-      console.warn('[rateLimit] KV unavailable, falling back to memory', err);
+      safeLog('warn', '[rateLimit] KV unavailable, falling back to memory', { err });
     }
   }
   return checkRateLimitMemory(key, options);

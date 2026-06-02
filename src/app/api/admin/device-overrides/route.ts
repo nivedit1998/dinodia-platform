@@ -9,6 +9,7 @@ import { getGroupLabel } from '@/lib/deviceLabels';
 import { isSensorEntity } from '@/lib/deviceSensors';
 import { getTileEligibleDevicesForTenantDashboard } from '@/lib/deviceCapabilities';
 import type { UIDevice } from '@/types/device';
+import { safeLog } from '@/lib/safeLogger';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_LOOKBACK_DAYS = 90;
@@ -86,7 +87,7 @@ export async function GET(req: NextRequest) {
     haDevices = await getDevicesForHaConnection(haConnectionId, { cacheTtlMs: 2000 });
   } catch (err) {
     if (process.env.NODE_ENV !== 'production') {
-      console.warn('HA device fetch failed, falling back to overrides only', err);
+      safeLog('warn', 'HA device fetch failed, falling back to overrides only', { err, haConnectionId });
     }
   }
 

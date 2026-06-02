@@ -10,6 +10,7 @@ import { buildPasswordResetEmail } from '@/lib/emailTemplates';
 import { sendEmail } from '@/lib/email';
 import { checkRateLimit } from '@/lib/rateLimit';
 import { getClientIp } from '@/lib/requestInfo';
+import { logServerError } from '@/lib/serverErrorLog';
 
 export const runtime = 'nodejs';
 
@@ -88,7 +89,7 @@ export async function POST(req: NextRequest) {
           replyTo: REPLY_TO,
         });
       } catch (err) {
-        console.error('[password-reset:request] Failed to send reset email', err);
+        logServerError('[password-reset:request] Failed to send reset email', err, { userId: user.id });
         // Do not leak error details; always respond success.
       }
     }
@@ -140,7 +141,7 @@ export async function POST(req: NextRequest) {
         replyTo: REPLY_TO,
       });
     } catch (err) {
-      console.error('[password-reset:request] Failed to send reset email', err);
+      logServerError('[password-reset:request] Failed to send reset email', err, { userId: user!.id });
       // Do not leak error details; always respond success.
     }
   }
