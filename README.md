@@ -32,6 +32,7 @@ Multi-tenant tablet UI for Home Assistant built with Next.js App Router, Prisma,
 
 ## Environment
 
+
 All deployments (local, preview, production) must define the following variables. `.env.production.example` documents the production-ready defaults (e.g. Supabase URL) while `.env.local` is ignored by git for local overrides.
 
 | Variable | Description |
