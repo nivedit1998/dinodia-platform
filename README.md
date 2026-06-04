@@ -35,7 +35,7 @@ Multi-tenant tablet UI for Home Assistant built with Next.js App Router, Prisma,
 
 All deployments (local, preview, production) must define the following variables. `.env.production.example` documents the production-ready defaults (e.g. Supabase URL) while `.env.local` is ignored by git for local overrides.
 
-| Variable | Description |
+| Variable | Description | 
 | --- | --- |
 | `DATABASE_URL` | Connection string for Prisma. Use `file:./prisma/dev.db` for SQLite locally or `postgresql://USER:PASSWORD@HOST:PORT/DB?sslmode=require` for Supabase Postgres. |
 | `JWT_SECRET` | Secret string used to sign the auth JWT cookie. Generate a long random value. |
