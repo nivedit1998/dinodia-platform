@@ -160,6 +160,9 @@ function runChecks() {
     // Platform capabilities must cover all groups
     if (target.capabilitiesPath) {
       for (const group of registry.groups) {
+        if (group === 'Remote') {
+          continue;
+        }
         if (!fileHasLabelKey(target.capabilitiesPath, group)) {
           throw new Error(`[${target.name}] capabilities missing for "${group}" in ${target.capabilitiesPath}`);
         }

@@ -19,6 +19,9 @@ import { friendlyUnknownError } from '@/lib/clientError';
 import { platformFetchJson } from '@/lib/platformFetchClient';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { RemoteDetailSheet } from '@/components/remote/RemoteDetailSheet';
+import { RemoteTile } from '@/components/remote/RemoteTile';
+import type { RemoteDeviceSummary } from '@/types/remote';
 
 type Props = {
   username: string;
@@ -81,6 +84,27 @@ function devicesAreDifferent(a: UIDevice[], b: UIDevice[]) {
   return false;
 }
 
+function remoteDevicesAreDifferent(a: RemoteDeviceSummary[], b: RemoteDeviceSummary[]) {
+  if (a.length !== b.length) return true;
+  const mapA = new Map(a.map((d) => [d.remoteDeviceId, d]));
+  for (const device of b) {
+    const prev = mapA.get(device.remoteDeviceId);
+    if (!prev) return true;
+    if (
+      prev.name !== device.name ||
+      prev.state !== device.state ||
+      (prev.area ?? prev.areaName) !== (device.area ?? device.areaName) ||
+      prev.binding?.targetEntityId !== device.binding?.targetEntityId ||
+      prev.binding?.targetDeviceId !== device.binding?.targetDeviceId ||
+      prev.binding?.bindingId !== device.binding?.bindingId ||
+      prev.target?.targetId !== device.target?.targetId
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function formatClock(date: Date) {
   return new Intl.DateTimeFormat('en-US', {
     hour: 'numeric',
@@ -93,14 +117,22 @@ export default function TenantDashboard(props: Props) {
   const { username } = props;
   const router = useRouter();
   const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
+  const [openRemoteId, setOpenRemoteId] = useState<string | null>(null);
   const [clock, setClock] = useState(() => formatClock(new Date()));
   const [devices, setDevices] = useState<UIDevice[]>([]);
+  const [remoteDevices, setRemoteDevices] = useState<RemoteDeviceSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [remoteLoading, setRemoteLoading] = useState(false);
   const requestCounterRef = useRef(0);
   const latestRequestRef = useRef(0);
   const lastLoadedRef = useRef<number | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const remoteRequestCounterRef = useRef(0);
+  const latestRemoteRequestRef = useRef(0);
+  const remoteLastLoadedRef = useRef<number | null>(null);
+  const remoteAbortControllerRef = useRef<AbortController | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
@@ -194,6 +226,73 @@ export default function TenantDashboard(props: Props) {
     [resolveDeviceErrorMessage]
   );
 
+  const loadRemoteDevices = useCallback(
+    async (opts?: { silent?: boolean; force?: boolean }) => {
+      const silent = opts?.silent ?? false;
+      const force = opts?.force ?? false;
+      const now = Date.now();
+      const lastLoaded = remoteLastLoadedRef.current;
+      if (!force && lastLoaded && now - lastLoaded < REFRESH_THROTTLE_MS) {
+        setRemoteLoading(false);
+        return;
+      }
+
+      const requestId = remoteRequestCounterRef.current + 1;
+      remoteRequestCounterRef.current = requestId;
+      latestRemoteRequestRef.current = requestId;
+
+      if (!silent) {
+        setRemoteError(null);
+      }
+      setRemoteLoading(true);
+
+      if (remoteAbortControllerRef.current) {
+        remoteAbortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      remoteAbortControllerRef.current = controller;
+
+      try {
+        const endpoint = force ? '/api/remote-devices?fresh=1' : '/api/remote-devices';
+        const data = await platformFetchJson<{ remoteDevices?: RemoteDeviceSummary[] }>(
+          endpoint,
+          { signal: controller.signal },
+          'We couldn’t load your remotes. Please check your connection and try again.'
+        );
+        const isLatest = latestRemoteRequestRef.current === requestId;
+        if (!isLatest) return;
+
+        setRemoteLoading(false);
+        remoteAbortControllerRef.current = null;
+
+        const list: RemoteDeviceSummary[] = data.remoteDevices || [];
+        setRemoteDevices((prev) => {
+          if (!remoteDevicesAreDifferent(prev, list)) return prev;
+          return list;
+        });
+        remoteLastLoadedRef.current = Date.now();
+      } catch (err) {
+        const isLatest = latestRemoteRequestRef.current === requestId;
+        if (!isLatest) return;
+        if ((err as Error).name === 'AbortError') {
+          setRemoteLoading(false);
+          remoteAbortControllerRef.current = null;
+          return;
+        }
+        console.error(err);
+        setRemoteLoading(false);
+        remoteAbortControllerRef.current = null;
+        const friendly = friendlyUnknownError(
+          err,
+          'We couldn’t load your remotes. Please check your connection and try again.'
+        );
+        if (latestRemoteRequestRef.current !== requestId) return;
+        setRemoteError(friendly);
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     if (!menuOpen) return;
     function onClickOutside(event: MouseEvent) {
@@ -256,9 +355,10 @@ export default function TenantDashboard(props: Props) {
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       void loadDevices();
+      void loadRemoteDevices();
     });
     return () => cancelAnimationFrame(frame);
-  }, [loadDevices]);
+  }, [loadDevices, loadRemoteDevices]);
 
   const loadRoster = useCallback(async () => {
     setRosterError(null);
@@ -282,7 +382,8 @@ export default function TenantDashboard(props: Props) {
 
   const handleVersionChange = useCallback(() => {
     void loadDevices({ silent: true, force: true });
-  }, [loadDevices]);
+    void loadRemoteDevices({ silent: true, force: true });
+  }, [loadDevices, loadRemoteDevices]);
 
   useDevicesVersionPolling({
     onVersionChange: handleVersionChange,
@@ -322,9 +423,10 @@ export default function TenantDashboard(props: Props) {
   useEffect(() => {
     const unsubscribe = subscribeToRefresh(() => {
       void loadDevices({ silent: true });
+      void loadRemoteDevices({ silent: true });
     });
     return unsubscribe;
-  }, [loadDevices]);
+  }, [loadDevices, loadRemoteDevices]);
 
   useEffect(() => {
     const id = setInterval(() => setClock(formatClock(new Date())), 60000);
@@ -334,13 +436,14 @@ export default function TenantDashboard(props: Props) {
   useEffect(
     () => () => {
       abortControllerRef.current?.abort();
+      remoteAbortControllerRef.current?.abort();
     },
     []
   );
 
-  const isLoading = loading;
-  const currentError = error;
-  const hasDevices = devices.length > 0;
+  const isLoading = loading || remoteLoading;
+  const currentError = error ?? remoteError;
+  const hasDevices = devices.length > 0 || remoteDevices.length > 0;
 
   const areaOptions = useMemo(() => {
     const set = new Set<string>();
@@ -349,8 +452,12 @@ export default function TenantDashboard(props: Props) {
       const areaName = (d.area ?? d.areaName ?? '').trim();
       if (areaName) set.add(areaName);
     }
+    for (const remote of remoteDevices) {
+      const areaName = (remote.area ?? remote.areaName ?? '').trim();
+      if (areaName) set.add(areaName);
+    }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [devices]);
+  }, [devices, remoteDevices]);
 
   const resolvedSelectedArea = useMemo(() => {
     if (selectedArea === ALL_AREAS) return ALL_AREAS;
@@ -416,6 +523,21 @@ export default function TenantDashboard(props: Props) {
     [eligibleDevices, resolvedSelectedArea]
   );
 
+  const visibleRemoteDevices = useMemo(
+    () =>
+      remoteDevices.filter((remote) => {
+        const areaName = (remote.area ?? remote.areaName ?? '').trim();
+        if (
+          resolvedSelectedArea !== ALL_AREAS &&
+          areaName !== resolvedSelectedArea
+        ) {
+          return false;
+        }
+        return true;
+      }),
+    [remoteDevices, resolvedSelectedArea]
+  );
+
   const labelGroups = useMemo(() => {
     const map = new Map<string, UIDevice[]>();
     visibleDevices.forEach((device) => {
@@ -433,6 +555,9 @@ export default function TenantDashboard(props: Props) {
 
   const openDevice = openDeviceId
     ? devices.find((d) => d.entityId === openDeviceId) ?? null
+    : null;
+  const openRemote = openRemoteId
+    ? remoteDevices.find((remote) => remote.remoteDeviceId === openRemoteId) ?? null
     : null;
 
   const linkedSensors = useMemo(() => {
@@ -693,6 +818,19 @@ export default function TenantDashboard(props: Props) {
           </div>
         )}
         <div className="space-y-10">
+          {visibleRemoteDevices.length > 0 && (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold tracking-tight">Remote</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-3 justify-items-center sm:justify-items-stretch sm:gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+                {visibleRemoteDevices.map((remote) => (
+                  <RemoteTile key={remote.remoteDeviceId} remote={remote} onOpenDetails={() => setOpenRemoteId(remote.remoteDeviceId)} />
+                ))}
+              </div>
+            </section>
+          )}
+
           {sortedLabels.map((label) => {
             if (label === OTHER_LABEL) return null;
             const group = labelGroups.get(label);
@@ -729,7 +867,7 @@ export default function TenantDashboard(props: Props) {
             </section>
           )}
 
-          {sortedLabels.length === 0 && !isLoading && (
+          {sortedLabels.length === 0 && visibleRemoteDevices.length === 0 && !isLoading && (
             <EmptyState
               title="No devices are visible yet"
               description="Ask the homeowner to confirm your area access, or add a discovered device to get started."
@@ -750,6 +888,25 @@ export default function TenantDashboard(props: Props) {
           showAdminControls={false}
           allowSensorHistory
           historyEndpoint="/api/tenant/monitoring/history"
+        />
+      )}
+      {openRemote && (
+        <RemoteDetailSheet
+          remote={openRemote}
+          targetOptions={devices}
+          onClose={() => setOpenRemoteId(null)}
+          onSaveTarget={async ({ targetEntityId }) => {
+            await platformFetchJson(
+              `/api/remote-devices/${encodeURIComponent(openRemote.remoteDeviceId)}`,
+              {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetEntityId }),
+              },
+              'We couldn’t update this remote right now. Please try again.'
+            );
+            await loadRemoteDevices({ silent: true, force: true });
+          }}
         />
       )}
       <TenantAccessRosterDialog
