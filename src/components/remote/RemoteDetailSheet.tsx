@@ -43,7 +43,12 @@ export function RemoteDetailSheet({
     });
   }, [targetOptions]);
 
-  const currentTarget = remote.target?.name ?? remote.binding?.targetEntityId ?? 'No target assigned';
+  const currentTarget =
+    remote.target?.name ??
+    remote.binding?.bindingName ??
+    remote.binding?.targetEntityId ??
+    remote.binding?.targetDeviceId ??
+    'No target assigned';
 
   return (
     <Modal
@@ -63,9 +68,7 @@ export function RemoteDetailSheet({
             <p className="mt-1 text-sm text-foreground/80">
               Binding: {remote.binding?.bindingName ?? remote.binding?.bindingId ?? 'Unbound'}
             </p>
-            <p className="mt-1 text-sm text-foreground/80">
-              Target: {remote.target?.name ?? 'No target assigned'}
-            </p>
+            <p className="mt-1 text-sm text-foreground/80">Target: {currentTarget}</p>
           </div>
           <button
             type="button"
@@ -146,7 +149,9 @@ export function RemoteDetailSheet({
               ? 'Binding disabled'
               : remote.target
                 ? `Controls ${remote.target.name}`
-                : 'No binding configured'}
+                : remote.binding
+                  ? `Controls ${currentTarget}`
+                  : 'No binding configured'}
           </p>
           <p className="mt-1 text-sm text-muted">
             {remote.target?.domain ? `Target domain: ${remote.target.domain}` : 'Target domain unknown'}
