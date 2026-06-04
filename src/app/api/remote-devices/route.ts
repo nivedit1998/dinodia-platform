@@ -8,7 +8,7 @@ import { getTenantOwnedTargetsForHome, getTenantOwnedTargetsForUser } from '@/li
 import { safeLog } from '@/lib/safeLogger';
 import { REMOTE_LABEL } from '@/lib/deviceLabels';
 import { callHaService, getDevicesWithLabelMetadata } from '@/lib/homeAssistant';
-import { SERVICE_RESOLVE_BINDING } from '@/lib/remoteManager';
+import { SERVICE_LIST_BINDINGS, SERVICE_RESOLVE_BINDING } from '@/lib/remoteManager';
 import type { RemoteDeviceSummary, RemoteTargetSummary } from '@/types/remote';
 
 function normalize(value: string | null | undefined) {
@@ -63,6 +63,85 @@ function buildTargetSummary(
     labelCategory: target.labelCategory ?? null,
     state: target.state,
   };
+}
+
+type ResolveBindingResponse = {
+  binding?: RemoteDeviceSummary['binding'] | null;
+  capability?: RemoteDeviceSummary['capability'] | null;
+  bindingLookup?: {
+    bindingId?: string | null;
+    remoteDeviceId?: string | null;
+    remoteEntityId?: string | null;
+  } | null;
+};
+
+type ListBindingsResponse = {
+  bindings?: RemoteDeviceSummary['binding'][];
+};
+
+async function resolveRemoteBinding(
+  candidate: { baseUrl: string; longLivedToken: string },
+  remoteDeviceId: string,
+  remoteEntityId: string | null
+): Promise<ResolveBindingResponse | null> {
+  try {
+    const result = await callHaService(
+      candidate,
+      'dinodia_remote_manager',
+      SERVICE_RESOLVE_BINDING,
+      {
+        remote_device_id: remoteDeviceId,
+        remote_entity_id: remoteEntityId,
+      },
+      undefined,
+      { returnResponse: true }
+    );
+    if (result && typeof result === 'object') {
+      const typed = result as ResolveBindingResponse;
+      if (typed.binding) {
+        return typed;
+      }
+    }
+  } catch {
+    // fall through to binding list lookup
+  }
+
+  try {
+    const listResult = await callHaService(
+      candidate,
+      'dinodia_remote_manager',
+      SERVICE_LIST_BINDINGS,
+      {},
+      undefined,
+      { returnResponse: true }
+    );
+    const bindings = (listResult as ListBindingsResponse | null | undefined)?.bindings ?? [];
+    const binding =
+      bindings.find((item) => item?.remoteDeviceId === remoteDeviceId) ??
+      bindings.find((item) => item?.remoteDeviceId === remoteEntityId) ??
+      null;
+    if (!binding) {
+      return { binding: null, capability: null };
+    }
+
+    const resolved = await callHaService(
+      candidate,
+      'dinodia_remote_manager',
+      SERVICE_RESOLVE_BINDING,
+      { binding_id: binding.bindingId },
+      undefined,
+      { returnResponse: true }
+    );
+    if (resolved && typeof resolved === 'object') {
+      return resolved as ResolveBindingResponse;
+    }
+    return {
+      binding,
+      capability: null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -153,9 +232,7 @@ export async function GET(req: NextRequest) {
     let capability: RemoteDeviceSummary['capability'] = null;
     for (const candidate of candidates) {
       try {
-        const result = await callHaService(candidate, 'dinodia_remote_manager', SERVICE_RESOLVE_BINDING, {
-          remote_device_id: remoteDeviceId,
-        });
+        const result = await resolveRemoteBinding(candidate, remoteDeviceId, normalize(remote.entity_id) || null);
         binding = result?.binding ?? null;
         capability = result?.capability ?? null;
         break;
