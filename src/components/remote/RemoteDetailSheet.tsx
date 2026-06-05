@@ -68,18 +68,18 @@ export function RemoteDetailSheet({
             <p className="mt-1 text-sm text-foreground/80">
               Binding: {remote.binding?.bindingName ?? remote.binding?.bindingId ?? 'Unbound'}
             </p>
-          <p className="mt-1 text-sm text-foreground/80">Target: {currentTarget}</p>
-          <p className="mt-1 text-sm text-foreground/80">
-            Resolution:{' '}
-            {remote.resolutionState === 'bound'
-              ? 'Bound'
-              : remote.resolutionState === 'target_unresolved'
-                ? 'Bound, target unresolved'
-                : remote.resolutionState === 'unbound'
-                  ? 'Unbound'
-                  : 'Unknown'}
-          </p>
-        </div>
+            <p className="mt-1 text-sm text-foreground/80">Target: {currentTarget}</p>
+            <p className="mt-1 text-sm text-foreground/80">
+              Resolution:{' '}
+              {remote.resolutionState === 'bound'
+                ? 'Bound'
+                : remote.resolutionState === 'target_unresolved'
+                  ? 'Bound, target unresolved'
+                  : remote.resolutionState === 'unbound'
+                    ? 'Unbound'
+                    : 'Unknown'}
+            </p>
+          </div>
           <button
             type="button"
             aria-label="Change remote target"
