@@ -26,7 +26,6 @@ export function LoginClient({
   const [username, setUsername] = useState(initialIdentifier);
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
-  const [confirmEmail, setConfirmEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -179,10 +178,6 @@ export function LoginClient({
     if (needsEmailInput) {
       if (!email) {
         setError('Please enter an email address.');
-        return;
-      }
-      if (email !== confirmEmail) {
-        setError('Email addresses must match.');
         return;
       }
     }
@@ -390,13 +385,7 @@ export function LoginClient({
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
               />
-              <Field
-                label="Confirm email"
-                type="email"
-                value={confirmEmail}
-                onChange={(e) => setConfirmEmail(e.target.value)}
-                autoComplete="email"
-              />
+              <p className="text-xs text-muted">We’ll send a verification link to this email.</p>
             </Card>
           ) : null}
 
@@ -427,4 +416,3 @@ export function LoginClient({
     </AuthShell>
   );
 }
-

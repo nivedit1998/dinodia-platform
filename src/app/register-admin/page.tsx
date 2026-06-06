@@ -8,6 +8,7 @@ import { parseApiError } from '@/lib/authClientError';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
+import { PhoneNumberInput } from '@/components/auth/PhoneNumberInput';
 
 type ChallengeStatus = 'PENDING' | 'APPROVED' | 'CONSUMED' | 'EXPIRED' | null;
 
@@ -57,8 +58,8 @@ export default function RegisterAdminPage() {
     username: '',
     password: '',
     email: '',
-    confirmEmail: '',
-    phoneNumber: '',
+    phoneCountryIso2: 'GB',
+    phoneNationalNumber: '',
     dinodiaSerial: '',
     bootstrapSecret: '',
   });
@@ -291,12 +292,8 @@ export default function RegisterAdminPage() {
       setError('Please enter an admin email.');
       return;
     }
-    if (form.email !== form.confirmEmail) {
-      setError('Email addresses must match.');
-      return;
-    }
-    if (!form.phoneNumber.trim()) {
-      setError('Please enter a phone number (include country code, e.g. +44...).');
+    if (!form.phoneNationalNumber.trim()) {
+      setError('Enter a valid phone number.');
       return;
     }
     if (!form.dinodiaSerial.trim() || !form.bootstrapSecret.trim()) {
@@ -310,7 +307,8 @@ export default function RegisterAdminPage() {
         username: form.username,
         password: form.password,
         email: form.email,
-        phoneNumber: form.phoneNumber,
+        phoneCountryIso2: form.phoneCountryIso2,
+        phoneNumber: form.phoneNationalNumber,
         deviceId,
         deviceLabel,
         dinodiaSerial: form.dinodiaSerial.trim(),
@@ -408,19 +406,14 @@ export default function RegisterAdminPage() {
                 onChange={(e) => updateField('email', e.target.value)}
                 required
               />
-              <Field
-                label="Confirm email"
-                type="email"
-                value={form.confirmEmail}
-                onChange={(e) => updateField('confirmEmail', e.target.value)}
-                required
-              />
-              <Field
-                label="Phone number"
-                type="tel"
-                value={form.phoneNumber}
-                onChange={(e) => updateField('phoneNumber', e.target.value)}
-                hint="Use E.164 format, e.g. +44..."
+              <p className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                We’ll send the verification email to {form.email || 'this address'}.
+              </p>
+              <PhoneNumberInput
+                countryIso2={form.phoneCountryIso2}
+                phoneNumber={form.phoneNationalNumber}
+                onCountryChange={(value) => updateField('phoneCountryIso2', value)}
+                onPhoneNumberChange={(value) => updateField('phoneNationalNumber', value)}
                 required
               />
               <Field
