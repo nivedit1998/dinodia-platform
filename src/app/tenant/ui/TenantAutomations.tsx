@@ -106,7 +106,7 @@ type DeviceOptions = {
 function buildNameCounts(devices: UIDevice[]) {
   const counts = new Map<string, number>();
   devices.forEach((d) => {
-    const key = (d.name ?? '').trim();
+    const key = (d.displayName ?? d.name ?? '').trim();
     if (!key) return;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   });
@@ -114,10 +114,10 @@ function buildNameCounts(devices: UIDevice[]) {
 }
 
 function buildLabel(d: UIDevice, nameCounts: Map<string, number>) {
-  const base = (d.name ?? '').trim() || d.entityId;
+  const base = (d.displayName ?? d.name ?? '').trim() || d.entityId;
   const dupCount = nameCounts.get(base) ?? 0;
   if (dupCount <= 1) return base;
-  const areaName = (d.area ?? d.areaName ?? '').trim();
+  const areaName = (d.displayAreaName ?? d.areaName ?? d.area ?? '').trim();
   return areaName ? `${base} (${areaName})` : base;
 }
 

@@ -157,7 +157,7 @@ export function tileSizeClasses(size: DeviceVisual['size']) {
 }
 
 export function getDeviceArea(device: UIDevice) {
-  return (device.area ?? device.areaName ?? 'Unassigned') || 'Unassigned';
+  return (device.displayAreaName ?? device.areaName ?? device.area ?? 'Unassigned') || 'Unassigned';
 }
 
 export function getDeviceSecondaryText(label: string, device: UIDevice) {

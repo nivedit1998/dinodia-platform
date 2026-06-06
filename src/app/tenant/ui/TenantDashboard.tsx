@@ -73,6 +73,10 @@ function devicesAreDifferent(a: UIDevice[], b: UIDevice[]) {
     if (
       prev.state !== d.state ||
       prev.name !== d.name ||
+      prev.displayName !== d.displayName ||
+      prev.displayAreaName !== d.displayAreaName ||
+      prev.displayLabel !== d.displayLabel ||
+      prev.ownership !== d.ownership ||
       (prev.area ?? prev.areaName) !== (d.area ?? d.areaName) ||
       prev.label !== d.label ||
       prev.labelCategory !== d.labelCategory ||
@@ -454,7 +458,7 @@ export default function TenantDashboard(props: Props) {
     const set = new Set<string>();
     const eligible = getTenantDashboardDevices(devices);
     for (const d of eligible) {
-      const areaName = (d.area ?? d.areaName ?? '').trim();
+      const areaName = (d.displayAreaName ?? d.areaName ?? d.area ?? '').trim();
       if (areaName) set.add(areaName);
     }
     for (const remote of remoteDevices) {
@@ -478,7 +482,10 @@ export default function TenantDashboard(props: Props) {
     }
   }, [resolvedSelectedArea]);
 
-  const eligibleDevices = useMemo(() => getTenantDashboardDevices(devices), [devices]);
+  const eligibleDevices = useMemo(
+    () => getTenantDashboardDevices(devices).filter((device) => device.ownership !== 'pending_cleanup'),
+    [devices]
+  );
 
   const usersByArea: UsersByArea = useMemo(() => {
     if (!roster) return {};
@@ -516,7 +523,7 @@ export default function TenantDashboard(props: Props) {
   const visibleDevices = useMemo(
     () =>
       eligibleDevices.filter((d) => {
-        const areaName = (d.area ?? d.areaName ?? '').trim();
+        const areaName = (d.displayAreaName ?? d.areaName ?? d.area ?? '').trim();
         if (
           resolvedSelectedArea !== ALL_AREAS &&
           areaName !== resolvedSelectedArea
@@ -589,11 +596,11 @@ export default function TenantDashboard(props: Props) {
       targetId: entityId,
       entityId,
       deviceId: device.deviceId ?? null,
-      name: device.name,
+      name: device.displayName ?? device.name,
       domain: device.domain,
-      areaName: device.areaName ?? device.area ?? null,
-      label: device.label ?? null,
-      labelCategory: device.labelCategory ?? null,
+      areaName: device.displayAreaName ?? device.areaName ?? device.area ?? null,
+      label: device.displayLabel ?? device.label ?? null,
+      labelCategory: device.canonicalLabel ?? device.labelCategory ?? null,
       state: device.state,
     };
   }
