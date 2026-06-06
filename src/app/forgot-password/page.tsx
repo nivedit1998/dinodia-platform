@@ -1,15 +1,30 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { friendlyErrorFromUnknown, parseApiError } from '@/lib/authClientError';
 import { AuthShell } from '@/components/ui/AuthShell';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
 
+type PasswordResetRole = 'TENANT' | 'ADMIN';
+
+function normalizeRole(value: string | null): PasswordResetRole | null {
+  const normalized = value?.trim().toUpperCase();
+  if (normalized === 'TENANT' || normalized === 'ADMIN') return normalized;
+  return null;
+}
+
+function roleLabel(role: PasswordResetRole): string {
+  return role === 'TENANT' ? 'tenant' : 'homeowner';
+}
+
 export default function ForgotPasswordPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const roleFromUrl = useMemo(() => normalizeRole(searchParams.get('role')), [searchParams]);
+  const [selectedRole, setSelectedRole] = useState<PasswordResetRole | null>(roleFromUrl);
   const [identifier, setIdentifier] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -19,6 +34,11 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setError(null);
     setInfo(null);
+
+    if (!selectedRole) {
+      setError('Choose whether you are resetting a tenant or homeowner password.');
+      return;
+    }
 
     if (!identifier.trim()) {
       setError('Please enter your username or email.');
@@ -30,7 +50,7 @@ export default function ForgotPasswordPage() {
       const res = await fetch('/api/auth/password-reset/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier }),
+        body: JSON.stringify({ identifier, role: selectedRole }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -46,7 +66,7 @@ export default function ForgotPasswordPage() {
       }
 
       setInfo(
-        'If we found a matching account, a reset link is on the way.'
+        `If we found a matching ${roleLabel(selectedRole)} account, a reset link is on the way.`
       );
     } catch (err) {
       console.error(err);
@@ -55,10 +75,17 @@ export default function ForgotPasswordPage() {
     }
   }
 
+  const pageTitle = selectedRole
+    ? `Reset your ${roleLabel(selectedRole)} password`
+    : 'Reset your password';
+  const pageSubtitle = selectedRole
+    ? `Enter the username or email for your Dinodia ${roleLabel(selectedRole)} account.`
+    : 'Choose which account type you want to reset, then enter your username or email.';
+
   return (
     <AuthShell
-      title="Reset your password"
-      subtitle="Enter your username or email and we will guide you securely."
+      title={pageTitle}
+      subtitle={pageSubtitle}
       footer={
         <button
           className="font-semibold text-[var(--indigo)] hover:underline"
@@ -80,6 +107,26 @@ export default function ForgotPasswordPage() {
       ) : null}
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {!roleFromUrl ? (
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              type="button"
+              variant={selectedRole === 'TENANT' ? 'primary' : 'secondary'}
+              onClick={() => setSelectedRole('TENANT')}
+              fullWidth
+            >
+              Tenant
+            </Button>
+            <Button
+              type="button"
+              variant={selectedRole === 'ADMIN' ? 'primary' : 'secondary'}
+              onClick={() => setSelectedRole('ADMIN')}
+              fullWidth
+            >
+              Homeowner
+            </Button>
+          </div>
+        ) : null}
         <Field
           label="Username or email"
           value={identifier}
