@@ -331,6 +331,10 @@ export default function DiscoveredDevices(props: Props) {
       setActionError('Please enter a label for this device.');
       return;
     }
+    if (displayLabel.trim().toLowerCase() === 'other') {
+      setActionError('Please choose a more specific label. Other is reserved for hidden system devices.');
+      return;
+    }
     setIsSubmitting(true);
     setActionError(null);
     setWarnings([]);

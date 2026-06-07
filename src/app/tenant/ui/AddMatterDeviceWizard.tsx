@@ -301,6 +301,10 @@ export default function AddMatterDeviceWizard(props: Props) {
       setError('Please enter a label for this device.');
       return;
     }
+    if (displayLabel.trim().toLowerCase() === 'other') {
+      setError('Please choose a more specific label. Other is reserved for hidden system devices.');
+      return;
+    }
     if (!pairingCode.trim()) {
       setError('Pairing code is required.');
       return;

@@ -185,12 +185,16 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
   const [labelMenuOpen, setLabelMenuOpen] = useState(false);
   const areaMenuRef = useRef<HTMLDivElement | null>(null);
   const labelMenuRef = useRef<HTMLDivElement | null>(null);
+  const visibleLabelOptions = useMemo(
+    () => labelOptions.filter((label) => label.sourceTechnicalLabel.trim().toLowerCase() !== 'other'),
+    [labelOptions]
+  );
 
   const visibleOverrides = useMemo(() => {
     return overrides.filter((ov) => {
       const lblRaw = (ov.displayLabel ?? ov.label)?.trim();
       const lbl = lblRaw ? lblRaw.toLowerCase() : '';
-      if (!lbl || lbl === '-') return false;
+      if (!lbl || lbl === '-' || lbl === 'other') return false;
       const areaVal = (ov.displayAreaName ?? ov.area ?? '').trim().toLowerCase();
       if (!areaVal || areaVal === 'unassigned') return false;
       if (filterAreas.length && !filterAreas.includes(ov.displayAreaName || ov.area || '')) return false;
@@ -378,6 +382,13 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     }
 
     const labelKey = overrideForm.label.trim().toLowerCase();
+    if (labelKey === 'other') {
+      setOverrideAlert({
+        type: 'error',
+        message: 'Other is reserved for hidden system devices. Choose a real label.',
+      });
+      return;
+    }
     let boilerPowerKw: number | null | undefined = undefined;
     let heatingPricePerKwh: number | null | undefined = undefined;
     let boilerEfficiencyBand: string | null | undefined = undefined;
@@ -480,10 +491,10 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
 
   const getLabelOptionLabel = useCallback(
     (option: AdminLabelOption) => {
-      const duplicate = labelOptions.filter((candidate) => candidate.displayName === option.displayName).length > 1;
+      const duplicate = visibleLabelOptions.filter((candidate) => candidate.displayName === option.displayName).length > 1;
       return duplicate ? `${option.displayName} (Original: ${option.sourceTechnicalLabel})` : option.displayName;
     },
-    [labelOptions]
+    [visibleLabelOptions]
   );
 
   async function saveAreaDisplayName() {
@@ -1752,7 +1763,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
               </button>
             </div>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {labelOptions.map((label) => (
+              {visibleLabelOptions.map((label) => (
                 <button
                   key={label.sourceTechnicalLabel}
                   type="button"
@@ -1913,7 +1924,7 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
                     onChange={(e) => setOverrideForm((prev) => ({ ...prev, label: e.target.value }))}
                   >
                     <option value="">Select label</option>
-                    {labelOptions.map((label) => (
+                    {visibleLabelOptions.map((label) => (
                       <option key={label.sourceTechnicalLabel} value={label.sourceTechnicalLabel}>
                         {getLabelOptionLabel(label)}
                       </option>

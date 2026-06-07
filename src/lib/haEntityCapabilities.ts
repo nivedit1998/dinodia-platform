@@ -1,4 +1,4 @@
-import { getPrimaryLabel } from '@/lib/deviceLabels';
+import { getCapabilityLabel } from '@/lib/deviceLabels';
 import { UIDevice } from '@/types/device';
 
 export type ActionSurface = 'dashboard' | 'automation';
@@ -248,7 +248,7 @@ function pickCanonicalServiceIdForKey(deviceDomain: string, candidates: string[]
 }
 
 function getPrimaryMediaPowerCommandIds(device: UIDevice) {
-  const label = getPrimaryLabel(device);
+  const label = getCapabilityLabel(device);
   if (label === 'TV') {
     return { on: 'tv/turn_on', off: 'tv/turn_off' };
   }
@@ -475,7 +475,16 @@ function buildMediaActions(device: UIDevice, services: string[]): DeviceActionSp
 }
 
 function buildClimateActions(device: UIDevice, services: string[]): DeviceActionSpec[] {
-  if (!supportsAny(services, ['climate.set_temperature'])) return [];
+  const hvacModes = Array.isArray(device.attributes?.hvac_modes)
+    ? device.attributes.hvac_modes.filter((mode): mode is string => typeof mode === 'string')
+    : [];
+  const supportsTemperature =
+    supportsAny(services, ['climate.set_temperature']) ||
+    hasNumericAttribute(device, 'temperature') ||
+    hasNumericAttribute(device, 'target_temperature') ||
+    hasNumericAttribute(device, 'current_temperature') ||
+    hvacModes.length > 0;
+  if (!supportsTemperature) return [];
   const actions: DeviceActionSpec[] = [];
 
   const canPower = supportsAny(services, [
@@ -484,7 +493,7 @@ function buildClimateActions(device: UIDevice, services: string[]): DeviceAction
     'climate.turn_off',
     'homeassistant.turn_on',
     'homeassistant.turn_off',
-  ]);
+  ]) || hvacModes.includes('off') || hvacModes.includes('heat');
   if (canPower) {
     actions.push(
       { id: 'boiler/turn_on', kind: 'command', label: 'Turn on', surfaces: ['dashboard', 'automation'] },
@@ -561,7 +570,7 @@ function buildTriggers(device: UIDevice, actions: DeviceActionSpec[]): DeviceTri
 
 export function getDeviceCapabilityModel(device: UIDevice): DeviceCapabilityModel {
   const services = Array.isArray(device.servicesForTarget) ? device.servicesForTarget : [];
-  const label = getPrimaryLabel(device);
+  const label = getCapabilityLabel(device);
   let actions: DeviceActionSpec[] = [];
 
   switch (device.domain) {
