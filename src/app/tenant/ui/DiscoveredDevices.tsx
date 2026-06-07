@@ -13,6 +13,9 @@ type Props = {
   capabilityOptions: string[];
 };
 
+const OTHER_LABEL_ERROR = 'Label cannot be Other, please be more specific';
+const isReservedOtherLabel = (value: string) => value.trim().toLowerCase() === 'other';
+
 type AreaOption = { haAreaName: string; displayName: string };
 type TenantVirtualArea = { id: string; parentHaAreaName: string; displayName: string };
 
@@ -331,8 +334,8 @@ export default function DiscoveredDevices(props: Props) {
       setActionError('Please enter a label for this device.');
       return;
     }
-    if (displayLabel.trim().toLowerCase() === 'other') {
-      setActionError('Please choose a more specific label. Other is reserved for hidden system devices.');
+    if (isReservedOtherLabel(displayLabel)) {
+      setActionError(OTHER_LABEL_ERROR);
       return;
     }
     setIsSubmitting(true);

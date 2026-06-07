@@ -21,6 +21,8 @@ type TenantStringField = 'username' | 'email' | 'password';
 type SellingMode = 'FULL_RESET' | 'OWNER_TRANSFER';
 type TenantInfo = { id: number; username: string; email: string | null; areas: string[] };
 type TenantActionState = { saving: boolean; error: string | null };
+const OTHER_LABEL_ERROR = 'Label cannot be Other, please be more specific';
+const isReservedOtherLabel = (value: string) => value.trim().toLowerCase() === 'other';
 type DeviceOverride = {
   entityId: string;
   name: string;
@@ -382,10 +384,10 @@ export default function AdminSettings({ username, mode = 'full' }: Props) {
     }
 
     const labelKey = overrideForm.label.trim().toLowerCase();
-    if (labelKey === 'other') {
+    if (isReservedOtherLabel(overrideForm.label)) {
       setOverrideAlert({
         type: 'error',
-        message: 'Other is reserved for hidden system devices. Choose a real label.',
+        message: OTHER_LABEL_ERROR,
       });
       return;
     }
