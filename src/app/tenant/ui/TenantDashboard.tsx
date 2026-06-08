@@ -309,15 +309,14 @@ export default function TenantDashboard(props: Props) {
         console.error(err);
         setTriggerDeviceLoading(false);
         triggerDeviceAbortControllerRef.current = null;
-        const friendly = friendlyUnknownError(
-          err,
-          'We couldn’t load your trigger devices. Please check your connection and try again.'
-        );
         if (latestTriggerDeviceRequestRef.current !== requestId) return;
-        setTriggerDeviceError(friendly);
+        setTriggerDeviceError(null);
+        window.setTimeout(() => {
+          if (!openTriggerDeviceId) void loadTriggerDevices({ silent: true });
+        }, 10_000);
       }
     },
-    []
+    [openTriggerDeviceId]
   );
 
   useEffect(() => {
