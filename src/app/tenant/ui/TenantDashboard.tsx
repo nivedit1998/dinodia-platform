@@ -12,20 +12,16 @@ import { DeviceDetailSheet } from '@/components/device/DeviceDetailSheet';
 import { subscribeToRefresh } from '@/lib/refreshBus';
 import { logout as performLogout } from '@/lib/logout';
 import Image from 'next/image';
-import { getActionsForDevice, getTenantDashboardDevices } from '@/lib/deviceCapabilities';
-import { isBlockingButtonActionEntity, isIgnoredDashboardHelperEntity } from '@/lib/dashboardEntityFilters';
+import { getTenantDashboardDevices } from '@/lib/deviceCapabilities';
 import { useDevicesVersionPolling } from '@/lib/useDevicesVersionPolling';
 import TenantAccessRosterDialog from './TenantAccessRosterDialog';
 import { friendlyUnknownError } from '@/lib/clientError';
 import { platformFetchJson } from '@/lib/platformFetchClient';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
-import {
-  TriggerDeviceDetailSheet,
-  type TriggerTargetOption,
-} from '@/components/trigger-device/TriggerDeviceDetailSheet';
+import { TriggerDeviceDetailSheet } from '@/components/trigger-device/TriggerDeviceDetailSheet';
 import { TriggerDeviceTile } from '@/components/trigger-device/TriggerDeviceTile';
-import type { TriggerDeviceSummary } from '@/types/triggerDevice';
+import type { TriggerDeviceSummary, TriggerTargetOption } from '@/types/triggerDevice';
 
 type Props = {
   username: string;
@@ -84,77 +80,6 @@ function getTriggerDeviceLabel(triggerDevice: TriggerDeviceSummary) {
     (triggerDevice.labelCategory ?? '').trim() ||
     'Trigger'
   );
-}
-
-function hasExplicitTargetLabel(device: UIDevice) {
-  return Boolean(
-    (device.sourceTechnicalLabel ?? '').trim() ||
-      (device.technicalLabels ?? device.labels ?? []).some((label) => label.trim())
-  );
-}
-
-function hasRealDashboardAction(device: UIDevice) {
-  if (isIgnoredDashboardHelperEntity(device) || isBlockingButtonActionEntity(device)) return false;
-  return getActionsForDevice(device).length > 0;
-}
-
-function makeTriggerTargetOptionId(deviceId: string, entityId: string) {
-  return `${deviceId}::${entityId}`;
-}
-
-function chooseTargetDeviceName(group: UIDevice[], representative: UIDevice) {
-  const controllableWithDisplayName = group.find((device) => hasRealDashboardAction(device) && device.displayName?.trim());
-  if (controllableWithDisplayName?.displayName) return controllableWithDisplayName.displayName;
-
-  const controllableWithName = group.find((device) => hasRealDashboardAction(device) && device.name?.trim());
-  if (controllableWithName) return controllableWithName.displayName ?? controllableWithName.name;
-
-  return representative.displayName ?? representative.name;
-}
-
-function chooseTargetLabel(device: UIDevice) {
-  const explicitLabel =
-    (device.displayLabel ?? '').trim() ||
-    (device.sourceTechnicalLabel ?? '').trim() ||
-    (device.technicalLabels ?? device.labels ?? []).find((label) => label.trim())?.trim() ||
-    (device.label ?? '').trim();
-  return explicitLabel || getGroupLabel(device);
-}
-
-function buildTriggerTargetOptions(devices: UIDevice[]): TriggerTargetOption[] {
-  const byDeviceId = new Map<string, UIDevice[]>();
-  for (const device of devices) {
-    const deviceId = (device.deviceId ?? '').trim();
-    if (!deviceId) continue;
-    if (!byDeviceId.has(deviceId)) byDeviceId.set(deviceId, []);
-    byDeviceId.get(deviceId)!.push(device);
-  }
-
-  const options: TriggerTargetOption[] = [];
-  for (const [deviceId, group] of byDeviceId.entries()) {
-    if (!group.some(hasExplicitTargetLabel)) continue;
-
-    const labelledControllable = group.filter(
-      (device) => hasExplicitTargetLabel(device) && hasRealDashboardAction(device)
-    );
-    const controllableTargets =
-      labelledControllable.length > 0 ? labelledControllable : group.filter(hasRealDashboardAction);
-
-    for (const target of controllableTargets) {
-      options.push({
-        optionId: makeTriggerTargetOptionId(deviceId, target.entityId),
-        targetDeviceId: deviceId,
-        targetEntityId: target.entityId,
-        deviceName: chooseTargetDeviceName(group, target),
-        areaName: target.displayAreaName ?? target.areaName ?? target.area ?? null,
-        label: chooseTargetLabel(target),
-        domain: target.domain,
-        state: target.state,
-      });
-    }
-  }
-
-  return options;
 }
 
 function devicesAreDifferent(a: UIDevice[], b: UIDevice[]) {
@@ -226,6 +151,7 @@ export default function TenantDashboard(props: Props) {
   const [clock, setClock] = useState(() => formatClock(new Date()));
   const [devices, setDevices] = useState<UIDevice[]>([]);
   const [triggerDevices, setTriggerDevices] = useState<TriggerDeviceSummary[]>([]);
+  const [triggerTargetOptions, setTriggerTargetOptions] = useState<TriggerTargetOption[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [triggerDeviceError, setTriggerDeviceError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -359,7 +285,10 @@ export default function TenantDashboard(props: Props) {
 
       try {
         const endpoint = force ? '/api/trigger-devices?fresh=1' : '/api/trigger-devices';
-        const data = await platformFetchJson<{ triggerDevices?: TriggerDeviceSummary[] }>(
+        const data = await platformFetchJson<{
+          triggerDevices?: TriggerDeviceSummary[];
+          targetOptions?: TriggerTargetOption[];
+        }>(
           endpoint,
           { signal: controller.signal },
           'We couldn’t load your trigger devices. Please check your connection and try again.'
@@ -371,10 +300,12 @@ export default function TenantDashboard(props: Props) {
         triggerDeviceAbortControllerRef.current = null;
 
         const list: TriggerDeviceSummary[] = data.triggerDevices || [];
+        const targetOptions: TriggerTargetOption[] = data.targetOptions || [];
         setTriggerDevices((prev) => {
           if (!triggerDevicesAreDifferent(prev, list)) return prev;
           return list;
         });
+        setTriggerTargetOptions(targetOptions);
         triggerDeviceLastLoadedRef.current = Date.now();
       } catch (err) {
         const isLatest = latestTriggerDeviceRequestRef.current === requestId;
@@ -706,8 +637,6 @@ export default function TenantDashboard(props: Props) {
     openDevice && getGroupLabel(openDevice) === 'Home Security'
       ? devices.filter((d) => getGroupLabel(d) === 'Home Security')
       : undefined;
-
-  const triggerTargetOptions = useMemo(() => buildTriggerTargetOptions(devices), [devices]);
 
   function buildRemoteTargetFromOption(option: TriggerTargetOption | null): TriggerDeviceSummary['target'] {
     if (!option) return null;
