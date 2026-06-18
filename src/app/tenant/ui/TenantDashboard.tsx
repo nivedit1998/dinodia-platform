@@ -972,10 +972,13 @@ export default function TenantDashboard(props: Props) {
                 (option) =>
                   option.targetDeviceId === targetDeviceId && option.targetEntityId === targetEntityId
               ) ?? null;
-            const target = buildRemoteTargetFromOption(selectedOption);
             const result = await platformFetchJson<{
               binding?: TriggerDeviceSummary['binding'];
               capability?: TriggerDeviceSummary['capability'];
+              target?: TriggerDeviceSummary['target'];
+              resolutionState?: TriggerDeviceSummary['resolutionState'];
+              triggerDevice?: TriggerDeviceSummary | null;
+              verified?: boolean;
             }>(
               `/api/trigger-devices/${encodeURIComponent(openTriggerDevice.triggerDeviceId)}`,
               {
@@ -993,20 +996,24 @@ export default function TenantDashboard(props: Props) {
             setTriggerDevices((prev) =>
               prev.map((remote) => {
                 if (remote.triggerDeviceId !== openTriggerDevice.triggerDeviceId) return remote;
+                if (result.verified && result.triggerDevice) {
+                  return result.triggerDevice;
+                }
+                if (result.verified) {
+                  return {
+                    ...remote,
+                    binding: result.binding ?? remote.binding,
+                    capability: result.capability ?? remote.capability,
+                    target: result.target ?? remote.target,
+                    resolutionState: result.resolutionState ?? remote.resolutionState,
+                  };
+                }
                 return {
                   ...remote,
-                  binding:
-                    result.binding ??
-                    (remote.binding
-                      ? {
-                          ...remote.binding,
-                          targetEntityId,
-                          targetDeviceId,
-                        }
-                      : result.binding ?? remote.binding),
-                  capability: result.capability ?? remote.capability,
-                  target: target ?? remote.target,
-                  resolutionState: result.binding || result.capability ? 'bound' : remote.resolutionState,
+                  binding: remote.binding,
+                  capability: remote.capability,
+                  target: remote.target,
+                  resolutionState: remote.resolutionState,
                 };
               })
             );
