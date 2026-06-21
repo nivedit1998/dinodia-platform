@@ -17,7 +17,12 @@ const OTHER_LABEL_ERROR = 'Label cannot be Other, please be more specific';
 const isReservedOtherLabel = (value: string) => value.trim().toLowerCase() === 'other';
 
 type AreaOption = { haAreaName: string; displayName: string };
-type TenantVirtualArea = { id: string; parentHaAreaName: string; displayName: string };
+type TenantVirtualArea = {
+  id: string;
+  parentHaAreaName: string;
+  parentDisplayAreaName?: string | null;
+  displayName: string;
+};
 
 type DiscoveryFlow = {
   flowId: string;
@@ -189,7 +194,17 @@ export default function DiscoveredDevices(props: Props) {
     [props.areaOptions, props.areas]
   );
   const virtualAreasForRequestedArea = virtualAreas.filter(
-    (area) => area.parentHaAreaName === requestedArea
+    (area) =>
+      area.parentHaAreaName === requestedArea ||
+      area.parentDisplayAreaName === requestedArea
+  );
+  const displayAreaName = useCallback(
+    (areaName: string | null | undefined) => {
+      const cleaned = (areaName ?? '').trim();
+      if (!cleaned) return '';
+      return areaOptions.find((area) => area.haAreaName === cleaned)?.displayName ?? cleaned;
+    },
+    [areaOptions]
   );
 
   useEffect(() => {
@@ -806,7 +821,7 @@ export default function DiscoveredDevices(props: Props) {
                           {session.newEntityIds.length > 0 && (
                             <li>Entities: {session.newEntityIds.map(compactId).join(', ')}</li>
                           )}
-                          <li>Area: {session.requestedArea}</li>
+                          <li>Area: {displayAreaName(session.requestedArea)}</li>
                         </ul>
                         <div className="flex flex-wrap gap-3 pt-1">
                           <button
