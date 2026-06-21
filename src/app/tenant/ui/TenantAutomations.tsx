@@ -8,6 +8,7 @@ import { friendlyUnknownError } from '@/lib/clientError';
 import { platformFetchJson } from '@/lib/platformFetchClient';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { fetchTenantInventorySnapshot } from '@/lib/tenantInventoryClient';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
@@ -371,12 +372,8 @@ export default function TenantAutomations() {
     async function loadDevices() {
       setLoadingDevices(true);
       try {
-        const data = await platformFetchJson<{ devices?: UIDevice[] }>(
-          '/api/devices?fresh=1&include_services_for_target=1',
-          { credentials: 'include' },
-          'Unsuccessful - we could not load devices right now.'
-        );
-        const list: UIDevice[] = Array.isArray(data.devices) ? data.devices : [];
+        const snapshot = await fetchTenantInventorySnapshot({ preferWarm: true });
+        const list: UIDevice[] = Array.isArray(snapshot.devices) ? snapshot.devices : [];
         setDevices(list);
       } catch (err) {
         setError(friendlyUnknownError(err, 'Unsuccessful - we could not load devices right now.'));
