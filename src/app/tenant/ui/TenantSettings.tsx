@@ -8,6 +8,7 @@ import { logout as performLogout } from '@/lib/logout';
 import { getDeviceLabel, getOrCreateDeviceId } from '@/lib/clientDevice';
 import { friendlyUnknownError } from '@/lib/clientError';
 import { platformFetchJson } from '@/lib/platformFetchClient';
+import { useEmailVerificationChallenge } from '@/components/auth/useEmailVerificationChallenge';
 
 type Props = {
   username: string;
@@ -21,6 +22,10 @@ type TwoFaStatus = {
   email2faEnabled: boolean;
 };
 
+type TwoFaVerificationState = {
+  email: string;
+};
+
 const EMPTY_FORM = {
   currentPassword: '',
   newPassword: '',
@@ -32,9 +37,8 @@ const EMPTY_TWO_FA_FORM = {
   confirmEmail: '',
 };
 
-const CHALLENGE_POLL_INTERVAL_MS = 2500;
-
 const ALEXA_SKILL_URL = 'https://www.amazon.co.uk/gp/product/B0GGCC4BDS?nodl=0';
+const TENANT_SETTINGS_2FA_VERIFICATION_KEY = 'tenant_settings_2fa_verification_state';
 
 export default function TenantSettings({ username }: Props) {
   const [form, setForm] = useState(EMPTY_FORM);
@@ -50,13 +54,8 @@ export default function TenantSettings({ username }: Props) {
   const [twoFaStatus, setTwoFaStatus] = useState<TwoFaStatus | null>(null);
   const [twoFaStatusLoading, setTwoFaStatusLoading] = useState(false);
   const [twoFaSubmitting, setTwoFaSubmitting] = useState(false);
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [challengeStatus, setChallengeStatus] = useState<string | null>(null);
-  const [resending, setResending] = useState(false);
   const deviceIdRef = useRef<string | null>(null);
   const deviceLabelRef = useRef<string | null>(null);
-  const completingRef = useRef(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [areaSectionOpen, setAreaSectionOpen] = useState(false);
   const [roomQr, setRoomQr] = useState<string>('');
   const [roomName, setRoomName] = useState<string | null>(null);
@@ -78,13 +77,6 @@ export default function TenantSettings({ username }: Props) {
     setTwoFaForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }, []);
-
   const refreshTwoFaStatus = useCallback(async () => {
     setTwoFaStatusLoading(true);
     try {
@@ -97,113 +89,67 @@ export default function TenantSettings({ username }: Props) {
         'Unable to load verification status.'
       );
       setTwoFaStatus(data);
+      return data;
     } catch (err) {
       setTwoFaAlert({
         type: 'error',
         message: friendlyUnknownError(err, 'Unable to load verification status.'),
       });
+      return null;
     } finally {
       setTwoFaStatusLoading(false);
     }
   }, []);
 
-  const completeTwoFa = useCallback(
-    async (id: string) => {
-      if (completingRef.current) return;
-      completingRef.current = true;
+  const verification = useEmailVerificationChallenge<TwoFaVerificationState>({
+    storageKey: TENANT_SETTINGS_2FA_VERIFICATION_KEY,
+    onApproved: async (id) => {
       const deviceId = deviceIdRef.current ?? getOrCreateDeviceId();
       const deviceLabel = deviceLabelRef.current ?? getDeviceLabel();
       deviceIdRef.current = deviceId;
       deviceLabelRef.current = deviceLabel;
 
-      try {
-        await platformFetchJson<{ ok: boolean }>(
-          '/api/tenant/profile/2fa/complete',
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ challengeId: id, deviceId, deviceLabel }),
-          },
-          'Unable to finish verification.'
-        );
+      await platformFetchJson<{ ok: boolean }>(
+        '/api/tenant/profile/2fa/complete',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ challengeId: id, deviceId, deviceLabel }),
+        },
+        'Unable to finish verification.'
+      );
+
+      setTwoFaAlert({
+        type: 'success',
+        message: 'Email verification enabled. This device is trusted.',
+      });
+      await refreshTwoFaStatus();
+    },
+    onConsumed: async () => {
+      const latest = await refreshTwoFaStatus();
+      if (latest?.email2faEnabled && latest.emailVerifiedAt) {
         setTwoFaAlert({
           type: 'success',
-          message: 'Email verification enabled. This device is trusted.',
+          message: 'Email verification is already complete. This device is trusted.',
         });
-        setChallengeStatus('COMPLETED');
-        setChallengeId(null);
-        await refreshTwoFaStatus();
-      } catch (err) {
-        setTwoFaAlert({
-          type: 'error',
-          message: friendlyUnknownError(err, 'Unable to finish verification.'),
-        });
-      } finally {
-        completingRef.current = false;
-        stopPolling();
+        return true;
       }
+      return false;
     },
-    [refreshTwoFaStatus, stopPolling]
-  );
-
-  const startChallengePolling = useCallback(
-    (id: string) => {
-      stopPolling();
-      const runCheck = async (): Promise<boolean> => {
-        try {
-          const data = await platformFetchJson<{ status?: string }>(
-            `/api/auth/challenges/${id}`,
-            { cache: 'no-store' },
-            'Unable to check verification status.'
-          );
-          setChallengeStatus(data.status ?? null);
-
-          if (data.status === 'APPROVED') {
-            stopPolling();
-            await completeTwoFa(id);
-            return false;
-          }
-
-          if (
-            data.status === 'EXPIRED' ||
-            data.status === 'CONSUMED' ||
-            data.status === 'NOT_FOUND'
-          ) {
-            stopPolling();
-            setChallengeId(null);
-            const statusMessage =
-              data.status === 'CONSUMED'
-                ? 'This verification link was already used.'
-                : data.status === 'NOT_FOUND'
-                  ? 'Verification request not found.'
-                  : 'The verification link expired. Please try again.';
-            setTwoFaAlert({
-              type: 'error',
-              message: statusMessage,
-            });
-            return false;
-          }
-
-          return true;
-        } catch (err) {
-          stopPolling();
-          setTwoFaAlert({
-            type: 'error',
-            message: friendlyUnknownError(err, 'Unable to check verification status.'),
-          });
-          return false;
-        }
-      };
-
-      void (async () => {
-        const shouldContinue = await runCheck();
-        if (shouldContinue) {
-          pollRef.current = setInterval(runCheck, CHALLENGE_POLL_INTERVAL_MS);
-        }
-      })();
+    onTerminalStatus: (terminalStatus) => {
+      const statusMessage =
+        terminalStatus === 'CONSUMED'
+          ? 'This verification link was already used.'
+          : terminalStatus === 'NOT_FOUND'
+            ? 'Verification request not found.'
+            : 'The verification link expired. Please try again.';
+      setTwoFaAlert({
+        type: 'error',
+        message: statusMessage,
+      });
     },
-    [completeTwoFa, stopPolling]
-  );
+  });
+  const restoreTwoFaVerification = verification.restore;
 
   const stopRoomScan = useCallback(() => {
     setRoomScanning(false);
@@ -392,24 +338,21 @@ export default function TenantSettings({ username }: Props) {
         'Unable to start verification.'
       );
       if (data.alreadyEnabled) {
+        verification.reset();
         setTwoFaAlert({ type: 'success', message: 'Two-factor authentication is already on.' });
         await refreshTwoFaStatus();
-        setChallengeId(null);
-        setChallengeStatus(null);
         return;
       }
       if (!data.challengeId) {
         throw new Error('Unable to start verification.');
       }
 
-      setChallengeId(data.challengeId);
-      setChallengeStatus('PENDING');
       setTwoFaAlert({
         type: 'success',
         message: 'Check your email for a verification link to finish enabling 2FA.',
       });
       await refreshTwoFaStatus();
-      startChallengePolling(data.challengeId);
+      await verification.start(data.challengeId, { email: twoFaForm.email.trim() });
     } catch (err) {
       setTwoFaAlert({
         type: 'error',
@@ -421,23 +364,8 @@ export default function TenantSettings({ username }: Props) {
   }
 
   async function handleResendEmail() {
-    if (!challengeId) return;
-    setResending(true);
-    try {
-      await platformFetchJson<{ ok: boolean }>(
-        `/api/auth/challenges/${challengeId}/resend`,
-        { method: 'POST' },
-        'Unable to resend email.'
-      );
-      setTwoFaAlert({ type: 'success', message: 'Verification email resent.' });
-    } catch (err) {
-      setTwoFaAlert({
-        type: 'error',
-        message: friendlyUnknownError(err, 'Unable to resend email.'),
-      });
-    } finally {
-      setResending(false);
-    }
+    setTwoFaAlert(null);
+    await verification.resend();
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -479,11 +407,18 @@ export default function TenantSettings({ username }: Props) {
   useEffect(() => {
     deviceIdRef.current = getOrCreateDeviceId();
     deviceLabelRef.current = getDeviceLabel();
-    void refreshTwoFaStatus();
-    return () => {
-      stopPolling();
-    };
-  }, [refreshTwoFaStatus, stopPolling]);
+    void (async () => {
+      await refreshTwoFaStatus();
+      const restored = await restoreTwoFaVerification();
+      if (restored?.email) {
+        setTwoFaForm((prev) => ({
+          ...prev,
+          email: restored.email,
+          confirmEmail: restored.email,
+        }));
+      }
+    })();
+  }, [refreshTwoFaStatus, restoreTwoFaVerification]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -530,9 +465,9 @@ export default function TenantSettings({ username }: Props) {
     };
   }, []);
 
-  const pendingEmail = twoFaStatus?.emailPending || twoFaForm.email;
+  const pendingEmail = twoFaStatus?.emailPending || verification.currentState?.email || twoFaForm.email;
   const challengeStatusCopy = (() => {
-    switch (challengeStatus) {
+    switch (verification.status) {
       case 'PENDING':
         return 'Waiting for you to approve the email link.';
       case 'APPROVED':
@@ -543,8 +478,6 @@ export default function TenantSettings({ username }: Props) {
         return 'This link was already used.';
       case 'NOT_FOUND':
         return 'Verification request not found.';
-      case 'COMPLETED':
-        return 'Email verified and device trusted.';
       default:
         return '';
     }
@@ -822,7 +755,7 @@ export default function TenantSettings({ username }: Props) {
                     {twoFaSubmitting ? 'Sending…' : 'Send verification email'}
                   </button>
                 </form>
-                {challengeId && (
+                {verification.waiting && verification.challengeId && (
                   <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-indigo-900">
                     <p className="text-xs font-semibold">Check your email</p>
                     <p className="text-[11px] mt-1">
@@ -835,21 +768,33 @@ export default function TenantSettings({ username }: Props) {
                       <button
                         type="button"
                         onClick={() => void handleResendEmail()}
-                        disabled={resending}
-                        className="rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
+                        className="rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
                       >
-                        {resending ? 'Resending…' : 'Resend email'}
+                        Resend email
                       </button>
-                      {challengeStatus === 'APPROVED' && (
+                      {verification.manualRetryAvailable ? (
                         <button
                           type="button"
-                          onClick={() => void completeTwoFa(challengeId)}
+                          onClick={() => void verification.retryCompletionNow()}
                           className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
                         >
                           Finish setup
                         </button>
-                      )}
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          verification.reset();
+                          setTwoFaAlert(null);
+                        }}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Use a different email
+                      </button>
                     </div>
+                    {verification.completing ? (
+                      <p className="text-[11px] mt-2 text-indigo-900/75">Finishing setup…</p>
+                    ) : null}
                   </div>
                 )}
               </>
