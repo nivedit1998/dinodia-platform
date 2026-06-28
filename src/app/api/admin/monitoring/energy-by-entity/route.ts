@@ -174,7 +174,7 @@ export async function GET(req: NextRequest) {
   });
   const areaAllowed = (entityId: string) => {
     if (areasFilter.size === 0) return true;
-    return areasFilter.has(displayCtx.displayArea(entityId));
+    return displayCtx.matchesRequestedDisplayAreas(entityId, areasFilter);
   };
   const filteredEntityIds = entityIds.filter((id) => areaAllowed(id) && entityAllowed(id));
 
@@ -301,6 +301,7 @@ export async function GET(req: NextRequest) {
         name: displayCtx.displayName(entityId),
         label: displayCtx.displayLabel(entityId),
         area: displayCtx.displayArea(entityId) || UNASSIGNED,
+        displayAreaKey: displayCtx.displayAreaKey(entityId),
         totalKwhDelta: entityTotals.get(entityId) ?? 0,
         points,
       };
