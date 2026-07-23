@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AuditEventType, AuthChallengePurpose, Role } from '@prisma/client';
+import { AuditEventType, SupportAccessScope } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { getCurrentUserFromRequest } from '@/lib/auth';
-import { createAuthChallenge, buildVerifyUrl, getAppUrl } from '@/lib/authChallenges';
-import { buildSupportApprovalEmail } from '@/lib/emailTemplates';
+import { requireCompanyHomeSupportViewer } from '@/lib/companyPortalGuards';
+import { apiBadRequest, apiFailFromStatus } from '@/lib/apiError';
+import {
+  buildHomeLabel,
+  buildSupportApproveUrl,
+  computeHomeSupportStatus,
+  getLatestHomeSupportRequest,
+  issueHomeSupportApprovalTokens,
+  resolveRemoteSupportApprovers,
+} from '@/lib/supportHomeAccess';
+import { buildSupportHomeApprovalEmail } from '@/lib/supportHomeAccessEmails';
 import { sendEmail } from '@/lib/email';
-import { computeSupportApproval } from '@/lib/supportRequests';
-import { canAccessSupportAuditSection } from '@/lib/companyPortalAccess';
 
-const TTL_MINUTES = 60;
 const MIN_REASON_LENGTH = 8;
 const MAX_REASON_LENGTH = 500;
-const HOME_SCOPES = ['VIEW_HOME_STATUS', 'VIEW_CREDENTIALS'] as const;
-type HomeSupportScope = typeof HOME_SCOPES[number];
 
 function parseSupportReason(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
@@ -21,161 +24,138 @@ function parseSupportReason(raw: unknown): string | null {
   return value;
 }
 
-function parseHomeScope(raw: unknown): HomeSupportScope | null {
-  if (typeof raw !== 'string') return null;
-  if ((HOME_SCOPES as readonly string[]).includes(raw)) {
-    return raw as HomeSupportScope;
-  }
-  return null;
+function parseHomeScope(raw: unknown): SupportAccessScope | null {
+  return raw === 'CONNECT_HA_BACKEND' ? SupportAccessScope.CONNECT_HA_BACKEND : null;
 }
 
 export async function POST(req: NextRequest) {
-  const me = await getCurrentUserFromRequest(req);
-  if (!me || !canAccessSupportAuditSection(me.role)) {
-    return NextResponse.json({ error: 'Installer access required.' }, { status: 401 });
-  }
+  const operator = await requireCompanyHomeSupportViewer(req);
+  if (operator instanceof NextResponse) return operator;
 
   const body = await req.json().catch(() => null);
   const homeId = Number(body?.homeId ?? 0);
   const reason = parseSupportReason(body?.reason);
   const scope = parseHomeScope(body?.scope);
   if (!Number.isInteger(homeId) || homeId <= 0) {
-    return NextResponse.json({ error: 'Invalid home id.' }, { status: 400 });
+    return apiBadRequest('Invalid home id.');
   }
   if (!reason) {
-    return NextResponse.json({ error: 'Support reason must be 8-500 characters.' }, { status: 400 });
+    return apiBadRequest('Support reason must be 8-500 characters.');
   }
   if (!scope) {
-    return NextResponse.json({ error: 'Invalid support scope for home access.' }, { status: 400 });
+    return apiBadRequest('Invalid support scope for home access.');
   }
 
   const home = await prisma.home.findUnique({
     where: { id: homeId },
     select: {
       id: true,
-      haConnection: { select: { ownerId: true } },
-      users: {
-        where: { role: Role.ADMIN },
-        select: { id: true, email: true, username: true },
+      addressLine1: true,
+      addressLine2: true,
+      city: true,
+      postcode: true,
+      haConnection: {
+        select: {
+          cloudUrl: true,
+        },
       },
     },
   });
 
-  if (!home) {
-    return NextResponse.json({ error: 'Home not found.' }, { status: 404 });
+  if (!home || !home.haConnection?.cloudUrl) {
+    return apiFailFromStatus(404, 'Home not found.');
   }
 
-  let targetUser:
-    | { id: number; email: string; username: string | null }
-    | null = null;
+  const approvers = await resolveRemoteSupportApprovers(prisma, homeId);
+  if (approvers.length === 0) {
+    return apiBadRequest('No remote support available as no homeowner/property manager email address exists.');
+  }
 
-  if (home.haConnection?.ownerId) {
-    const owner = await prisma.user.findUnique({
-      where: { id: home.haConnection.ownerId },
-      select: { id: true, email: true, username: true },
+  const latest = await getLatestHomeSupportRequest(prisma, homeId, operator.userId);
+  const latestStatus = latest ? computeHomeSupportStatus(latest, latest.approvalTokens) : 'NOT_FOUND';
+  if (
+    latest &&
+    (latestStatus === 'PENDING' || latestStatus === 'APPROVED' || latestStatus === 'ACTIVE') &&
+    !latest.revokedAt &&
+    !latest.haSessionFailureAt
+  ) {
+    return NextResponse.json({
+      ok: true,
+      requestId: latest.id,
+      expiresAt: latest.createdAt,
+      approvedAt: latest.approvedAt,
+      validUntil: latest.approvalValidUntil,
+      status: latestStatus,
     });
-    if (owner?.email) {
-      targetUser = { id: owner.id, email: owner.email, username: owner.username };
-    }
   }
-
-  if (!targetUser) {
-    const admin = home.users.find((u) => !!u.email);
-    if (admin) {
-      targetUser = { id: admin.id, email: admin.email!, username: admin.username };
-    }
-  }
-
-  if (!targetUser) {
-    return NextResponse.json(
-      { error: 'No homeowner admin email found for this home.' },
-      { status: 400 }
-    );
-  }
-
-  // Reuse existing approved request within window
-  const existing = await prisma.supportRequest.findFirst({
-    where: { kind: 'HOME_ACCESS', homeId, installerUserId: me.id },
-    orderBy: { createdAt: 'desc' },
-    select: { id: true, authChallengeId: true },
-  });
-  if (existing) {
-    const challenge = await prisma.authChallenge.findUnique({
-      where: { id: existing.authChallengeId },
-      select: { approvedAt: true, expiresAt: true, consumedAt: true },
-    });
-    const approval = computeSupportApproval(challenge);
-    if (approval.status === 'APPROVED') {
-      return NextResponse.json({
-        ok: true,
-        requestId: existing.id,
-        expiresAt: approval.expiresAt,
-        validUntil: approval.validUntil,
-        approvedAt: approval.approvedAt,
-      });
-    }
-  }
-
-  const challenge = await createAuthChallenge({
-    userId: targetUser.id,
-    purpose: AuthChallengePurpose.SUPPORT_HOME_ACCESS,
-    email: targetUser.email,
-    ttlMinutes: TTL_MINUTES,
-  });
 
   const supportRequest = await prisma.supportRequest.create({
     data: {
       kind: 'HOME_ACCESS',
       homeId,
-      targetUserId: targetUser.id,
-      installerUserId: me.id,
-      authChallengeId: challenge.id,
+      installerUserId: operator.userId,
       reason,
       scope,
+      supportGatewayHostname: new URL(home.haConnection.cloudUrl).host,
     },
+  });
+
+  const issuedTokens = await issueHomeSupportApprovalTokens({
+    client: prisma,
+    supportRequestId: supportRequest.id,
+    approvers,
   });
 
   await prisma.auditEvent.create({
     data: {
       type: AuditEventType.SUPPORT_REQUEST_CREATED,
       homeId,
-      actorUserId: me.id,
+      actorUserId: operator.userId,
       metadata: {
         supportRequestId: supportRequest.id,
         kind: 'HOME_ACCESS',
-        targetUserId: targetUser.id,
-        authChallengeId: challenge.id,
+        approverCount: approvers.length,
         scope,
         reason,
       },
     },
   });
 
-  const appUrl = getAppUrl();
-  const verifyUrl = buildVerifyUrl(challenge.token);
-  const email = buildSupportApprovalEmail({
-    kind: 'SUPPORT_HOME_ACCESS',
-    verifyUrl,
-    appUrl,
-    installerUsername: me.username,
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+    'http://localhost:3000';
+  const homeLabel = buildHomeLabel({
     homeId,
-    targetUsername: targetUser.username ?? undefined,
-    reason,
-    scope,
+    addressLine1: home.addressLine1,
+    addressLine2: home.addressLine2,
+    city: home.city,
+    postcode: home.postcode,
   });
 
-  await sendEmail({
-    to: targetUser.email,
-    subject: email.subject,
-    html: email.html,
-    text: email.text,
-  });
+  for (const token of issuedTokens) {
+    const email = buildSupportHomeApprovalEmail({
+      verifyUrl: buildSupportApproveUrl(token.rawToken),
+      appUrl,
+      installerUsername: operator.username,
+      homeLabel,
+      recipientName: token.recipientName,
+      reason,
+    });
+    await sendEmail({
+      to: token.recipientEmail,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+    });
+  }
 
   return NextResponse.json({
     ok: true,
     requestId: supportRequest.id,
-    expiresAt: challenge.expiresAt,
+    expiresAt: issuedTokens[0]?.expiresAt ?? null,
     validUntil: null,
     approvedAt: null,
+    status: 'PENDING',
   });
 }

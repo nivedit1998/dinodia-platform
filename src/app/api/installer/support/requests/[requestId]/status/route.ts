@@ -1,25 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailFromStatus } from '@/lib/apiError';
 import { prisma } from '@/lib/prisma';
-import { getCurrentUserFromRequest } from '@/lib/auth';
 import { computeSupportApproval } from '@/lib/supportRequests';
-import { canAccessSupportAuditSection } from '@/lib/companyPortalAccess';
+import { computeHomeSupportStatus } from '@/lib/supportHomeAccess';
+import { requireCompanyHomeSupportViewer } from '@/lib/companyPortalGuards';
 
 type Status =
   | 'PENDING'
   | 'APPROVED'
   | 'CONSUMED'
   | 'EXPIRED'
-  | 'NOT_FOUND';
+  | 'NOT_FOUND'
+  | 'ACTIVE'
+  | 'FAILED'
+  | 'REVOKED';
+
+function mapHomeSupportStatus(status: ReturnType<typeof computeHomeSupportStatus>): Status {
+  switch (status) {
+    case 'PENDING':
+      return 'PENDING';
+    case 'APPROVED':
+      return 'APPROVED';
+    case 'ACTIVE':
+      return 'ACTIVE';
+    case 'FAILED':
+      return 'FAILED';
+    case 'REVOKED':
+      return 'REVOKED';
+    case 'CONSUMED':
+      return 'CONSUMED';
+    case 'EXPIRED':
+      return 'EXPIRED';
+    default:
+      return 'NOT_FOUND';
+  }
+}
 
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ requestId: string }> }
 ) {
-  const me = await getCurrentUserFromRequest(req);
-  if (!me || !canAccessSupportAuditSection(me.role)) {
-    return apiFailFromStatus(401, 'Installer access required.');
-  }
+  const operator = await requireCompanyHomeSupportViewer(req);
+  if (operator instanceof NextResponse) return operator;
 
   const { requestId } = await context.params;
   if (!requestId) {
@@ -28,11 +50,36 @@ export async function GET(
 
   const supportRequest = await prisma.supportRequest.findUnique({
     where: { id: requestId },
-    select: { authChallengeId: true, installerUserId: true },
+    include: {
+      approvalTokens: true,
+    },
   });
 
-  if (!supportRequest || supportRequest.installerUserId !== me.id) {
+  if (!supportRequest || supportRequest.installerUserId !== operator.userId) {
     return apiFailFromStatus(404, 'Not found.');
+  }
+
+  if (supportRequest.kind === 'HOME_ACCESS') {
+    const status = mapHomeSupportStatus(
+      computeHomeSupportStatus(supportRequest, supportRequest.approvalTokens)
+    );
+    return NextResponse.json({
+      ok: true,
+      status,
+      approvedAt: supportRequest.approvedAt,
+      expiresAt: supportRequest.approvalTokens[0]?.expiresAt ?? null,
+      validUntil: supportRequest.approvalValidUntil,
+    });
+  }
+
+  if (!supportRequest.authChallengeId) {
+    return NextResponse.json({
+      ok: true,
+      status: 'NOT_FOUND' as Status,
+      approvedAt: null,
+      expiresAt: null,
+      validUntil: null,
+    });
   }
 
   const challenge = await prisma.authChallenge.findUnique({

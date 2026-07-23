@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { maskEmailForTenantRoster } from '@/lib/emailMask';
 import { computeSupportApproval } from '@/lib/supportRequests';
+import { computeHomeSupportStatus } from '@/lib/supportHomeAccess';
 import { buildAreaAccessMatcher, cleanAreaName } from '@/lib/areaAccess';
 
 type SupportMeta = {
@@ -133,13 +134,29 @@ export async function GET(req: NextRequest) {
       installerUserId: true,
       targetUserId: true,
       authChallengeId: true,
+      approvedAt: true,
+      approvalValidUntil: true,
+      revokedAt: true,
+      haSessionStartedAt: true,
+      haSessionExpiresAt: true,
+      haSessionEndedAt: true,
+      haSessionFailureAt: true,
+      haSessionRevokedAt: true,
+      haSecurityCodeConsumedAt: true,
+      haSecurityCodeExpiresAt: true,
       scope: true,
       reason: true,
       createdAt: true,
     },
   });
 
-  const challengeIds = Array.from(new Set(supportRequests.map((r) => r.authChallengeId)));
+  const challengeIds = Array.from(
+    new Set(
+      supportRequests
+        .map((r) => r.authChallengeId)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    )
+  );
   const challenges = await prisma.authChallenge.findMany({
     where: { id: { in: challengeIds } },
     select: { id: true, approvedAt: true, consumedAt: true, expiresAt: true },
@@ -169,9 +186,34 @@ export async function GET(req: NextRequest) {
     const installer = installersById.get(req.installerUserId);
     if (!installer) continue;
 
-    const challenge = challengeById.get(req.authChallengeId);
-    const approval = computeSupportApproval(challenge ?? null);
-    if (approval.status !== 'APPROVED' || !approval.validUntil) continue;
+    let approvedAtIso = '';
+    let validUntilIso = '';
+    if (req.kind === 'HOME_ACCESS') {
+      const homeStatus = computeHomeSupportStatus(
+        {
+          approvedAt: req.approvedAt,
+          approvalValidUntil: req.approvalValidUntil,
+          revokedAt: req.revokedAt,
+          haSessionRevokedAt: req.haSessionRevokedAt,
+          haSessionFailureAt: req.haSessionFailureAt,
+          haSessionStartedAt: req.haSessionStartedAt,
+          haSessionExpiresAt: req.haSessionExpiresAt,
+          haSessionEndedAt: req.haSessionEndedAt,
+          haSecurityCodeConsumedAt: req.haSecurityCodeConsumedAt,
+          haSecurityCodeExpiresAt: req.haSecurityCodeExpiresAt,
+        },
+        []
+      );
+      if (homeStatus !== 'APPROVED' && homeStatus !== 'ACTIVE') continue;
+      approvedAtIso = req.approvedAt?.toISOString() ?? '';
+      validUntilIso = req.approvalValidUntil?.toISOString() ?? '';
+    } else {
+      const challenge = req.authChallengeId ? challengeById.get(req.authChallengeId) : null;
+      const approval = computeSupportApproval(challenge ?? null);
+      if (approval.status !== 'APPROVED' || !approval.validUntil) continue;
+      approvedAtIso = approval.approvedAt?.toISOString() ?? '';
+      validUntilIso = approval.validUntil?.toISOString() ?? '';
+    }
 
     const baseAreas = new Set<string>();
     if (req.kind === 'HOME_ACCESS') {
@@ -188,8 +230,8 @@ export async function GET(req: NextRequest) {
     const meta: SupportMeta = {
       kind: req.kind as SupportMeta['kind'],
       requestId: req.id,
-      approvedAt: approval.approvedAt?.toISOString() ?? '',
-      validUntil: approval.validUntil?.toISOString() ?? '',
+      approvedAt: approvedAtIso,
+      validUntil: validUntilIso,
       scope: req.scope,
       reason: req.reason,
       requestedBy: { id: installer.id, username: installer.username, role: 'INSTALLER' },

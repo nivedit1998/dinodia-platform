@@ -90,6 +90,7 @@ export async function POST(
     supportRequest.installerUserId !== me.id ||
     supportRequest.kind !== 'USER_REMOTE_ACCESS' ||
     !supportRequest.targetUserId ||
+    !supportRequest.authChallengeId ||
     !isScopeAllowedForImpersonation(supportRequest.scope)
   ) {
     return apiFailFromStatus(404, 'Support request not found.');

@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import type { HaConnectionLike } from '@/lib/homeAssistant';
+import { buildHaWebSocketBypassHeaders } from '@/lib/haServiceBypass';
 
 type HaWsAuthRequired = { type: 'auth_required' };
 type HaWsAuthOk = { type: 'auth_ok' };
@@ -46,7 +47,10 @@ export class HaWsClient {
   }
 
   static async connect(ha: HaConnectionLike, timeoutMs = 7000): Promise<HaWsClient> {
-    const ws = new WebSocket(toWsUrl(ha.baseUrl));
+    const wsUrl = toWsUrl(ha.baseUrl);
+    const ws = new WebSocket(wsUrl, {
+      headers: buildHaWebSocketBypassHeaders(wsUrl),
+    });
 
     await new Promise<HaWsAuthRequired>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('HA WS timeout waiting auth_required')), timeoutMs);

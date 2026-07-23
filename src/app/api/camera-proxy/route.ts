@@ -3,6 +3,7 @@ import { apiFailFromStatus } from '@/lib/apiError';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getUserWithHaConnection, resolveHaCloudFirst } from '@/lib/haConnection';
 import { EntityAccessError, assertTenantEntityAccess, parseEntityId } from '@/lib/entityAccess';
+import { buildHaServiceBypassHeaders } from '@/lib/haServiceBypass';
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUserFromRequest(req);
@@ -52,6 +53,10 @@ export async function GET(req: NextRequest) {
   const res = await fetch(url, {
     headers: {
       Authorization: `Bearer ${effectiveHa.longLivedToken}`,
+      ...buildHaServiceBypassHeaders({
+        method: 'GET',
+        url,
+      }),
     },
   });
 

@@ -56,6 +56,11 @@ enum AuditEventType {
   SUPPORT_CREDENTIALS_VIEWED
   SUPPORT_IMPERSONATION_STARTED
   SUPPORT_IMPERSONATION_STOPPED
+  SUPPORT_HA_CODE_ISSUED
+  SUPPORT_HA_CODE_CONSUMED
+  SUPPORT_HA_SESSION_STARTED
+  SUPPORT_HA_SESSION_FAILED
+  SUPPORT_HA_SESSION_EXPIRED
   ROOM_ACCESS_REQUESTED
   ROOM_ACCESS_APPROVED
   ROOM_ACCESS_REJECTED
@@ -136,7 +141,13 @@ enum SupportRequestKind {
 enum SupportAccessScope {
   VIEW_HOME_STATUS
   VIEW_CREDENTIALS
+  CONNECT_HA_BACKEND
   IMPERSONATE_USER
+}
+
+enum SupportApprovalRecipientType {
+  HOMEOWNER
+  PROPERTY_MANAGER
 }
 
 enum HomeAutomationSource {
@@ -933,25 +944,74 @@ model HomeAutomation {
 }
 
 model SupportRequest {
-  id               String              @id @default(uuid())
-  kind             SupportRequestKind
-  homeId           Int
-  targetUserId     Int?
-  installerUserId  Int
-  authChallengeId  String              @unique
-  reason           String?
-  scope            SupportAccessScope?
-  approvedByUserId Int?
-  approvedBy       User?               @relation("SupportRequestApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
-  revokedAt        DateTime?
-  revokedByUserId  Int?
-  revokedBy        User?               @relation("SupportRequestRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
-  consumedAt       DateTime?
-  createdAt        DateTime            @default(now())
+  id                        String                       @id @default(uuid())
+  kind                      SupportRequestKind
+  homeId                    Int
+  targetUserId              Int?
+  installerUserId           Int
+  authChallengeId           String?                      @unique
+  reason                    String?
+  scope                     SupportAccessScope?
+  approvedByUserId          Int?
+  approvedBy                User?                        @relation("SupportRequestApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  approvedAt                DateTime?
+  approvalValidUntil        DateTime?
+  approvalRecipientType     SupportApprovalRecipientType?
+  approvalRecipientEmail    String?
+  approvalRecipientName     String?
+  revokedAt                 DateTime?
+  revokedByUserId           Int?
+  revokedBy                 User?                        @relation("SupportRequestRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  consumedAt                DateTime?
+  haSecurityCodeHash        String?
+  haSecurityCodeIssuedAt    DateTime?
+  haSecurityCodeExpiresAt   DateTime?
+  haSecurityCodeConsumedAt  DateTime?
+  connectButtonClickedAt    DateTime?
+  haSessionStartedAt        DateTime?
+  haSessionExpiresAt        DateTime?
+  haSessionEndedAt          DateTime?
+  haSessionFailureAt        DateTime?
+  haSessionFailureCode      String?
+  haSessionRevokedAt        DateTime?
+  notificationSentAt        DateTime?
+  notificationFailedAt      DateTime?
+  notificationFailureReason String?
+  supportGatewayHostname    String?
+  launchTicketHash          String?                      @unique
+  launchTicketExpiresAt     DateTime?
+  gatewaySessionHash        String?                      @unique
+  gatewaySessionBoundAt     DateTime?
+  gatewaySessionUserAgentHash String?
+  approvalTokens            SupportRequestApprovalToken[]
+  createdAt                 DateTime                     @default(now())
 
   @@index([homeId])
   @@index([targetUserId])
   @@index([installerUserId])
   @@index([approvedByUserId])
   @@index([revokedByUserId])
+  @@index([approvalValidUntil])
+  @@index([haSessionExpiresAt])
+  @@index([supportGatewayHostname])
+}
+
+model SupportRequestApprovalToken {
+  id               String                       @id @default(uuid())
+  supportRequest   SupportRequest               @relation(fields: [supportRequestId], references: [id], onDelete: Cascade)
+  supportRequestId String
+  recipientType    SupportApprovalRecipientType
+  recipientUserId  Int?
+  recipientEmail   String
+  recipientName    String?
+  tokenHash        String                       @unique
+  expiresAt        DateTime
+  approvedAt       DateTime?
+  consumedAt       DateTime?
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+
+  @@index([supportRequestId])
+  @@index([expiresAt])
+  @@index([recipientUserId])
 }

@@ -1,8 +1,17 @@
 import { AuthChallenge, PrismaClient, SupportRequestKind } from '@prisma/client';
+import { computeHomeSupportStatus, getLatestHomeSupportRequest } from '@/lib/supportHomeAccess';
 
 export const SUPPORT_APPROVAL_WINDOW_MINUTES = 60;
 
-export type SupportApprovalStatus = 'PENDING' | 'APPROVED' | 'EXPIRED' | 'CONSUMED' | 'NOT_FOUND';
+export type SupportApprovalStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'EXPIRED'
+  | 'CONSUMED'
+  | 'NOT_FOUND'
+  | 'ACTIVE'
+  | 'FAILED'
+  | 'REVOKED';
 
 export type SupportApprovalInfo = {
   status: SupportApprovalStatus;
@@ -11,7 +20,9 @@ export type SupportApprovalInfo = {
   validUntil: Date | null;
 };
 
-export function computeSupportApproval(challenge: Pick<AuthChallenge, 'approvedAt' | 'expiresAt' | 'consumedAt'> | null): SupportApprovalInfo {
+export function computeSupportApproval(
+  challenge: Pick<AuthChallenge, 'approvedAt' | 'expiresAt' | 'consumedAt'> | null
+): SupportApprovalInfo {
   if (!challenge) {
     return { status: 'NOT_FOUND', approvedAt: null, expiresAt: null, validUntil: null };
   }
@@ -64,7 +75,7 @@ export type SupportAccessRequirement = {
   active: ActiveSupportApprovalContext | null;
 };
 
-async function resolveLatestSupportApproval(
+async function resolveLatestUserSupportApproval(
   prisma: PrismaClient,
   where: {
     homeId: number;
@@ -79,7 +90,7 @@ async function resolveLatestSupportApproval(
     select: { id: true, authChallengeId: true },
   });
 
-  if (!latest) {
+  if (!latest || !latest.authChallengeId) {
     return { latest: null, active: null };
   }
 
@@ -118,11 +129,37 @@ export async function requireActiveHomeAccess(params: {
   installerUserId: number;
 }): Promise<SupportAccessRequirement> {
   const { prisma, homeId, installerUserId } = params;
-  return resolveLatestSupportApproval(prisma, {
-    homeId,
-    installerUserId,
-    kind: 'HOME_ACCESS',
-  });
+  const latest = await getLatestHomeSupportRequest(prisma, homeId, installerUserId);
+  if (!latest) return { latest: null, active: null };
+
+  const status = computeHomeSupportStatus(latest, latest.approvalTokens);
+  const summary: SupportApprovalSummary = {
+    requestId: latest.id,
+    status,
+    approvedAt: latest.approvedAt ?? null,
+    validUntil: latest.approvalValidUntil ?? null,
+    expiresAt: latest.approvalTokens[0]?.expiresAt ?? null,
+  };
+
+  if (status !== 'APPROVED' && status !== 'ACTIVE') {
+    return { latest: summary, active: null };
+  }
+
+  const approvedAt = latest.approvedAt;
+  const validUntil = latest.approvalValidUntil;
+  if (!approvedAt || !validUntil) {
+    return { latest: summary, active: null };
+  }
+
+  return {
+    latest: summary,
+    active: {
+      requestId: latest.id,
+      approvedAt,
+      validUntil,
+      expiresAt: latest.approvalTokens[0]?.expiresAt ?? null,
+    },
+  };
 }
 
 export async function requireActiveUserAccess(params: {
@@ -132,7 +169,7 @@ export async function requireActiveUserAccess(params: {
   targetUserId: number;
 }): Promise<SupportAccessRequirement> {
   const { prisma, homeId, installerUserId, targetUserId } = params;
-  return resolveLatestSupportApproval(prisma, {
+  return resolveLatestUserSupportApproval(prisma, {
     homeId,
     installerUserId,
     kind: 'USER_REMOTE_ACCESS',

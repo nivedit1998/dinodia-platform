@@ -4,6 +4,7 @@ import { apiFailFromStatus } from '@/lib/apiError';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { computeSupportApproval } from '@/lib/supportRequests';
+import { computeHomeSupportStatus } from '@/lib/supportHomeAccess';
 
 const sanitizeAreas = (areas: Array<{ area: string }>): string[] => {
   const out = new Set<string>();
@@ -70,6 +71,16 @@ export async function POST(_req: NextRequest) {
       targetUserId: true,
       installerUserId: true,
       authChallengeId: true,
+      approvedAt: true,
+      approvalValidUntil: true,
+      revokedAt: true,
+      haSessionStartedAt: true,
+      haSessionExpiresAt: true,
+      haSessionEndedAt: true,
+      haSessionFailureAt: true,
+      haSessionRevokedAt: true,
+      haSecurityCodeConsumedAt: true,
+      haSecurityCodeExpiresAt: true,
       scope: true,
       reason: true,
     },
@@ -79,7 +90,13 @@ export async function POST(_req: NextRequest) {
     return NextResponse.json({ ok: true, revokedCount: 0, revokedRequestIds: [] });
   }
 
-  const challengeIds = Array.from(new Set(supportRequests.map((r) => r.authChallengeId)));
+  const challengeIds = Array.from(
+    new Set(
+      supportRequests
+        .map((r) => r.authChallengeId)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    )
+  );
   const challenges = await prisma.authChallenge.findMany({
     where: { id: { in: challengeIds } },
     select: { id: true, approvedAt: true, consumedAt: true, expiresAt: true },
@@ -87,9 +104,32 @@ export async function POST(_req: NextRequest) {
   const challengeById = new Map(challenges.map((c) => [c.id, c]));
 
   const candidates = supportRequests.filter((supportRequest) => {
-    const approval = computeSupportApproval(challengeById.get(supportRequest.authChallengeId) ?? null);
-    if (approval.status !== 'APPROVED' || !approval.validUntil) {
-      return false;
+    if (supportRequest.kind === 'HOME_ACCESS') {
+      const homeStatus = computeHomeSupportStatus(
+        {
+          approvedAt: supportRequest.approvedAt,
+          approvalValidUntil: supportRequest.approvalValidUntil,
+          revokedAt: supportRequest.revokedAt,
+          haSessionRevokedAt: supportRequest.haSessionRevokedAt,
+          haSessionFailureAt: supportRequest.haSessionFailureAt,
+          haSessionStartedAt: supportRequest.haSessionStartedAt,
+          haSessionExpiresAt: supportRequest.haSessionExpiresAt,
+          haSessionEndedAt: supportRequest.haSessionEndedAt,
+          haSecurityCodeConsumedAt: supportRequest.haSecurityCodeConsumedAt,
+          haSecurityCodeExpiresAt: supportRequest.haSecurityCodeExpiresAt,
+        },
+        []
+      );
+      if (homeStatus !== 'APPROVED' && homeStatus !== 'ACTIVE') {
+        return false;
+      }
+    } else {
+      const approval = computeSupportApproval(
+        supportRequest.authChallengeId ? challengeById.get(supportRequest.authChallengeId) ?? null : null
+      );
+      if (approval.status !== 'APPROVED' || !approval.validUntil) {
+        return false;
+      }
     }
 
     if (supportRequest.kind === 'HOME_ACCESS') {
@@ -134,7 +174,13 @@ export async function POST(_req: NextRequest) {
     }
 
     const revokedRequestIds = revocable.map((r) => r.id);
-    const revokedChallengeIds = Array.from(new Set(revocable.map((r) => r.authChallengeId)));
+    const revokedChallengeIds = Array.from(
+      new Set(
+        revocable
+          .map((r) => r.authChallengeId)
+          .filter((value): value is string => typeof value === 'string' && value.length > 0)
+      )
+    );
 
     await tx.supportRequest.updateMany({
       where: {
@@ -147,15 +193,17 @@ export async function POST(_req: NextRequest) {
       },
     });
 
-    await tx.authChallenge.updateMany({
-      where: {
-        id: { in: revokedChallengeIds },
-        consumedAt: null,
-      },
-      data: {
-        consumedAt: now,
-      },
-    });
+    if (revokedChallengeIds.length > 0) {
+      await tx.authChallenge.updateMany({
+        where: {
+          id: { in: revokedChallengeIds },
+          consumedAt: null,
+        },
+        data: {
+          consumedAt: now,
+        },
+      });
+    }
 
     for (const supportRequest of revocable) {
       await tx.auditEvent.create({

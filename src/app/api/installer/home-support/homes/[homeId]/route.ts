@@ -1,20 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AuditEventType, HomeContactType, Role } from '@prisma/client';
 import { apiFailFromStatus } from '@/lib/apiError';
-import { AuditEventType, Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { resolveHaLongLivedToken, resolveHaUiCredentials } from '@/lib/haSecrets';
-import { requireActiveHomeAccess, requireActiveUserAccess } from '@/lib/supportRequests';
-import { decryptBootstrapSecret } from '@/lib/hubTokens';
+import { requireActiveUserAccess } from '@/lib/supportRequests';
 import { getPolicyNotificationDeliveryStatus } from '@/lib/homeownerPolicyNotifications';
-import { logServerError } from '@/lib/serverErrorLog';
 import { canManageHomeSupportQrRooms, canStartRemoveHome } from '@/lib/companyPortalAccess';
 import { requireCompanyHomeSupportViewer } from '@/lib/companyPortalGuards';
+import {
+  computeHomeSupportStatus,
+  getLatestHomeSupportRequest,
+} from '@/lib/supportHomeAccess';
+import { supportAuditSummary } from '@/lib/supportHomeAccessAudit';
 
 function parseHomeId(raw: string | undefined): number | null {
   if (!raw) return null;
   const num = Number(raw);
   return Number.isInteger(num) && num > 0 ? num : null;
 }
+
+const SUPPORT_AUDIT_TYPES: AuditEventType[] = [
+  AuditEventType.SUPPORT_REQUEST_CREATED,
+  AuditEventType.SUPPORT_REQUEST_APPROVED,
+  AuditEventType.SUPPORT_REQUEST_REVOKED,
+  AuditEventType.SUPPORT_HA_CODE_ISSUED,
+  AuditEventType.SUPPORT_HA_CODE_CONSUMED,
+  AuditEventType.SUPPORT_HA_SESSION_STARTED,
+  AuditEventType.SUPPORT_HA_SESSION_FAILED,
+  AuditEventType.SUPPORT_HA_SESSION_EXPIRED,
+];
 
 export async function GET(
   req: NextRequest,
@@ -29,64 +42,18 @@ export async function GET(
     return apiFailFromStatus(400, 'Invalid home id.');
   }
 
-  const homeSummary = await prisma.home.findUnique({
-    where: { id: homeId },
-    select: {
-      id: true,
-      haConnectionId: true,
-      createdAt: true,
-      hubInstall: {
-        select: {
-          createdAt: true,
-        },
-      },
-    },
-  });
-
-  if (!homeSummary || !homeSummary.haConnectionId) {
-    return apiFailFromStatus(404, 'Home not found.');
-  }
-
-  const installedAt = homeSummary.hubInstall?.createdAt ?? homeSummary.createdAt;
-  const homeAccess = await requireActiveHomeAccess({
-    prisma,
-    homeId,
-    installerUserId: operator.userId,
-  });
-  const homeAccessApproved = !!homeAccess.active;
-  const homeSupportRequest = homeAccess.latest
-    ? {
-        requestId: homeAccess.latest.requestId,
-        status: homeAccess.latest.status,
-        approvedAt: homeAccess.latest.approvedAt,
-        validUntil: homeAccess.latest.validUntil,
-        expiresAt: homeAccess.latest.expiresAt,
-      }
-    : null;
-  const homeownerPolicyEmail = await getPolicyNotificationDeliveryStatus(homeId);
-
-  if (!homeAccessApproved) {
-    return NextResponse.json({
-      ok: true,
-      homeId: homeSummary.id,
-      installedAt,
-      homeAccessApproved: false,
-      homeSupportRequest,
-      homeownerPolicyEmail,
-      canManageQrRooms: canManageHomeSupportQrRooms(operator.role),
-      canRemoveHome: canStartRemoveHome(operator.role),
-      removeHomePreviewAvailable: canStartRemoveHome(operator.role),
-    });
-  }
-
   const home = await prisma.home.findUnique({
     where: { id: homeId },
     select: {
       id: true,
+      createdAt: true,
+      addressLine1: true,
+      addressLine2: true,
+      city: true,
+      postcode: true,
       hubInstall: {
         select: {
           id: true,
-          bootstrapSecretCiphertext: true,
           serial: true,
           lastSeenAt: true,
           createdAt: true,
@@ -102,15 +69,13 @@ export async function GET(
       haConnection: {
         select: {
           id: true,
-          baseUrl: true,
           cloudUrl: true,
-          haUsername: true,
-          haUsernameCiphertext: true,
-          haPassword: true,
-          haPasswordCiphertext: true,
-          longLivedToken: true,
-          longLivedTokenCiphertext: true,
+          baseUrl: true,
         },
+      },
+      homeContacts: {
+        where: { type: HomeContactType.PROPERTY_MANAGER },
+        select: { email: true },
       },
       users: {
         select: {
@@ -129,40 +94,11 @@ export async function GET(
     return apiFailFromStatus(404, 'Home not found.');
   }
 
-  let creds: {
-    haUsername: string;
-    haPassword: string;
-    baseUrl: string;
-    cloudUrl: string | null;
-    longLivedToken: string;
-    bootstrapSecret?: string;
-  };
-  try {
-    const { haUsername, haPassword } = resolveHaUiCredentials(home.haConnection);
-    const { longLivedToken } = resolveHaLongLivedToken(home.haConnection);
-    creds = {
-      haUsername,
-      haPassword,
-      baseUrl: home.haConnection.baseUrl,
-      cloudUrl: home.haConnection.cloudUrl ?? null,
-      longLivedToken,
-    };
-    if (home.hubInstall?.bootstrapSecretCiphertext) {
-      creds.bootstrapSecret = decryptBootstrapSecret(home.hubInstall.bootstrapSecretCiphertext);
-    }
-  } catch (err) {
-    logServerError('[api/installer/home-support/homes/[homeId]] failed to resolve credentials', err, {
-      homeId,
-      userId: operator.userId,
-      haConnectionId: home.haConnection.id,
-    });
-    return apiFailFromStatus(500, 'Dinodia Hub unavailable. Please refresh and try again.');
-  }
-
+  const installedAt = home.hubInstall?.createdAt ?? home.createdAt;
+  const propertyManagerEmail = home.homeContacts[0]?.email?.trim() ?? null;
   const homeowners = home.users
     .filter((u) => u.role === Role.ADMIN)
     .map((u) => ({ email: u.email ?? null, username: u.username }));
-
   const tenants = home.users
     .filter((u) => u.role === Role.TENANT)
     .map((u) => ({
@@ -170,11 +106,22 @@ export async function GET(
       username: u.username,
       areas: u.accessRules.map((r) => r.area).filter(Boolean),
     }));
-
   const alexaEnabled = home.users
     .filter((u) => !!u.alexaEventToken)
     .map((u) => ({ email: u.email ?? null, username: u.username }));
 
+  const remoteSupportAvailable =
+    homeowners.some((owner) => !!owner.email) || Boolean(propertyManagerEmail);
+  const remoteSupportUnavailableReason = remoteSupportAvailable
+    ? null
+    : 'No remote support available as no homeowner/property manager email address exists.';
+
+  const homeSupportRequest = await getLatestHomeSupportRequest(prisma, homeId, operator.userId);
+  const homeSupportStatus = homeSupportRequest
+    ? computeHomeSupportStatus(homeSupportRequest, homeSupportRequest.approvalTokens)
+    : 'NOT_FOUND';
+
+  const homeownerPolicyEmail = await getPolicyNotificationDeliveryStatus(homeId);
   const users = await Promise.all(
     home.users.map(async (u) => {
       const userAccess = await requireActiveUserAccess({
@@ -209,53 +156,78 @@ export async function GET(
       }
     : { serial: null, lastSeenAt: null, installedAt };
 
-  const [roomCount, alexaLinkedCount] = await Promise.all([
+  const [roomCount, auditEvents] = await Promise.all([
     home.hubInstall ? prisma.room.count({ where: { hubInstallId: home.hubInstall.id } }) : Promise.resolve(0),
-    Promise.resolve(alexaEnabled.length),
+    prisma.auditEvent.findMany({
+      where: {
+        homeId,
+        type: { in: SUPPORT_AUDIT_TYPES },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        type: true,
+        createdAt: true,
+        metadata: true,
+      },
+    }),
   ]);
 
-  const activeHomeSupportRequest = homeSupportRequest?.requestId
-    ? await prisma.supportRequest.findUnique({
-        where: { id: homeSupportRequest.requestId },
-        select: {
-          id: true,
-          installerUserId: true,
-          targetUserId: true,
-          scope: true,
-          reason: true,
-        },
-      })
-    : null;
-
-  await prisma.auditEvent.create({
-    data: {
-      type: AuditEventType.SUPPORT_CREDENTIALS_VIEWED,
-      homeId,
-      actorUserId: operator.userId,
-      metadata: {
-        supportRequestId: activeHomeSupportRequest?.id ?? homeSupportRequest?.requestId ?? null,
-        targetUserId: activeHomeSupportRequest?.targetUserId ?? null,
-        scope: activeHomeSupportRequest?.scope ?? null,
-        reason: activeHomeSupportRequest?.reason ?? null,
-        installerRequestMismatch:
-          activeHomeSupportRequest?.installerUserId != null &&
-          activeHomeSupportRequest.installerUserId !== operator.userId,
-      },
-    },
-  });
+  const relevantAuditEvents = homeSupportRequest
+    ? auditEvents
+        .filter((event) => {
+          const supportRequestId =
+            event.metadata && typeof event.metadata === 'object' && 'supportRequestId' in event.metadata
+              ? (event.metadata as Record<string, unknown>).supportRequestId
+              : null;
+          return !supportRequestId || supportRequestId === homeSupportRequest.id;
+        })
+        .map((event) => ({
+          id: event.id,
+          type: event.type,
+          createdAt: event.createdAt,
+          summary: supportAuditSummary(event.type),
+          metadata: event.metadata,
+        }))
+    : [];
 
   return NextResponse.json({
     ok: true,
     homeId: home.id,
     installedAt,
-    homeAccessApproved: true,
-    credentials: creds,
-    homeSupportRequest,
+    homeAccessApproved: homeSupportStatus === 'APPROVED' || homeSupportStatus === 'ACTIVE',
+    remoteSupportAvailable,
+    remoteSupportUnavailableReason,
+    homeSupportRequest: homeSupportRequest
+      ? {
+          requestId: homeSupportRequest.id,
+          status: homeSupportStatus,
+          approvedAt: homeSupportRequest.approvedAt,
+          validUntil: homeSupportRequest.approvalValidUntil,
+          expiresAt: homeSupportRequest.approvalTokens[0]?.expiresAt ?? null,
+          approvedByName: homeSupportRequest.approvalRecipientName,
+          approvedByEmail: homeSupportRequest.approvalRecipientEmail,
+          codeExpiresAt: homeSupportRequest.haSecurityCodeExpiresAt,
+          canConnect: homeSupportStatus === 'APPROVED',
+          connectButtonLabel: 'Connect to the Dinodia hub',
+          notificationStatus: homeSupportRequest.notificationSentAt
+            ? 'SENT'
+            : homeSupportRequest.notificationFailedAt
+              ? 'FAILED'
+              : homeSupportRequest.haSessionStartedAt
+                ? 'PENDING'
+                : 'NOT_STARTED',
+          sessionFailureCode: homeSupportRequest.haSessionFailureCode,
+          recentAuditEvents: relevantAuditEvents,
+        }
+      : null,
     hubStatus,
     homeowners,
     tenants,
     alexaEnabled,
     users,
+    propertyManagerEmail,
     homeownerPolicyEmail,
     canManageQrRooms: canManageHomeSupportQrRooms(operator.role),
     canRemoveHome: canStartRemoveHome(operator.role),
@@ -263,6 +235,6 @@ export async function GET(
     roomCount,
     tenantCount: tenants.length,
     homeownerCount: homeowners.length,
-    alexaLinkedCount,
+    alexaLinkedCount: alexaEnabled.length,
   });
 }

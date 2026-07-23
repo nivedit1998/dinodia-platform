@@ -1,5 +1,6 @@
 import { classifyDeviceByLabel, LabelCategory } from './labelCatalog';
 import { HaWsClient } from '@/lib/haWebSocket';
+import { buildHaServiceBypassHeaders } from '@/lib/haServiceBypass';
 import { safeLog } from '@/lib/safeLogger';
 
 const DEFAULT_HA_TIMEOUT_MS = 6000;
@@ -151,6 +152,11 @@ export async function callHomeAssistantAPI<T>(
   const { timeoutMs = DEFAULT_HA_TIMEOUT_MS, ...restInit } = init ?? {};
   let res: Response;
   try {
+    const serviceHeaders = buildHaServiceBypassHeaders({
+      method: restInit.method || 'GET',
+      url,
+      body: typeof restInit.body === 'string' ? restInit.body : null,
+    });
     res = await fetchWithTimeout(
       url,
       {
@@ -158,6 +164,7 @@ export async function callHomeAssistantAPI<T>(
         headers: {
           Authorization: `Bearer ${ha.longLivedToken}`,
           'Content-Type': 'application/json',
+          ...serviceHeaders,
           ...(restInit.headers || {}),
         },
       },
@@ -196,6 +203,7 @@ export async function renderHomeAssistantTemplate<T>(
 ): Promise<T> {
   let res: Response;
   try {
+    const body = JSON.stringify({ template });
     res = await fetchWithTimeout(
       `${ha.baseUrl}/api/template`,
       {
@@ -203,8 +211,13 @@ export async function renderHomeAssistantTemplate<T>(
         headers: {
           Authorization: `Bearer ${ha.longLivedToken}`,
           'Content-Type': 'application/json',
+          ...buildHaServiceBypassHeaders({
+            method: 'POST',
+            url: `${ha.baseUrl}/api/template`,
+            body,
+          }),
         },
-        body: JSON.stringify({ template }),
+        body,
       },
       timeoutMs
     );
@@ -619,6 +632,7 @@ export async function callHaService(
   }
   let res: Response;
   try {
+    const body = JSON.stringify(data);
     res = await fetchWithTimeout(
       url.toString(),
       {
@@ -626,8 +640,13 @@ export async function callHaService(
         headers: {
           Authorization: `Bearer ${ha.longLivedToken}`,
           'Content-Type': 'application/json',
+          ...buildHaServiceBypassHeaders({
+            method: 'POST',
+            url: url.toString(),
+            body,
+          }),
         },
-        body: JSON.stringify(data),
+        body,
       },
       timeoutMs
     );

@@ -25,6 +25,8 @@ type HomeDetail = {
   homeId: number;
   installedAt: string;
   homeAccessApproved: boolean;
+  remoteSupportAvailable?: boolean;
+  remoteSupportUnavailableReason?: string | null;
   homeownerPolicyEmail?: {
     acceptanceId: string;
     policyVersion: string;
@@ -36,14 +38,6 @@ type HomeDetail = {
     installerStatus: RequestStatus | 'SENT' | 'FAILED' | null;
     canResend: boolean;
   } | null;
-  credentials?: {
-    haUsername: string;
-    haPassword: string;
-    baseUrl: string;
-    cloudUrl: string | null;
-    longLivedToken: string;
-    bootstrapSecret?: string;
-  };
   homeSupportRequest?: RequestSummary | null;
   hubStatus?: {
     serial: string | null;
@@ -145,7 +139,15 @@ type RoomSummary = {
   updatedAt?: string;
 };
 
-type RequestStatus = 'PENDING' | 'APPROVED' | 'EXPIRED' | 'CONSUMED' | 'NOT_FOUND';
+type RequestStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'EXPIRED'
+  | 'CONSUMED'
+  | 'NOT_FOUND'
+  | 'ACTIVE'
+  | 'FAILED'
+  | 'REVOKED';
 
 type RequestSummary = {
   requestId: string;
@@ -153,6 +155,20 @@ type RequestSummary = {
   approvedAt: string | null;
   validUntil: string | null;
   expiresAt: string | null;
+  approvedByName?: string | null;
+  approvedByEmail?: string | null;
+  codeExpiresAt?: string | null;
+  canConnect?: boolean;
+  connectButtonLabel?: string | null;
+  notificationStatus?: string | null;
+  sessionFailureCode?: string | null;
+  recentAuditEvents?: Array<{
+    id: string;
+    type: string;
+    createdAt: string;
+    summary: string;
+    metadata?: Record<string, unknown> | null;
+  }>;
 };
 
 type RequestTracking = {
@@ -759,7 +775,7 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
           body: JSON.stringify({
             homeId,
             reason: DEFAULT_HOME_ACCESS_REASON,
-            scope: 'VIEW_CREDENTIALS',
+            scope: 'CONNECT_HA_BACKEND',
           }),
         },
         'Request failed.'
@@ -791,6 +807,47 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
         ...prev,
         [homeId]: { status: 'NOT_FOUND' },
       }));
+    }
+  }
+
+  async function connectToDinodiaHub(homeId: number) {
+    try {
+      const data = await platformFetchJson<{ ok?: boolean; redirectTo?: string }>(
+        `/api/installer/home-support/homes/${homeId}/connect`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        },
+        'Unable to start Dinodia hub connection.'
+      );
+      if (!data?.ok || !data.redirectTo) {
+        throw new Error('Unable to start Dinodia hub connection.');
+      }
+      window.location.href = data.redirectTo;
+    } catch (err) {
+      alert(friendlyUnknownError(err, 'Unable to start Dinodia hub connection.'));
+    }
+  }
+
+  async function revokeHomeAccess(homeId: number, requestId?: string) {
+    const confirmed = window.confirm('Revoke remote Home Assistant access immediately?');
+    if (!confirmed) return;
+    try {
+      await platformFetchJson<{ ok?: boolean }>(
+        `/api/installer/home-support/homes/${homeId}/revoke`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requestId: requestId ?? null,
+            reason: 'Emergency remote access revoke',
+          }),
+        },
+        'Unable to revoke remote access.'
+      );
+      await loadDetail(homeId);
+    } catch (err) {
+      alert(friendlyUnknownError(err, 'Unable to revoke remote access.'));
     }
   }
 
@@ -953,6 +1010,29 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
     );
   }
 
+  function renderRequestStatusLabel(status: RequestStatus | 'IDLE') {
+    switch (status) {
+      case 'APPROVED':
+        return 'Approved';
+      case 'ACTIVE':
+        return 'Session active';
+      case 'FAILED':
+        return 'Failed';
+      case 'REVOKED':
+        return 'Revoked';
+      case 'PENDING':
+        return 'Pending';
+      case 'EXPIRED':
+        return 'Expired';
+      case 'CONSUMED':
+        return 'Consumed';
+      case 'NOT_FOUND':
+        return 'Not requested';
+      default:
+        return 'Idle';
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-10">
       <div className="mx-auto flex max-w-5xl flex-col gap-6">
@@ -1097,6 +1177,14 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
                     approvedAt: detail.homeSupportRequest.approvedAt,
                     validUntil: detail.homeSupportRequest.validUntil,
                     expiresAt: detail.homeSupportRequest.expiresAt,
+                    approvedByName: detail.homeSupportRequest.approvedByName ?? null,
+                    approvedByEmail: detail.homeSupportRequest.approvedByEmail ?? null,
+                    codeExpiresAt: detail.homeSupportRequest.codeExpiresAt ?? null,
+                    canConnect: detail.homeSupportRequest.canConnect ?? false,
+                    connectButtonLabel: detail.homeSupportRequest.connectButtonLabel ?? null,
+                    notificationStatus: detail.homeSupportRequest.notificationStatus ?? null,
+                    sessionFailureCode: detail.homeSupportRequest.sessionFailureCode ?? null,
+                    recentAuditEvents: detail.homeSupportRequest.recentAuditEvents ?? [],
                   }
                 : homeRequests[home.homeId] || { status: 'IDLE' };
               return (
@@ -1168,20 +1256,16 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
                               <p className="text-sm font-semibold text-slate-900">Home Support</p>
                               <div className="flex items-center gap-2">
                                 <span className="text-xs text-slate-600">
-                                  Status:{' '}
-                                  {homeReq.status === 'APPROVED'
-                                    ? 'Approved'
-                                    : homeReq.status === 'PENDING'
-                                    ? 'Pending'
-                                    : homeReq.status === 'EXPIRED'
-                                    ? 'Expired'
-                                    : 'Not requested'}
+                                  Status: {renderRequestStatusLabel(homeReq.status)}
                                 </span>
-                                {homeReq.status === 'APPROVED' && renderCountdown(homeReq.validUntil)}
+                                {(homeReq.status === 'APPROVED' || homeReq.status === 'ACTIVE') &&
+                                  renderCountdown(homeReq.validUntil)}
                                 {homeReq.status === 'EXPIRED' && (
                                   <span className="text-xs text-rose-600">Expired</span>
                                 )}
-                                {homeReq.status !== 'APPROVED' && homeReq.status !== 'PENDING' && (
+                                {homeReq.status !== 'APPROVED' &&
+                                  homeReq.status !== 'ACTIVE' &&
+                                  homeReq.status !== 'PENDING' && (
                                   <button
                                     onClick={() => requestHomeAccess(home.homeId)}
                                     className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
@@ -1197,21 +1281,82 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
                                     Re-request
                                   </button>
                                 )}
+                                {(homeReq.status === 'APPROVED' || homeReq.status === 'ACTIVE') &&
+                                  homeReq.requestId && (
+                                    <button
+                                      onClick={() => revokeHomeAccess(home.homeId, homeReq.requestId)}
+                                      className="rounded border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-800 hover:bg-rose-100"
+                                    >
+                                      Revoke remote access now
+                                    </button>
+                                  )}
                               </div>
                             </div>
-                            {(homeReq.status === 'APPROVED') ? (
-                              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                                <CredentialRow label="HA Username" value={detail.credentials?.haUsername} />
-                                <CredentialRow label="HA Password" value={detail.credentials?.haPassword} />
-                                <CredentialRow label="Base URL" value={detail.credentials?.baseUrl} />
-                                <CredentialRow label="Cloud URL" value={detail.credentials?.cloudUrl} />
-                                <CredentialRow label="Long-lived token" value={detail.credentials?.longLivedToken} />
-                                <CredentialRow label="Bootstrap secret" value={detail.credentials?.bootstrapSecret} />
-                              </div>
-                            ) : (
-                              <p className="mt-2 text-xs text-slate-600">
-                                Request homeowner approval to view credentials.
+                            {!detail.remoteSupportAvailable ? (
+                              <p className="mt-2 text-xs text-rose-600">
+                                {detail.remoteSupportUnavailableReason ??
+                                  'No remote support available as no homeowner/property manager email address exists.'}
                               </p>
+                            ) : (
+                              <div className="mt-3 space-y-3">
+                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                  <CredentialRow
+                                    label="Approved by"
+                                    value={
+                                      detail.homeSupportRequest?.approvedByName ??
+                                      detail.homeSupportRequest?.approvedByEmail ??
+                                      '—'
+                                    }
+                                  />
+                                  <CredentialRow label="Approved at" value={formatDate(detail.homeSupportRequest?.approvedAt)} />
+                                  <CredentialRow label="Approval valid until" value={formatDate(detail.homeSupportRequest?.validUntil)} />
+                                  <CredentialRow label="Code expires at" value={formatDate(detail.homeSupportRequest?.codeExpiresAt)} />
+                                  <CredentialRow
+                                    label="Notification status"
+                                    value={detail.homeSupportRequest?.notificationStatus ?? 'NOT_STARTED'}
+                                  />
+                                  <CredentialRow
+                                    label="Failure code"
+                                    value={detail.homeSupportRequest?.sessionFailureCode ?? null}
+                                  />
+                                </div>
+
+                                {homeReq.status === 'APPROVED' && detail.homeSupportRequest?.canConnect ? (
+                                  <div className="flex items-center gap-3">
+                                    <button
+                                      onClick={() => connectToDinodiaHub(home.homeId)}
+                                      className="rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                                    >
+                                      {detail.homeSupportRequest.connectButtonLabel ?? 'Connect to the Dinodia hub'}
+                                    </button>
+                                    <span className="text-xs text-slate-500">
+                                      The one-time code is shown only to the approver by email approval page.
+                                    </span>
+                                  </div>
+                                ) : null}
+
+                                {homeReq.status === 'FAILED' ? (
+                                  <p className="text-xs text-rose-600">
+                                    Connection to the Dinodia hub failed. Approval must be requested again.
+                                  </p>
+                                ) : null}
+
+                                <div>
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Access log</p>
+                                  <div className="mt-2 space-y-2">
+                                    {(detail.homeSupportRequest?.recentAuditEvents ?? []).length === 0 ? (
+                                      <p className="text-xs text-slate-600">No support audit events yet.</p>
+                                    ) : (
+                                      (detail.homeSupportRequest?.recentAuditEvents ?? []).map((event) => (
+                                        <div key={event.id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                                          <p className="text-xs font-semibold text-slate-800">{event.summary}</p>
+                                          <p className="mt-1 text-[11px] text-slate-500">{formatDate(event.createdAt)}</p>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
                             )}
                           </section>
 

@@ -74,19 +74,21 @@ export async function POST(req: NextRequest) {
     select: { id: true, authChallengeId: true },
   });
   if (existing) {
-    const challenge = await prisma.authChallenge.findUnique({
-      where: { id: existing.authChallengeId },
-      select: { approvedAt: true, expiresAt: true, consumedAt: true },
-    });
-    const approval = computeSupportApproval(challenge);
-    if (approval.status === 'APPROVED') {
-      return NextResponse.json({
-        ok: true,
-        requestId: existing.id,
-        expiresAt: approval.expiresAt,
-        validUntil: approval.validUntil,
-        approvedAt: approval.approvedAt,
+    if (existing.authChallengeId) {
+      const challenge = await prisma.authChallenge.findUnique({
+        where: { id: existing.authChallengeId },
+        select: { approvedAt: true, expiresAt: true, consumedAt: true },
       });
+      const approval = computeSupportApproval(challenge);
+      if (approval.status === 'APPROVED') {
+        return NextResponse.json({
+          ok: true,
+          requestId: existing.id,
+          expiresAt: approval.expiresAt,
+          validUntil: approval.validUntil,
+          approvedAt: approval.approvedAt,
+        });
+      }
     }
   }
 
