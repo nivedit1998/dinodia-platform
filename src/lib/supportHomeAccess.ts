@@ -865,6 +865,7 @@ export async function introspectGatewaySupportSession(args: {
   rawGatewaySessionToken: string;
   hostname: string;
   userAgent: string | null;
+  checkMode?: 'browser' | 'service';
 }) {
   const gatewaySessionHash = sha256(args.rawGatewaySessionToken);
   const request = await args.client.supportRequest.findFirst({
@@ -900,7 +901,11 @@ export async function introspectGatewaySupportSession(args: {
   if (request.haSessionExpiresAt && request.haSessionExpiresAt.getTime() <= now.getTime()) {
     return { ok: false as const, reason: 'EXPIRED', supportRequestId: request.id };
   }
-  if (request.gatewaySessionUserAgentHash && !matchesUserAgentHash(request.gatewaySessionUserAgentHash, args.userAgent)) {
+  if (
+    args.checkMode !== 'service' &&
+    request.gatewaySessionUserAgentHash &&
+    !matchesUserAgentHash(request.gatewaySessionUserAgentHash, args.userAgent)
+  ) {
     return { ok: false as const, reason: 'USER_AGENT_MISMATCH', supportRequestId: request.id };
   }
 

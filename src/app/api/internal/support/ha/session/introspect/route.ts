@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
   const sessionToken = typeof body?.sessionToken === 'string' ? body.sessionToken : '';
   const hostname = typeof body?.hostname === 'string' ? body.hostname : '';
   const userAgent = typeof body?.userAgent === 'string' ? body.userAgent : null;
+  const checkMode = body?.checkMode === 'service' ? 'service' : 'browser';
 
   if (!sessionToken || !/^ha[a-z0-9-]*\.dinodiasmartliving\.com$/i.test(hostname)) {
     return apiBadRequest('Invalid introspection request.');
@@ -25,6 +26,7 @@ export async function POST(req: NextRequest) {
     rawGatewaySessionToken: sessionToken,
     hostname,
     userAgent,
+    checkMode,
   });
 
   return NextResponse.json(result, { status: result.ok ? 200 : 410 });
