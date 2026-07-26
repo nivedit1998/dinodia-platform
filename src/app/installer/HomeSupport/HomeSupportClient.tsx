@@ -811,6 +811,15 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
   }
 
   async function connectToDinodiaHub(homeId: number) {
+    const popup = window.open('', '_blank');
+    if (!popup) {
+      alert('Enable popups in Chrome for Dinodia support access.');
+      return;
+    }
+    popup.document.write(
+      '<!doctype html><html><head><title>Connecting</title></head><body style="font-family:Arial,sans-serif;background:#f8fafc;color:#0f172a;padding:40px;"><div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;box-shadow:0 12px 30px rgba(15,23,42,0.08);"><h1 style="margin:0 0 12px 0;font-size:22px;">Connecting to the Dinodia hub</h1><p style="margin:0;line-height:1.5;">Preparing secure Home Assistant access...</p></div></body></html>'
+    );
+    popup.document.close();
     try {
       const data = await platformFetchJson<{ ok?: boolean; redirectTo?: string }>(
         `/api/installer/home-support/homes/${homeId}/connect`,
@@ -823,8 +832,10 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
       if (!data?.ok || !data.redirectTo) {
         throw new Error('Unable to start Dinodia hub connection.');
       }
-      window.location.href = data.redirectTo;
+      popup.location.replace(data.redirectTo);
+      popup.focus();
     } catch (err) {
+      popup.close();
       alert(friendlyUnknownError(err, 'Unable to start Dinodia hub connection.'));
     }
   }

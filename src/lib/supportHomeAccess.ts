@@ -27,6 +27,21 @@ type PrismaLike = PrismaClient | Prisma.TransactionClient;
 export const HOME_SUPPORT_APPROVAL_WINDOW_MINUTES = 30;
 export const HOME_SUPPORT_CODE_WINDOW_MINUTES = 10;
 export const HOME_SUPPORT_LAUNCH_TICKET_WINDOW_MINUTES = 5;
+export const HOME_SUPPORT_BOOTSTRAP_TIMEOUT_SECONDS = 15;
+export const HOME_SUPPORT_BOOTSTRAP_RESUME_WINDOW_SECONDS = 60;
+
+export const HOME_SUPPORT_FAILURE_CODES = [
+  'HA_LOGIN_FLOW_FAILED',
+  'HA_BOOTSTRAP_TIMEOUT',
+  'HA_BOOTSTRAP_WS_FAILED',
+  'HA_BOOTSTRAP_AUTH_FAILED',
+  'HA_BOOTSTRAP_HTML_MISSING',
+  'HA_BOOTSTRAP_COOKIE_MISSING',
+  'HA_LIVE_SESSION_DISCONNECTED',
+  'HA_BOOTSTRAP_OTHER',
+] as const;
+
+export type HomeSupportFailureCode = (typeof HOME_SUPPORT_FAILURE_CODES)[number];
 
 export type HomeSupportLifecycleStatus =
   | 'NOT_FOUND'
@@ -37,6 +52,16 @@ export type HomeSupportLifecycleStatus =
   | 'FAILED'
   | 'REVOKED'
   | 'CONSUMED';
+
+export type HomeSupportGateStatus =
+  | 'NOT_FOUND'
+  | 'WAITING_FOR_APPROVAL'
+  | 'READY_FOR_CODE'
+  | 'RESUME_BOOTSTRAP'
+  | 'ACTIVE_OTHER_DEVICE'
+  | 'FAILED'
+  | 'REVOKED'
+  | 'EXPIRED';
 
 export type RemoteSupportApprover = {
   recipientType: SupportApprovalRecipientType;
@@ -79,6 +104,10 @@ export function buildSupportFailureMessage() {
   return 'Connection to the Dinodia hub failed. Approval must be requested again.';
 }
 
+export function buildSupportFailureTitle() {
+  return 'Connection failed';
+}
+
 function generateOpaqueToken() {
   return crypto.randomBytes(32).toString('hex');
 }
@@ -91,24 +120,49 @@ function sha256(value: string) {
   return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
+function normalizeHomeSupportFailureCode(value: string | null | undefined): HomeSupportFailureCode {
+  switch ((value || '').trim()) {
+    case 'HA_LOGIN_FLOW_FAILED':
+    case 'HA_BOOTSTRAP_TIMEOUT':
+    case 'HA_BOOTSTRAP_WS_FAILED':
+    case 'HA_BOOTSTRAP_AUTH_FAILED':
+    case 'HA_BOOTSTRAP_HTML_MISSING':
+    case 'HA_BOOTSTRAP_COOKIE_MISSING':
+    case 'HA_LIVE_SESSION_DISCONNECTED':
+    case 'HA_BOOTSTRAP_OTHER':
+      return value as HomeSupportFailureCode;
+    default:
+      return 'HA_BOOTSTRAP_OTHER';
+  }
+}
+
+function matchesUserAgentHash(expectedHash: string | null | undefined, userAgent: string | null) {
+  if (!expectedHash) return true;
+  if (!userAgent) return false;
+  return expectedHash === sha256(userAgent);
+}
+
 function nowPlusMinutes(minutes: number) {
   return new Date(Date.now() + minutes * 60 * 1000);
 }
 
 export function computeHomeSupportStatus(
-  request: Pick<
-    SupportRequest,
-    | 'approvedAt'
-    | 'approvalValidUntil'
-    | 'revokedAt'
-    | 'haSessionRevokedAt'
-    | 'haSessionFailureAt'
-    | 'haSessionStartedAt'
-    | 'haSessionExpiresAt'
-    | 'haSessionEndedAt'
-    | 'haSecurityCodeConsumedAt'
-    | 'haSecurityCodeExpiresAt'
-  > | null,
+  request:
+    | (Pick<
+        SupportRequest,
+        | 'approvedAt'
+        | 'approvalValidUntil'
+        | 'revokedAt'
+        | 'haSessionRevokedAt'
+        | 'haSessionFailureAt'
+        | 'haSessionStartedAt'
+        | 'haSessionExpiresAt'
+        | 'haSessionEndedAt'
+        | 'haSecurityCodeConsumedAt'
+        | 'haSecurityCodeExpiresAt'
+      > &
+        Partial<Pick<SupportRequest, 'gatewaySessionHash'>>)
+    | null,
   approvalTokens?: Array<Pick<SupportRequestApprovalToken, 'expiresAt' | 'approvedAt' | 'consumedAt'>> | null
 ): HomeSupportLifecycleStatus {
   if (!request) return 'NOT_FOUND';
@@ -129,11 +183,11 @@ export function computeHomeSupportStatus(
     if (request.approvalValidUntil && request.approvalValidUntil.getTime() <= now.getTime()) {
       return 'EXPIRED';
     }
-    if (
-      request.haSecurityCodeConsumedAt ||
-      (request.haSecurityCodeExpiresAt && request.haSecurityCodeExpiresAt.getTime() <= now.getTime())
-    ) {
+    if (request.haSecurityCodeExpiresAt && request.haSecurityCodeExpiresAt.getTime() <= now.getTime()) {
       return 'EXPIRED';
+    }
+    if (request.haSecurityCodeConsumedAt || request.gatewaySessionHash) {
+      return 'CONSUMED';
     }
     return 'APPROVED';
   }
@@ -147,6 +201,58 @@ export function computeHomeSupportStatus(
       token.expiresAt.getTime() > now.getTime()
   );
   return pending ? 'PENDING' : 'EXPIRED';
+}
+
+type HomeSupportGateRequest = Pick<
+  SupportRequest,
+  | 'approvedAt'
+  | 'approvalValidUntil'
+  | 'revokedAt'
+  | 'haSessionRevokedAt'
+  | 'haSessionFailureAt'
+  | 'haSessionFailureCode'
+  | 'haSessionStartedAt'
+  | 'haSessionExpiresAt'
+  | 'haSessionEndedAt'
+  | 'haSecurityCodeHash'
+  | 'haSecurityCodeConsumedAt'
+  | 'haSecurityCodeExpiresAt'
+  | 'gatewaySessionHash'
+  | 'gatewaySessionBoundAt'
+  | 'gatewaySessionUserAgentHash'
+>;
+
+export function isHomeSupportBootstrapResumable(
+  request: HomeSupportGateRequest | null,
+  userAgent: string | null,
+  now = new Date()
+) {
+  if (!request?.gatewaySessionHash || !request.gatewaySessionBoundAt) return false;
+  if (request.revokedAt || request.haSessionRevokedAt || request.haSessionFailureAt) return false;
+  if (!request.approvalValidUntil || request.approvalValidUntil.getTime() <= now.getTime()) return false;
+  if (request.haSessionStartedAt || request.haSessionEndedAt) return false;
+  if (!matchesUserAgentHash(request.gatewaySessionUserAgentHash, userAgent)) return false;
+  return request.gatewaySessionBoundAt.getTime() + HOME_SUPPORT_BOOTSTRAP_RESUME_WINDOW_SECONDS * 1000 > now.getTime();
+}
+
+export function resolveHomeSupportGateStatus(
+  request: HomeSupportGateRequest | null,
+  userAgent: string | null,
+  now = new Date()
+): HomeSupportGateStatus {
+  if (!request) return 'NOT_FOUND';
+  if (request.revokedAt || request.haSessionRevokedAt) return 'REVOKED';
+  if (request.haSessionFailureAt) return 'FAILED';
+  if (!request.approvedAt || !request.approvalValidUntil) return 'WAITING_FOR_APPROVAL';
+  if (request.approvalValidUntil.getTime() <= now.getTime()) return 'EXPIRED';
+  if (request.haSessionStartedAt && request.haSessionExpiresAt && request.haSessionExpiresAt.getTime() > now.getTime()) {
+    return 'ACTIVE_OTHER_DEVICE';
+  }
+  if (isHomeSupportBootstrapResumable(request, userAgent, now)) return 'RESUME_BOOTSTRAP';
+  if (!request.haSecurityCodeHash || !request.haSecurityCodeExpiresAt) return 'EXPIRED';
+  if (request.haSecurityCodeExpiresAt.getTime() <= now.getTime()) return 'EXPIRED';
+  if (request.haSecurityCodeConsumedAt) return 'EXPIRED';
+  return 'READY_FOR_CODE';
 }
 
 export async function resolveRemoteSupportApprovers(
@@ -395,6 +501,7 @@ export async function createHomeSupportLaunchTicket(args: {
   hostname: string;
   actorUserId: number;
   actorUsername?: string | null;
+  userAgent?: string | null;
 }) {
   const request = await args.client.supportRequest.findUnique({
     where: { id: args.supportRequestId },
@@ -417,11 +524,20 @@ export async function createHomeSupportLaunchTicket(args: {
   if (!request.haSecurityCodeHash || !request.haSecurityCodeExpiresAt) {
     return { ok: false as const, reason: 'EXPIRED' };
   }
-  if (request.haSecurityCodeConsumedAt || request.haSecurityCodeExpiresAt.getTime() <= now.getTime()) {
+  if (request.haSecurityCodeExpiresAt.getTime() <= now.getTime()) {
     return { ok: false as const, reason: 'EXPIRED' };
   }
-  if (request.gatewaySessionHash || request.haSessionStartedAt) {
-    return { ok: false as const, reason: 'ACTIVE' };
+  if (request.haSessionStartedAt && request.haSessionExpiresAt && request.haSessionExpiresAt.getTime() > now.getTime()) {
+    return { ok: false as const, reason: 'ACTIVE_OTHER_DEVICE' };
+  }
+  if (request.haSecurityCodeConsumedAt) {
+    if (isHomeSupportBootstrapResumable(request, args.userAgent ?? null, now)) {
+      return { ok: false as const, reason: 'BOOTSTRAP_IN_PROGRESS' };
+    }
+    return { ok: false as const, reason: 'EXPIRED' };
+  }
+  if (request.gatewaySessionHash) {
+    return { ok: false as const, reason: 'BOOTSTRAP_IN_PROGRESS' };
   }
   if (hashSecretForLookup(args.code) !== request.haSecurityCodeHash) {
     return { ok: false as const, reason: 'INVALID_CODE' };
@@ -446,6 +562,10 @@ export async function createHomeSupportLaunchTicket(args: {
         launchTicketHash,
         launchTicketExpiresAt,
         consumedAt: now,
+        haSessionFailureAt: null,
+        haSessionFailureCode: null,
+        haSessionEndedAt: null,
+        haSessionRevokedAt: null,
       },
     });
 
@@ -461,6 +581,10 @@ export async function createHomeSupportLaunchTicket(args: {
           actorUsername: args.actorUsername ?? null,
           hostname: args.hostname,
           sessionExpiresAt: request.approvalValidUntil,
+          extra: {
+            phase: 'LAUNCH_TICKET_ISSUED',
+            launchTicketExpiresAt: launchTicketExpiresAt.toISOString(),
+          },
         }),
       },
     });
@@ -501,7 +625,49 @@ export async function bootstrapGatewaySupportSession(args: {
     return { ok: false as const, reason: 'EXPIRED' };
   }
   if (request.revokedAt || request.haSessionRevokedAt) return { ok: false as const, reason: 'REVOKED' };
-  if (request.gatewaySessionHash) return { ok: false as const, reason: 'ACTIVE' };
+
+  const userAgentHash = args.userAgent ? sha256(args.userAgent) : null;
+  if (request.gatewaySessionHash) {
+    const sameBoundSession =
+      request.gatewaySessionHash === launchTicketHash &&
+      (!request.supportGatewayHostname || request.supportGatewayHostname === args.hostname) &&
+      matchesUserAgentHash(request.gatewaySessionUserAgentHash, args.userAgent) &&
+      isHomeSupportBootstrapResumable(request, args.userAgent, now);
+
+    if (sameBoundSession) {
+      const resumedHome = await args.client.home.findUnique({
+        where: { id: request.homeId },
+        select: {
+          haConnection: {
+            select: {
+              cloudUrl: true,
+              haUsername: true,
+              haUsernameCiphertext: true,
+              haPassword: true,
+              haPasswordCiphertext: true,
+            },
+          },
+        },
+      });
+
+      if (!resumedHome?.haConnection) return { ok: false as const, reason: 'NOT_FOUND' };
+      const { haUsername, haPassword } = resolveHaUiCredentials(resumedHome.haConnection);
+
+      return {
+        ok: true as const,
+        resumedExistingBootstrap: true,
+        supportRequestId: request.id,
+        homeId: request.homeId,
+        sessionToken: args.rawLaunchTicket,
+        sessionExpiresAt: request.approvalValidUntil,
+        cloudUrl: resumedHome.haConnection.cloudUrl ?? null,
+        haUsername,
+        haPassword,
+      };
+    }
+
+    return { ok: false as const, reason: 'ACTIVE' };
+  }
 
   const home = await args.client.home.findUnique({
     where: { id: request.homeId },
@@ -538,16 +704,10 @@ export async function bootstrapGatewaySupportSession(args: {
 
   const { haUsername, haPassword } = resolveHaUiCredentials(home.haConnection);
 
-  const rawGatewaySessionToken = generateOpaqueToken();
-  const gatewaySessionHash = sha256(rawGatewaySessionToken);
-  const userAgentHash = args.userAgent ? sha256(args.userAgent) : null;
-
   await args.client.supportRequest.update({
     where: { id: request.id },
     data: {
-      launchTicketHash: null,
-      launchTicketExpiresAt: null,
-      gatewaySessionHash,
+      gatewaySessionHash: launchTicketHash,
       gatewaySessionBoundAt: now,
       gatewaySessionUserAgentHash: userAgentHash,
     },
@@ -555,9 +715,10 @@ export async function bootstrapGatewaySupportSession(args: {
 
   return {
     ok: true as const,
+    resumedExistingBootstrap: false,
     supportRequestId: request.id,
     homeId: request.homeId,
-    sessionToken: rawGatewaySessionToken,
+    sessionToken: args.rawLaunchTicket,
     sessionExpiresAt: request.approvalValidUntil,
     cloudUrl: home.haConnection.cloudUrl ?? null,
     haUsername,
@@ -632,8 +793,13 @@ export async function activateGatewaySupportSession(args: {
   await args.client.supportRequest.update({
     where: { id: request.id },
     data: {
+      launchTicketHash: null,
+      launchTicketExpiresAt: null,
       haSessionStartedAt: now,
       haSessionExpiresAt: request.approvalValidUntil,
+      haSessionFailureAt: null,
+      haSessionFailureCode: null,
+      haSessionEndedAt: null,
     },
   });
 
@@ -649,6 +815,9 @@ export async function activateGatewaySupportSession(args: {
         actorUsername: args.actorUsername ?? null,
         hostname: args.hostname,
         sessionExpiresAt: request.approvalValidUntil,
+        extra: {
+          phase: 'SESSION_USABLE_CONFIRMED',
+        },
       }),
     },
   });
@@ -731,10 +900,8 @@ export async function introspectGatewaySupportSession(args: {
   if (request.haSessionExpiresAt && request.haSessionExpiresAt.getTime() <= now.getTime()) {
     return { ok: false as const, reason: 'EXPIRED', supportRequestId: request.id };
   }
-  if (request.gatewaySessionUserAgentHash && args.userAgent) {
-    if (request.gatewaySessionUserAgentHash !== sha256(args.userAgent)) {
-      return { ok: false as const, reason: 'USER_AGENT_MISMATCH', supportRequestId: request.id };
-    }
+  if (request.gatewaySessionUserAgentHash && !matchesUserAgentHash(request.gatewaySessionUserAgentHash, args.userAgent)) {
+    return { ok: false as const, reason: 'USER_AGENT_MISMATCH', supportRequestId: request.id };
   }
 
   return {
@@ -766,13 +933,15 @@ export async function markGatewaySupportSessionEnded(args: {
 
   const now = new Date();
   const updateData: Prisma.SupportRequestUpdateInput = {
+    launchTicketHash: null,
+    launchTicketExpiresAt: null,
     gatewaySessionHash: null,
     gatewaySessionBoundAt: null,
     gatewaySessionUserAgentHash: null,
   };
   if (args.reason === 'FAILED') {
     updateData.haSessionFailureAt = now;
-    updateData.haSessionFailureCode = args.failureCode ?? 'UNKNOWN';
+    updateData.haSessionFailureCode = normalizeHomeSupportFailureCode(args.failureCode);
   } else if (args.reason === 'REVOKED') {
     updateData.haSessionRevokedAt = now;
   } else {
@@ -805,7 +974,10 @@ export async function markGatewaySupportSessionEnded(args: {
         metadata: buildSupportAuditMetadata({
           supportRequestId: request.id,
           homeId: request.homeId,
-          failureCode: args.failureCode ?? 'UNKNOWN',
+          failureCode: normalizeHomeSupportFailureCode(args.failureCode),
+          extra: {
+            phase: 'SESSION_FAILED',
+          },
         }),
       },
     });

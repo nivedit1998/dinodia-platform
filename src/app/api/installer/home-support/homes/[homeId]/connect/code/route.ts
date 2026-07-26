@@ -37,10 +37,23 @@ export async function POST(
     hostname: host,
     actorUserId: operator.userId,
     actorUsername: operator.username,
+    userAgent: req.headers.get('user-agent'),
   });
 
   if (!result.ok) {
-    return apiFailFromStatus(410, 'Connection to the Dinodia hub failed. Approval must be requested again.');
+    if (result.reason === 'BOOTSTRAP_IN_PROGRESS') {
+      return NextResponse.json({
+        ok: true,
+        redirectTo: `https://${host}/?__dinodia_bootstrap=1`,
+        validUntil: null,
+      });
+    }
+    return apiFailFromStatus(
+      result.reason === 'ACTIVE_OTHER_DEVICE' ? 409 : 410,
+      result.reason === 'ACTIVE_OTHER_DEVICE'
+        ? 'This support session is already in use on another device or tab. Request access again if needed.'
+        : 'Connection to the Dinodia hub failed. Approval must be requested again.'
+    );
   }
 
   const redirectTo = new URL(`https://${host}/__dinodia/launch`);

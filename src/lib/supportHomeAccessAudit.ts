@@ -41,13 +41,13 @@ export function supportAuditSummary(type: AuditEventType) {
     case AuditEventType.SUPPORT_REQUEST_REVOKED:
       return 'Remote HA access revoked';
     case AuditEventType.SUPPORT_HA_CODE_ISSUED:
-      return 'One-time HASecurityCode issued';
+      return 'One-time HASecurityCode issued after approval';
     case AuditEventType.SUPPORT_HA_CODE_CONSUMED:
-      return 'One-time HASecurityCode consumed';
+      return 'One-time HASecurityCode consumed and Dinodia hub launch started';
     case AuditEventType.SUPPORT_HA_SESSION_STARTED:
-      return 'HA support session started';
+      return 'HA support session started after bootstrap confirmation';
     case AuditEventType.SUPPORT_HA_SESSION_FAILED:
-      return 'HA support session failed';
+      return 'HA support session failed and approval must be requested again';
     case AuditEventType.SUPPORT_HA_SESSION_EXPIRED:
       return 'HA support session expired';
     default:

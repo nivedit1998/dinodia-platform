@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    resumedExistingBootstrap: result.resumedExistingBootstrap ?? false,
     supportRequestId: result.supportRequestId,
     homeId: result.homeId,
     sessionToken: result.sessionToken,
