@@ -139,6 +139,52 @@ type RoomSummary = {
   updatedAt?: string;
 };
 
+type CxoHeartbeatHealth = 'ONLINE_RECENTLY' | 'STALE' | 'NEVER_SEEN';
+
+type CxoInsights = {
+  homeId: number;
+  currentTermsVersion: string;
+  heartbeat: {
+    lastSeenAt: string | null;
+    serial: string | null;
+    health: CxoHeartbeatHealth;
+  };
+  homeowners: Array<{
+    username: string;
+    email: string | null;
+  }>;
+  propertyManager: {
+    email: string | null;
+  };
+  roomRoster: Array<{
+    roomId: string;
+    displayName: string;
+    haAreaName: string;
+    haAreaNameOriginal: string;
+    status: string;
+    users: Array<{
+      userId: number;
+      username: string;
+      email: string | null;
+      currentTermsVersion: string;
+      currentTermsAccepted: boolean;
+      currentTermsAcceptedAt: string | null;
+      latestAcceptedTermsVersion: string | null;
+      latestAcceptedTermsAt: string | null;
+    }>;
+  }>;
+  unassignedUsers: Array<{
+    userId: number;
+    username: string;
+    email: string | null;
+    currentTermsVersion: string;
+    currentTermsAccepted: boolean;
+    currentTermsAcceptedAt: string | null;
+    latestAcceptedTermsVersion: string | null;
+    latestAcceptedTermsAt: string | null;
+  }>;
+};
+
 type RequestStatus =
   | 'PENDING'
   | 'APPROVED'
@@ -321,6 +367,9 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
   const [details, setDetails] = useState<Record<number, HomeDetail>>({});
   const [detailLoading, setDetailLoading] = useState<Record<number, boolean>>({});
   const [detailError, setDetailError] = useState<Record<number, string | null>>({});
+  const [cxoInsightsByHomeId, setCxoInsightsByHomeId] = useState<Record<number, CxoInsights>>({});
+  const [cxoInsightsLoading, setCxoInsightsLoading] = useState<Record<number, boolean>>({});
+  const [cxoInsightsError, setCxoInsightsError] = useState<Record<number, string | null>>({});
 
   const [homeRequests, setHomeRequests] = useState<Record<number, RequestTracking>>({});
   const [userRequests, setUserRequests] = useState<Record<string, RequestTracking>>({});
@@ -345,6 +394,7 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
   const [removeHomeSuccess, setRemoveHomeSuccess] = useState<string | null>(null);
   const canSeeAuditSection = canAccessSupportAuditSection(role);
   const canSeeAuditQuickLinks = role === Role.CXO;
+  const canSeeCxoInsights = role === Role.CXO;
   const canManageQrRooms = canManageHomeSupportQrRooms(role);
   const canRemoveHomes = canStartRemoveHome(role);
 
@@ -373,6 +423,9 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
       setDetails({});
       setDetailLoading({});
       setDetailError({});
+      setCxoInsightsByHomeId({});
+      setCxoInsightsLoading({});
+      setCxoInsightsError({});
       setHomeRequests({});
       setUserRequests({});
       if (nextHomes.length === 0) {
@@ -746,11 +799,35 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
     }
   }
 
+  async function loadCxoInsights(homeId: number) {
+    setCxoInsightsError((prev) => ({ ...prev, [homeId]: null }));
+    setCxoInsightsLoading((prev) => ({ ...prev, [homeId]: true }));
+    try {
+      const data = await platformFetchJson<CxoInsights & { ok?: boolean }>(
+        `/api/installer/home-support/homes/${homeId}/cxo-insights`,
+        { cache: 'no-store' },
+        'Failed to load CXO overview.'
+      );
+      if (!data?.ok) throw new Error('Failed to load CXO overview.');
+      setCxoInsightsByHomeId((prev) => ({ ...prev, [homeId]: data }));
+    } catch (err) {
+      setCxoInsightsError((prev) => ({
+        ...prev,
+        [homeId]: friendlyUnknownError(err, 'Failed to load CXO overview.'),
+      }));
+    } finally {
+      setCxoInsightsLoading((prev) => ({ ...prev, [homeId]: false }));
+    }
+  }
+
   function toggleHome(homeId: number) {
     const next = expandedHomeId === homeId ? null : homeId;
     setExpandedHomeId(next);
     if (next && !details[next]) {
       void loadDetail(next);
+    }
+    if (next && canSeeCxoInsights && !cxoInsightsByHomeId[next]) {
+      void loadCxoInsights(next);
     }
     if (next && canManageQrRooms) {
       void loadRooms(next);
@@ -1044,6 +1121,48 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
     }
   }
 
+  function renderHeartbeatHealthBadge(health: CxoHeartbeatHealth | undefined) {
+    if (!health) return null;
+
+    const label =
+      health === 'ONLINE_RECENTLY' ? 'Online recently' : health === 'STALE' ? 'Stale' : 'Never seen';
+    const className =
+      health === 'ONLINE_RECENTLY'
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+        : health === 'STALE'
+          ? 'border-amber-200 bg-amber-50 text-amber-800'
+          : 'border-slate-200 bg-slate-100 text-slate-700';
+
+    return <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${className}`}>{label}</span>;
+  }
+
+  function renderTermsStatus(user: {
+    currentTermsVersion: string;
+    currentTermsAccepted: boolean;
+    currentTermsAcceptedAt: string | null;
+    latestAcceptedTermsVersion: string | null;
+    latestAcceptedTermsAt: string | null;
+  }) {
+    return (
+      <div className="mt-1 space-y-1 text-[11px] text-slate-600">
+        <p>
+          <span className="font-medium text-slate-700">
+            {user.currentTermsAccepted ? 'Signed current Terms' : 'Current Terms not signed'}:
+          </span>{' '}
+          {user.currentTermsVersion}
+        </p>
+        <p>
+          <span className="font-medium text-slate-700">Latest signed version:</span>{' '}
+          {user.latestAcceptedTermsVersion ?? 'None'}
+        </p>
+        <p>
+          <span className="font-medium text-slate-700">Accepted at:</span>{' '}
+          {formatDate(user.currentTermsAcceptedAt ?? user.latestAcceptedTermsAt)}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-10">
       <div className="mx-auto flex max-w-5xl flex-col gap-6">
@@ -1181,6 +1300,9 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
               const detail = details[home.homeId];
               const dLoading = detailLoading[home.homeId];
               const dError = detailError[home.homeId];
+              const cxoInsights = cxoInsightsByHomeId[home.homeId];
+              const cxoLoading = cxoInsightsLoading[home.homeId];
+              const cxoError = cxoInsightsError[home.homeId];
               const homeReq = detail?.homeSupportRequest
                 ? {
                     status: detail.homeSupportRequest.status as RequestStatus,
@@ -1537,6 +1659,107 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
                               })}
                             </div>
                           </section>
+
+                          {canSeeCxoInsights ? (
+                            <section className="rounded-md bg-white p-3 shadow-inner ring-1 ring-slate-200">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-semibold text-slate-900">CXO Operational Overview</p>
+                                {renderHeartbeatHealthBadge(cxoInsights?.heartbeat.health)}
+                              </div>
+                              {cxoLoading ? (
+                                <p className="mt-2 text-xs text-slate-600">Loading CXO overview…</p>
+                              ) : null}
+                              {cxoError ? (
+                                <p className="mt-2 text-xs text-rose-600">{cxoError}</p>
+                              ) : null}
+                              {cxoInsights ? (
+                                <div className="mt-3 space-y-4">
+                                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                    <section className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Last heartbeat</p>
+                                      <div className="mt-2 grid grid-cols-1 gap-3">
+                                        <CredentialRow label="Last seen" value={formatDate(cxoInsights.heartbeat.lastSeenAt)} />
+                                        <CredentialRow label="Serial" value={cxoInsights.heartbeat.serial} />
+                                      </div>
+                                    </section>
+
+                                    <section className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Property manager</p>
+                                      <p className="mt-2 text-sm text-slate-800">
+                                        {cxoInsights.propertyManager.email ?? 'None'}
+                                      </p>
+                                    </section>
+                                  </div>
+
+                                  <section className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Homeowners</p>
+                                    <ul className="mt-2 space-y-1 text-sm text-slate-800">
+                                      {cxoInsights.homeowners.length === 0 ? <li>None</li> : null}
+                                      {cxoInsights.homeowners.map((user) => (
+                                        <li key={`${user.username}:${user.email ?? 'none'}`}>
+                                          {user.email ?? 'No email'} ({user.username})
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </section>
+
+                                  <section className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Users by room</p>
+                                    {cxoInsights.roomRoster.length === 0 ? (
+                                      <p className="mt-2 text-sm text-slate-600">No rooms created yet.</p>
+                                    ) : (
+                                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                        {cxoInsights.roomRoster.map((room) => (
+                                          <div key={room.roomId} className="rounded-md border border-slate-200 bg-white p-3">
+                                            <p className="text-sm font-semibold text-slate-900">{room.displayName}</p>
+                                            <p className="mt-1 text-xs text-slate-600">
+                                              HA area: <span className="font-medium text-slate-800">{room.haAreaName}</span>
+                                            </p>
+                                            <p className="mt-1 text-[11px] text-slate-500">
+                                              Original: {room.haAreaNameOriginal} • Status: {room.status}
+                                            </p>
+
+                                            {room.users.length === 0 ? (
+                                              <p className="mt-3 text-sm text-slate-600">No users assigned to this room.</p>
+                                            ) : (
+                                              <div className="mt-3 space-y-3">
+                                                {room.users.map((user) => (
+                                                  <div key={`${room.roomId}:${user.userId}`} className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                                                    <p className="text-sm font-medium text-slate-900">
+                                                      {user.email ?? 'No email'} ({user.username})
+                                                    </p>
+                                                    {renderTermsStatus(user)}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </section>
+
+                                  <section className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Users not assigned to any room</p>
+                                    {cxoInsights.unassignedUsers.length === 0 ? (
+                                      <p className="mt-2 text-sm text-slate-600">None</p>
+                                    ) : (
+                                      <div className="mt-3 space-y-3">
+                                        {cxoInsights.unassignedUsers.map((user) => (
+                                          <div key={user.userId} className="rounded-md border border-slate-200 bg-white p-3">
+                                            <p className="text-sm font-medium text-slate-900">
+                                              {user.email ?? 'No email'} ({user.username})
+                                            </p>
+                                            {renderTermsStatus(user)}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </section>
+                                </div>
+                              ) : null}
+                            </section>
+                          ) : null}
 
                           {(detail.canRemoveHome ?? canRemoveHomes) && removeHomeOpenId === home.homeId ? (
                             <section className="rounded-md border border-rose-200 bg-rose-50 p-3 shadow-inner">

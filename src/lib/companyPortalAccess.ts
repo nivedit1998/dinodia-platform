@@ -43,6 +43,10 @@ export function canAccessHomeSupport(role: Role | null | undefined): boolean {
   return role === Role.SENIOR_OPERATIONS_MANAGER || role === Role.SENIOR_CUSTOMER_SUPPORT || role === Role.CXO;
 }
 
+export function canAccessHomeSupportCxoInsights(role: Role | null | undefined): boolean {
+  return role === Role.CXO;
+}
+
 export function canAccessEmployeeManagement(role: Role | null | undefined): boolean {
   return role === Role.CXO;
 }

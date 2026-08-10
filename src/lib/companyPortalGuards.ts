@@ -5,6 +5,7 @@ import { Role } from '@prisma/client';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import {
   canAccessHomeSupport,
+  canAccessHomeSupportCxoInsights,
   canAccessProvision,
   canFinishRemoveHome,
   canManageHomeSupportQrRooms,
@@ -36,6 +37,10 @@ async function requireCompanyOperator(
 
 export async function requireCompanyHomeSupportViewer(req: NextRequest) {
   return requireCompanyOperator(req, canAccessHomeSupport, 'Company Home Support access required.');
+}
+
+export async function requireCompanyHomeSupportCxoViewer(req: NextRequest) {
+  return requireCompanyOperator(req, canAccessHomeSupportCxoInsights, 'CXO Home Support access required.');
 }
 
 export async function requireCompanyHomeSupportQrOperator(req: NextRequest) {
