@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
+const archivedKioskRoot = path.join(root, '..', '..', 'Archive', 'dinodia-kiosk');
 const canonicalPath = path.join(root, 'labels', 'registry.json');
 const targets = [
   {
@@ -24,11 +25,11 @@ const targets = [
   },
   {
     name: 'kiosk',
-    path: path.join(root, '..', 'dinodia-kiosk', 'src', 'config', 'labelRegistry.json'),
-    visualsPath: path.join(root, '..', 'dinodia-kiosk', 'src', 'components', 'deviceVisuals.ts'),
+    path: path.join(archivedKioskRoot, 'src', 'config', 'labelRegistry.json'),
+    visualsPath: path.join(archivedKioskRoot, 'src', 'components', 'deviceVisuals.ts'),
     capabilitiesPath: null, // kiosk capabilities optional for parity check
-    commandsHandlerPath: path.join(root, '..', 'dinodia-kiosk', 'src', 'utils', 'haCommands.ts'),
-    capabilitiesSourcePath: path.join(root, '..', 'dinodia-kiosk', 'src', 'capabilities', 'deviceCapabilities.ts'),
+    commandsHandlerPath: path.join(archivedKioskRoot, 'src', 'utils', 'haCommands.ts'),
+    capabilitiesSourcePath: path.join(archivedKioskRoot, 'src', 'capabilities', 'deviceCapabilities.ts'),
   },
 ];
 
