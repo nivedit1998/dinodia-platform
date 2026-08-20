@@ -32,6 +32,7 @@
     "Sensor",
     "Vacuum",
     "Camera",
+    "Remote",
     "Other"
   ],
   "synonyms": {
@@ -83,6 +84,6 @@
     "Home Security": { "mode": "custom" },
     "TV": { "mode": "custom" },
     "Speaker": { "mode": "custom" },
-    "Remote": { "mode": "custom" }
+    "Remote": { "mode": "default" }
   }
 }
