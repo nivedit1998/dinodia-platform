@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import Script from 'next/script';
+import { Analytics } from '@vercel/analytics/next';
 import { GlobalRefreshProvider } from '@/components/GlobalRefreshProvider';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { ToastProvider } from '@/components/ui/Toast';
@@ -67,6 +68,7 @@ export default function RootLayout({
             <div className="min-h-screen luxury-enter">{children}</div>
           </ToastProvider>
         </GlobalRefreshProvider>
+        <Analytics />
       </body>
     </html>
   );
