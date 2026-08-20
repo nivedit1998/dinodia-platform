@@ -1,3 +1,6 @@
+<!-- Architecture: labels/registry.json is the canonical classification source
+for platform and AWS runtime copies. UI visuals, capabilities, Home Assistant label
+flows and iOS display models consume the same category vocabulary. -->
 # Label Registry (canonical)
 
 ## Status (as of 2026-03-17)

@@ -1,3 +1,7 @@
+// Architecture boundary: private entry point from dinodia-ha-support-gateway.
+// It validates the worker signature before the platform creates/resumes the
+// support session whose state is later held and proxied by the worker.
+
 import { NextRequest, NextResponse } from 'next/server';
 import { apiBadRequest, apiForbidden } from '@/lib/apiError';
 import { isValidHaSupportInternalRequest } from '@/lib/haSupportInternalAuth';

@@ -1,3 +1,9 @@
+// Architecture: server-side Home Assistant adapter shared by API routes, device
+// control, monitoring, commissioning and Alexa change-report flows. It chooses
+// REST/template/WebSocket operations against the configured HA connection while
+// callers keep long-lived credentials on the server. The Hub Agent and iOS app
+// have separate local/network adapters; their payloads must remain compatible.
+
 import { classifyDeviceByLabel, LabelCategory } from './labelCatalog';
 import { HaWsClient } from '@/lib/haWebSocket';
 import { buildHaServiceBypassHeaders } from '@/lib/haServiceBypass';

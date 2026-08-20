@@ -1,3 +1,7 @@
+// Architecture boundary: internal platform route used to turn device changes
+// into Alexa ChangeReport events. Device-control/monitoring callers reach this
+// server-side flow; the Alexa skill consumes discovery/control separately.
+
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { resolveHaCloudFirst } from '@/lib/haConnection';

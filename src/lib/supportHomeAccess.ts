@@ -1,3 +1,8 @@
+// Architecture: platform-owned support approval/session state. The installer and
+// support UI create/revoke approvals here; the HA support gateway calls the
+// internal session routes, and its Durable Object proxies the approved HA session.
+// Keep this boundary separate from normal tenant auth and never expose HA tokens.
+
 import 'server-only';
 
 import crypto from 'crypto';

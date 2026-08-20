@@ -1,3 +1,8 @@
+// Architecture: canonical synchronization tool for files listed in the primary
+// platform's parity manifest. It copies source-owned files to the adjacent AWS
+// deployment repository; it is not a general repository mirror and must be run
+// before parity/build verification whenever a parity-owned file is annotated.
+
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -109,3 +114,4 @@ main().catch((err) => {
   process.exit(1);
 });
 
+// End of architecture annotation; runtime synchronization logic above is unchanged.

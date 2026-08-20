@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Architecture: canonical label-registry validation/synchronization helper.
+// labels/registry.json is the source; active runtime copies and device visual/
+// capability consumers must agree before platform/AWS changes are delivered.
 /* eslint-disable @typescript-eslint/no-require-imports */
 /**
  * Label registry sync/check helper (canonical lives in dinodia-platform).

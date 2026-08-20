@@ -1,3 +1,8 @@
+// Architecture: public names for the Home Assistant dinodia_remote_manager
+// service contract. Platform tenant/admin routes and the iOS remote-management
+// screens use these names to discover bindings, trigger devices and targets;
+// the matching HA custom integration owns the local event routing semantics.
+
 export const REMOTE_MANAGER_DOMAIN = 'dinodia_remote_manager';
 export const SERVICE_REGISTER_BINDING = 'register_binding';
 export const SERVICE_SET_TRIGGER_TARGET = 'set_trigger_target';

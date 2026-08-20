@@ -1,3 +1,8 @@
+// Architecture: cloud-side token lifecycle for Hub Agent pairing and sync.
+// The /api/hub-agent/pair and /api/hub-agent/token-state routes use these helpers;
+// the installed Hub Agent consumes only the signed/hashed protocol results. Plain
+// tokens and bootstrap/sync secrets must never be placed in logs or client code.
+
 import { HubTokenStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { decryptSecret, encryptSecret, generateRandomHex, hashSha256 } from './hubCrypto';

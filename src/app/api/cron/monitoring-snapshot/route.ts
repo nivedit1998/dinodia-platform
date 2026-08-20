@@ -1,3 +1,7 @@
+// Architecture boundary: scheduled monitoring ingress. The Cloudflare edge
+// worker invokes this route with the cron authorization header; the route fans
+// out to monitoring/boiler/hub-status snapshots and cleanup on both deployments.
+
 import { NextRequest, NextResponse } from 'next/server';
 import { captureBoilerTempSnapshotForAllConnections } from '@/lib/boilerMonitoring';
 import { captureDailyMonitoringSnapshotForAllConnections } from '@/lib/monitoring';

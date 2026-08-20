@@ -1,3 +1,7 @@
+// Architecture boundary: authenticated Hub Agent bootstrap endpoint. The local
+// add-on signs serial/timestamp/nonce requests, this route verifies replay/HMAC
+// protection and returns the next token-state material needed by the agent.
+
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailFromStatus } from '@/lib/apiError';
 import { HubTokenStatus } from '@prisma/client';

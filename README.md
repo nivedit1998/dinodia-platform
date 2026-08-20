@@ -1,3 +1,22 @@
+<!--
+Architecture map: this is the primary Next.js/Vercel backend and web application.
+It owns the public platform API, Prisma data access, tenant/admin UI, Home Assistant
+communication, device control, monitoring, support workflows and Alexa endpoints.
+Consumers and neighbours: dinodia-platform-aws is the deployment counterpart; the
+iOS app, Alexa skill, Hub Agent and HA support gateway call its API contracts; the
+Cloudflare edge worker routes public /api traffic to Vercel or AWS; the separate
+marketing site does not share runtime code. The parity manifest and scripts define
+which files must stay byte-for-byte aligned with the AWS repository.
+Route map: /api/auth and /api/policy serve session/policy flows; /api/tenant and
+/api/admin serve customer/operations UI; /api/installer and /api/support serve
+approved operational workflows; /api/alexa serves the skill; /api/hub-agent serves
+the add-on; /api/internal/alexa and /api/internal/support are private worker/service
+boundaries; /api/cron is called by the edge scheduler. The /api/device-control,
+/api/homeassistant and commissioning routes are Home Assistant/device contracts.
+Protected boundary: keep credentials, tokens and production values server-side and
+treat authentication, HA/device control, Alexa, support and database behaviour as
+cross-repository contracts.
+-->
 # Dinodia Smart Living
 
 ## Status (as of 2026-03-17)

@@ -1,5 +1,10 @@
 'use client';
 
+// Architecture: browser-side adapter for the platform's relative /api routes.
+// It adds the stable device identity headers consumed by platform request guards.
+// The iOS app has a separate PlatformFetch implementation; this module is for
+// the Next.js UI and should not be used to move Home Assistant credentials client-side.
+
 import { getDeviceLabel, getOrCreateDeviceId } from './clientDevice';
 import { ClientApiError, parseClientApiError } from './clientError';
 

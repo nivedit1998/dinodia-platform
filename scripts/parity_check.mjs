@@ -1,3 +1,8 @@
+// Architecture: byte-for-byte contract check between dinodia-platform (source)
+// and dinodia-platform-aws (deployment counterpart). The manifest deliberately
+// covers only shared surfaces; AWS-only deployment/configuration files remain
+// outside this comparison.
+
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -156,3 +161,4 @@ main().catch((err) => {
   process.exit(1);
 });
 
+// End of architecture annotation; runtime comparison logic above is unchanged.
