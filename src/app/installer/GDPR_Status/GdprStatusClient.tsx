@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/installer/GDPR_Status/GdprStatusClient.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 'use client';
 
 import Link from 'next/link';

@@ -1,3 +1,4 @@
+// Architecture: API boundary /internal/support/ha/session/bootstrap; validates a request and delegates to the platform domain/integration layers. Treat authentication, identifiers and response shapes as contracts shared with applicable web, iOS, Alexa, Hub Agent and support consumers.
 // Architecture boundary: private entry point from dinodia-ha-support-gateway.
 // It validates the worker signature before the platform creates/resumes the
 // support session whose state is later held and proxied by the worker.

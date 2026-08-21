@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/adminMonitoringSummary.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { prisma } from '@/lib/prisma';
 import { HistoryBucket, parseBucket, parseDays } from '@/lib/monitoringHistory';
 import { buildMonitoringDisplayContext, UNASSIGNED_AREA } from '@/lib/adminMonitoringDisplay';

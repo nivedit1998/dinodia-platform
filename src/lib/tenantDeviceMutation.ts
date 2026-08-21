@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/tenantDeviceMutation.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { buildAreaAccessMatcher } from '@/lib/areaAccess';
 import { normalizeDisplayText, normalizeLookupKey, buildTenantHaTechnicalName } from '@/lib/displayNormalization';
 import { assignHaAreaToDevices, assignHaAreaToEntities } from '@/lib/haAreas';

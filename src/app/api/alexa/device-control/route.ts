@@ -1,3 +1,4 @@
+// Architecture: API boundary /alexa/device-control; validates a request and delegates to the platform domain/integration layers. Treat authentication, identifiers and response shapes as contracts shared with applicable web, iOS, Alexa, Hub Agent and support consumers.
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { apiFailFromStatus } from '@/lib/apiError';

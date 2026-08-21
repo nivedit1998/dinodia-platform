@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/accessScope.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { prisma } from '@/lib/prisma';
 import { Role } from '@prisma/client';
 
@@ -33,4 +34,3 @@ export async function getScopedHomeContext(userId: number): Promise<ScopedHomeCo
     haConnectionId,
   };
 }
-

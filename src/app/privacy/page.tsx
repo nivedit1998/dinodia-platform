@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/privacy/page.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import Link from 'next/link';
 import { PRIVACY_NOTICE_LAST_UPDATED, PRIVACY_NOTICE_VERSION } from '@/lib/policyVersions';
 
@@ -77,4 +78,3 @@ export default function PrivacyNoticePage() {
     </main>
   );
 }
-

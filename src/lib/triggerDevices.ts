@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/triggerDevices.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { getTenantInventoryBootstrap, buildHaCandidates } from '@/lib/tenantInventoryBootstrap';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { getTenantDashboardDevices } from '@/lib/deviceCapabilities';

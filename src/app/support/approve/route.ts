@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/support/approve/route.ts; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import {

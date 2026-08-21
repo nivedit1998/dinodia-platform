@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/opengraph-image.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import path from 'path';
 import { readFile } from 'fs/promises';
 import { ImageResponse } from 'next/og';

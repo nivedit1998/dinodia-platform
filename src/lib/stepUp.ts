@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/stepUp.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { Prisma, StepUpPurpose } from '@prisma/client';
 import { prisma } from './prisma';
 import { safeLog } from './safeLogger';

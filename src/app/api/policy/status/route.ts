@@ -1,3 +1,4 @@
+// Architecture: API boundary /policy/status; validates a request and delegates to the platform domain/integration layers. Treat authentication, identifiers and response shapes as contracts shared with applicable web, iOS, Alexa, Hub Agent and support consumers.
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getUserPolicyStatus } from '@/lib/policyAcceptance';
@@ -23,4 +24,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Unable to load policy status.' }, { status: 500 });
   }
 }
-

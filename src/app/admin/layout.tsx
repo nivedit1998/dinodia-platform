@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/admin/layout.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';

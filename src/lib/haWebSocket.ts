@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/haWebSocket.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import WebSocket from 'ws';
 import type { HaConnectionLike } from '@/lib/homeAssistant';
 import { buildHaWebSocketBypassHeaders } from '@/lib/haServiceBypass';

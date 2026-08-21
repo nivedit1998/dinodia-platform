@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/companyEmployees.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { randomBytes } from 'crypto';
 import { Role } from '@prisma/client';
 import { getAppUrl } from '@/lib/authChallenges';

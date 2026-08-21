@@ -1,3 +1,4 @@
+// Architecture: Repository maintenance or verification script scripts/check_no_unsafe_logs.mjs; supports parity, generation, security, logging or operational checks outside request-time runtime code.
 import { execFileSync } from 'node:child_process';
 
 function runRg(args) {

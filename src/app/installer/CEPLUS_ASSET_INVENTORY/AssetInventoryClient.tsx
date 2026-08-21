@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/installer/CEPLUS_ASSET_INVENTORY/AssetInventoryClient.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 'use client';
 
 import Link from 'next/link';
@@ -119,4 +120,3 @@ export default function AssetInventoryClient({ installerName }: { installerName:
     </div>
   );
 }
-

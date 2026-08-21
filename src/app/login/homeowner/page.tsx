@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/login/homeowner/page.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import { LoginClient } from '@/app/login/LoginClient';
 
 export default async function HomeownerLoginPage({
@@ -10,4 +11,3 @@ export default async function HomeownerLoginPage({
   const identifier = (Array.isArray(raw) ? raw[0] : raw)?.toString() ?? '';
   return <LoginClient expectedRole="ADMIN" initialIdentifier={identifier} />;
 }
-

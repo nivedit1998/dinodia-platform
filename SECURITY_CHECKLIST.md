@@ -1,3 +1,4 @@
+<!-- Architecture: Active Dinodia module SECURITY_CHECKLIST.md; document its role here while preserving the existing runtime and cross-repository contracts. -->
 # Security Checklist — Phase 7 Supabase Visibility Lockdown
 
 Use this runbook for the `dinodia-platform` repository.

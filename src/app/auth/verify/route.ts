@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/auth/verify/route.ts; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import { NextRequest, NextResponse } from 'next/server';
 import { approveAuthChallengeByToken, getChallengeStatusByToken } from '@/lib/authChallenges';
 import { safeLog } from '@/lib/safeLogger';

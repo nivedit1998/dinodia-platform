@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/kiosk/autologin/route.ts; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import { Buffer } from 'node:buffer';
 import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';

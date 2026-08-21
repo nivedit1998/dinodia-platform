@@ -1,3 +1,4 @@
+// Architecture: Shared platform type contract src/types/triggerDevice.ts; provides compile-time shapes used by routes, services, UI and synchronized deployment consumers.
 export type TriggerDeviceResolutionState =
   | 'bound'
   | 'target_unavailable'

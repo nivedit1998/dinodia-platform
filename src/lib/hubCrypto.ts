@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/hubCrypto.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import crypto from 'crypto';
 
 const HMAC_MAX_SKEW_SECONDS = Number(process.env.HUB_HMAC_MAX_SKEW_SECONDS || 300);

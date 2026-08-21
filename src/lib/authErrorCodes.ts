@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/authErrorCodes.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 export const AUTH_ERROR_CODES = {
   USERNAME_NOT_FOUND: 'USERNAME_NOT_FOUND',
   INVALID_PASSWORD: 'INVALID_PASSWORD',

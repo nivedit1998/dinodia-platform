@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/alexaEvents.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { AlexaProperty } from '@/lib/alexaProperties';

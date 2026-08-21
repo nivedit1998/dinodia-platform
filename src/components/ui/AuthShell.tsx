@@ -1,3 +1,4 @@
+// Architecture: Reusable web UI component src/components/ui/AuthShell.tsx; renders part of the platform surface and receives state/actions from its parent flow.
 import Image from 'next/image';
 import Link from 'next/link';
 import type { ReactNode } from 'react';

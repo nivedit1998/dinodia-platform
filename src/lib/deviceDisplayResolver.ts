@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/deviceDisplayResolver.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { TenantDeviceCleanupStatus } from '@prisma/client';
 import { normalizeLookupKey, stripTenantHaTechnicalPrefix } from '@/lib/displayNormalization';
 import { getTenantOwnershipIndexForHome } from '@/lib/tenantOwnership';

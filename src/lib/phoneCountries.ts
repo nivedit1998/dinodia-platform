@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/phoneCountries.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 export type PhoneCountry = {
   iso2: string;
   name: string;

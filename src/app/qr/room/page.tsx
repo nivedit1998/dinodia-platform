@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/qr/room/page.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import QrRoomClient from './QrRoomClient';
 import { getIosAppStoreUrlConfig } from '@/lib/appStoreUrl';
 

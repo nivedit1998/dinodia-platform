@@ -1,3 +1,4 @@
+// Architecture: Active Dinodia module scripts/check_security_headers.mjs; document its role here while preserving the existing runtime and cross-repository contracts.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -26,4 +27,3 @@ if (missing.length) {
 }
 
 console.log('[check:security] OK');
-

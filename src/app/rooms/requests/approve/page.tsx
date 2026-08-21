@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/rooms/requests/approve/page.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import { RoomAccessApprovalKind, RoomAccessRequestStatus } from '@prisma/client';
 import { AuthShell } from '@/components/ui/AuthShell';
 import { Card } from '@/components/ui/Card';

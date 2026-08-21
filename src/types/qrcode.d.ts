@@ -1,3 +1,4 @@
+// Architecture: Shared platform type contract src/types/qrcode.d.ts; provides compile-time shapes used by routes, services, UI and synchronized deployment consumers.
 declare module 'qrcode' {
   type QRCodeErrorCorrectionLevel = 'L' | 'M' | 'Q' | 'H';
 

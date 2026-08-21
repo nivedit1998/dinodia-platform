@@ -1,3 +1,4 @@
+// Architecture: Repository maintenance or verification script scripts/backfillEncryptedSecrets.mjs; supports parity, generation, security, logging or operational checks outside request-time runtime code.
 import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 

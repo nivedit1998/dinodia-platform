@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/alexaDiscoveryEndpoints.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { getUserWithHaConnection } from '@/lib/haConnection';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import {

@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/email.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import 'server-only';
 
 import { SendEmailCommand, SESClient } from '@aws-sdk/client-ses';

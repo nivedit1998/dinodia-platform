@@ -1,3 +1,4 @@
+// Architecture: Reusable web UI component src/components/ui/Card.tsx; renders part of the platform surface and receives state/actions from its parent flow.
 import type { HTMLAttributes } from 'react';
 
 type CardProps = HTMLAttributes<HTMLDivElement> & {

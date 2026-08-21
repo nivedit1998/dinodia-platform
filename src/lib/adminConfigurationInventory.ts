@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/adminConfigurationInventory.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { getGroupLabel, OTHER_LABEL } from '@/lib/deviceLabels';
 import { normalizeDisplayText, normalizeLookupKey } from '@/lib/displayNormalization';

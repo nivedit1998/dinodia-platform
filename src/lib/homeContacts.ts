@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/homeContacts.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import 'server-only';
 
 import { HomeContactType } from '@prisma/client';
@@ -28,4 +29,3 @@ export async function clearPropertyManagerEmail(homeId: number): Promise<void> {
     where: { homeId, type: HomeContactType.PROPERTY_MANAGER },
   });
 }
-

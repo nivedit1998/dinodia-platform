@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/adminDashboardBootstrap.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { safeLog } from '@/lib/safeLogger';
 import { getAdminAreaInventory } from '@/lib/adminConfigurationInventory';
 import { buildAdminMonitoringSelectorInventory } from '@/lib/adminMonitoringSelectorInventory';

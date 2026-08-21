@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/alexaEndpointId.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 const ENDPOINT_ID_PREFIX = 'ha_';
 
 function base64UrlEncode(value: string): string {
@@ -21,4 +22,3 @@ export function normalizeAlexaEndpointId(value: string): string {
   // If we ever get a non-HA id, still keep it stable and Alexa-safe.
   return `${ENDPOINT_ID_PREFIX}${base64UrlEncode(raw)}`;
 }
-

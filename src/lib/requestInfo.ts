@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/requestInfo.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { NextRequest } from 'next/server';
 
 export function getClientIp(req: NextRequest): string {

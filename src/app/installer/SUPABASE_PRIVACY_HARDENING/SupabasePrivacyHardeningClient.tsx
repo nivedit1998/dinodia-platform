@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/installer/SUPABASE_PRIVACY_HARDENING/SupabasePrivacyHardeningClient.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 'use client';
 
 import Link from 'next/link';

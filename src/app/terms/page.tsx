@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/terms/page.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import Link from 'next/link';
 import { TERMS_LAST_UPDATED, TERMS_VERSION } from '@/lib/policyVersions';
 
@@ -59,4 +60,3 @@ export default function TermsPage() {
     </main>
   );
 }
-

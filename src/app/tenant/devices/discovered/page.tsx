@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/tenant/devices/discovered/page.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import { redirect } from 'next/navigation';
 import { Role } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth';

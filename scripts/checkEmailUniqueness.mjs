@@ -1,3 +1,4 @@
+// Architecture: Repository maintenance or verification script scripts/checkEmailUniqueness.mjs; supports parity, generation, security, logging or operational checks outside request-time runtime code.
 import { PrismaClient, Role } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -111,4 +112,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-

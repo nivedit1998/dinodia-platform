@@ -1,3 +1,4 @@
+// Architecture: Reusable web UI component src/components/ui/Skeleton.tsx; renders part of the platform surface and receives state/actions from its parent flow.
 type SkeletonProps = {
   className?: string;
 };

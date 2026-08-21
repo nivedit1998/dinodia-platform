@@ -1,3 +1,4 @@
+// Architecture: Repository maintenance or verification script scripts/verifyBackfill.mjs; supports parity, generation, security, logging or operational checks outside request-time runtime code.
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 

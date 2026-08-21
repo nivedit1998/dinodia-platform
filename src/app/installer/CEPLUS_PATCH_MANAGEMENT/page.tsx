@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/installer/CEPLUS_PATCH_MANAGEMENT/page.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import { redirect } from 'next/navigation';
 import { Role } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth';
@@ -18,4 +19,3 @@ export default async function InstallerCePlusPatchManagementPage() {
     </CompanyPortalShell>
   );
 }
-

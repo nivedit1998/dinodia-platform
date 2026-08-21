@@ -1,3 +1,4 @@
+// Architecture: Reusable web UI component src/components/auth/useEmailVerificationChallenge.ts; renders part of the platform surface and receives state/actions from its parent flow.
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';

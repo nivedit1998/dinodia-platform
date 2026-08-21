@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/deviceCapabilities.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { getGroupLabel, OTHER_LABEL } from '@/lib/deviceLabels';
 import { getDeviceCapabilityModel } from '@/lib/haEntityCapabilities';
 import type {

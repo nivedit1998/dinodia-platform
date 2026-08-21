@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/remoteAccessLease.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import crypto from 'crypto';
 import { Prisma, StepUpPurpose } from '@prisma/client';
 import { prisma } from './prisma';
@@ -71,4 +72,3 @@ export async function validateRemoteAccessLease(
   });
   return lease ?? null;
 }
-

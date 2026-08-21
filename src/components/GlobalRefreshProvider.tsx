@@ -1,3 +1,4 @@
+// Architecture: Reusable web UI component src/components/GlobalRefreshProvider.tsx; renders part of the platform surface and receives state/actions from its parent flow.
 'use client';
 
 import { useEffect } from 'react';

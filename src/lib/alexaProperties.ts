@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/alexaProperties.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { getPrimaryLabel } from '@/lib/deviceLabels';
 import { getBrightnessPercent } from '@/lib/deviceCapabilities';
 import { UIDevice } from '@/types/device';

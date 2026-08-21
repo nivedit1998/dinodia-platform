@@ -1,3 +1,4 @@
+// Architecture: API boundary /tenant/discovery/sessions/[id]/step; validates a request and delegates to the platform domain/integration layers. Treat authentication, identifiers and response shapes as contracts shared with applicable web, iOS, Alexa, Hub Agent and support consumers.
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailFromStatus, apiFailPayload } from '@/lib/apiError';
 import { CommissioningKind, MatterCommissioningStatus, Prisma, Role } from '@prisma/client';

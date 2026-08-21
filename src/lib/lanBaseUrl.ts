@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/lanBaseUrl.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 function isValidIpv4(ip: string): boolean {
   const parts = ip.trim().split('.');
   if (parts.length !== 4) return false;

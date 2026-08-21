@@ -1,3 +1,4 @@
+// Architecture: API boundary /internal/support/ha/session/end; validates a request and delegates to the platform domain/integration layers. Treat authentication, identifiers and response shapes as contracts shared with applicable web, iOS, Alexa, Hub Agent and support consumers.
 import { NextRequest, NextResponse } from 'next/server';
 import { apiBadRequest, apiForbidden } from '@/lib/apiError';
 import { isValidHaSupportInternalRequest } from '@/lib/haSupportInternalAuth';

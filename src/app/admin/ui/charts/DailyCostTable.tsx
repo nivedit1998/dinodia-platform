@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/admin/ui/charts/DailyCostTable.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 'use client';
 
 import { MetricPoint } from './HeatingTotalsCharts';
@@ -58,4 +59,3 @@ export function DailyCostTable({
     </div>
   );
 }
-

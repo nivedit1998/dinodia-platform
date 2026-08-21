@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/haConfigFlow.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { HaWsClient } from '@/lib/haWebSocket';
 import type { HaConnectionLike } from '@/lib/homeAssistant';
 import { callHomeAssistantAPI } from '@/lib/homeAssistant';

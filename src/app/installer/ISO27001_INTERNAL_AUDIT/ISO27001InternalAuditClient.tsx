@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/installer/ISO27001_INTERNAL_AUDIT/ISO27001InternalAuditClient.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 'use client';
 
 import Link from 'next/link';
@@ -105,4 +106,3 @@ export default function ISO27001InternalAuditClient({ installerName }: { install
     </div>
   );
 }
-

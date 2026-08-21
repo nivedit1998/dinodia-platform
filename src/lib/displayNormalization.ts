@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/displayNormalization.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 export function normalizeDisplayText(value: unknown): string {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
 }

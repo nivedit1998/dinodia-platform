@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/homeownerPolicyStatements.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 export const HOMEOWNER_POLICY_STATEMENTS = [
   {
     key: 'managed_platform_understanding',

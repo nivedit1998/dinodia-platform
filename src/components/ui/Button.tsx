@@ -1,3 +1,4 @@
+// Architecture: Reusable web UI component src/components/ui/Button.tsx; renders part of the platform surface and receives state/actions from its parent flow.
 import { forwardRef } from 'react';
 import type { ButtonHTMLAttributes } from 'react';
 

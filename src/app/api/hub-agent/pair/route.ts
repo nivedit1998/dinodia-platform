@@ -1,3 +1,4 @@
+// Architecture: API boundary /hub-agent/pair; validates a request and delegates to the platform domain/integration layers. Treat authentication, identifiers and response shapes as contracts shared with applicable web, iOS, Alexa, Hub Agent and support consumers.
 // Architecture boundary: authenticated Hub Agent bootstrap endpoint. The local
 // add-on signs serial/timestamp/nonce requests, this route verifies replay/HMAC
 // protection and returns the next token-state material needed by the agent.

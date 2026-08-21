@@ -1,3 +1,4 @@
+// Architecture: API boundary /auth/login-intents/[id]/expire; validates a request and delegates to the platform domain/integration layers. Treat authentication, identifiers and response shapes as contracts shared with applicable web, iOS, Alexa, Hub Agent and support consumers.
 import { NextResponse } from 'next/server';
 import { AUTH_ERROR_CODES, type AuthErrorCode } from '@/lib/authErrorCodes';
 import { revokeLoginIntent } from '@/lib/loginIntents';

@@ -1,3 +1,4 @@
+<!-- Architecture: Active Dinodia module phase8-acceptance.md; document its role here while preserving the existing runtime and cross-repository contracts. -->
 # Phase 8 Acceptance Runbook
 
 ## Status (as of 2026-03-17)

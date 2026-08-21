@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/qr/room/QrRoomClient.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 'use client';
 
 import { useEffect, useMemo } from 'react';

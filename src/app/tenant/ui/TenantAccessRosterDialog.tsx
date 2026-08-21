@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/tenant/ui/TenantAccessRosterDialog.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import { useEffect, type ReactNode } from 'react';
 
 type SupportMeta = {

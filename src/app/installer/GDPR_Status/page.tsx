@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/installer/GDPR_Status/page.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth';
 import { CompanyPortalShell } from '@/components/companyPortal/CompanyPortalShell';

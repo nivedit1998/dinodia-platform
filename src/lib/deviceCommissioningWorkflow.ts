@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/deviceCommissioningWorkflow.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { NewDeviceCommissioningSession } from '@prisma/client';
 import { applyTenantDeviceLabel } from '@/lib/haLabels';
 import {

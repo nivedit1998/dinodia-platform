@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/hubStatusMarkers.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { prisma } from '@/lib/prisma';
 
 const HUB_OFFLINE_JITTER_SECONDS = 20 * 60;
@@ -109,4 +110,3 @@ export async function syncHubStatusMarkersForAllConnections(now = new Date()): P
 
   return { processed, wrote };
 }
-

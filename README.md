@@ -1,3 +1,4 @@
+<!-- Architecture: Active Dinodia module README.md; document its role here while preserving the existing runtime and cross-repository contracts. -->
 <!--
 Architecture map: this is the primary Next.js/Vercel backend and web application.
 It owns the public platform API, Prisma data access, tenant/admin UI, Home Assistant

@@ -1,3 +1,4 @@
+// Architecture: API boundary /internal/alexa/change-report; validates a request and delegates to the platform domain/integration layers. Treat authentication, identifiers and response shapes as contracts shared with applicable web, iOS, Alexa, Hub Agent and support consumers.
 // Architecture boundary: internal platform route used to turn device changes
 // into Alexa ChangeReport events. Device-control/monitoring callers reach this
 // server-side flow; the Alexa skill consumes discovery/control separately.

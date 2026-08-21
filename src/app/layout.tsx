@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/layout.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import './globals.css';
 import type { Metadata } from 'next';
 import Script from 'next/script';

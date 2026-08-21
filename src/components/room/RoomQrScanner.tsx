@@ -1,3 +1,4 @@
+// Architecture: Reusable web UI component src/components/room/RoomQrScanner.tsx; renders part of the platform surface and receives state/actions from its parent flow.
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -158,4 +159,3 @@ export function RoomQrScanner({ onCode }: Props) {
     </Card>
   );
 }
-

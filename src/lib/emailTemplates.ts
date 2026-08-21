@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/emailTemplates.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 type VerifyEmailKind =
   | 'ADMIN_EMAIL_VERIFY'
   | 'TENANT_ENABLE_2FA'

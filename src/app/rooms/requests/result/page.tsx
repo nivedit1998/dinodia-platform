@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/rooms/requests/result/page.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import { AuthShell } from '@/components/ui/AuthShell';
 import { Card } from '@/components/ui/Card';
 
@@ -43,4 +44,3 @@ export default async function RoomRequestResultPage({
     </AuthShell>
   );
 }
-

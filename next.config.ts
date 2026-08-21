@@ -1,3 +1,4 @@
+// Architecture: Active Dinodia module next.config.ts; document its role here while preserving the existing runtime and cross-repository contracts.
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {

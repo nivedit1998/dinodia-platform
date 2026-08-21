@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/not-found.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import Image from 'next/image';
 import Link from 'next/link';
 

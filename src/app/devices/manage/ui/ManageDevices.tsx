@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/devices/manage/ui/ManageDevices.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';

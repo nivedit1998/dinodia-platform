@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/homeownerPolicyNotifications.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import {
   AuditEventType,
   HomeownerPolicyNotificationDelivery,

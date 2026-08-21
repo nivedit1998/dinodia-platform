@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/clientError.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { AUTH_ERROR_CODES } from '@/lib/authErrorCodes';
 import { APP_ERROR_CODES } from '@/lib/apiErrorCodes';
 

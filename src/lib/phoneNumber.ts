@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/phoneNumber.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { getPhoneCountry } from '@/lib/phoneCountries';
 
 export function normalizePhoneNumberE164(raw: unknown): string | null {

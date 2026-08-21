@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/installer/ISO27001_CERTIFICATION_ROADMAP/ISO27001CertificationRoadmapClient.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 'use client';
 
 import Link from 'next/link';
@@ -115,4 +116,3 @@ export default function ISO27001CertificationRoadmapClient({ installerName }: { 
     </div>
   );
 }
-

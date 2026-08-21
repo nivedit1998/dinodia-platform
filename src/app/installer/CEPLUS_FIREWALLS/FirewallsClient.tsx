@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/installer/CEPLUS_FIREWALLS/FirewallsClient.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 'use client';
 
 import Link from 'next/link';
@@ -107,4 +108,3 @@ export default function FirewallsClient({ installerName }: { installerName: stri
     </div>
   );
 }
-

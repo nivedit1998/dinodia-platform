@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/tenantDeviceCleanup.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { TenantDeviceCleanupReason, TenantDeviceCleanupStatus } from '@prisma/client';
 import type { HaConnectionLike } from '@/lib/homeAssistant';
 import { cleanupTenantOwnedHaTargets } from '@/lib/haCleanup';

@@ -1,3 +1,4 @@
+// Architecture: API boundary /policy/accept; validates a request and delegates to the platform domain/integration layers. Treat authentication, identifiers and response shapes as contracts shared with applicable web, iOS, Alexa, Hub Agent and support consumers.
 import { NextRequest, NextResponse } from 'next/server';
 import { PolicyKind } from '@prisma/client';
 import { getCurrentUserFromRequest } from '@/lib/auth';
@@ -61,4 +62,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Unable to record acceptance.' }, { status: 500 });
   }
 }
-

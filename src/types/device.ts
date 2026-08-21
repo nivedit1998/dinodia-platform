@@ -1,3 +1,4 @@
+// Architecture: Shared platform type contract src/types/device.ts; provides compile-time shapes used by routes, services, UI and synchronized deployment consumers.
 export type UIDevice = {
   entityId: string;
   deviceId?: string | null;

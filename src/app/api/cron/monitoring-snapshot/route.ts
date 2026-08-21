@@ -1,3 +1,4 @@
+// Architecture: API boundary /cron/monitoring-snapshot; validates a request and delegates to the platform domain/integration layers. Treat authentication, identifiers and response shapes as contracts shared with applicable web, iOS, Alexa, Hub Agent and support consumers.
 // Architecture boundary: scheduled monitoring ingress. The Cloudflare edge
 // worker invokes this route with the cron authorization header; the route fans
 // out to monitoring/boiler/hub-status snapshots and cleanup on both deployments.

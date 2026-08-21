@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/alexaChangeReportQueueSqs.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import type { AlexaProperty } from '@/lib/alexaProperties';
 

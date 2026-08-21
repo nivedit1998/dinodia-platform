@@ -1,3 +1,4 @@
+// Architecture: Shared platform helper src/lib/homeownerPolicy.ts; centralizes reusable domain, integration, validation or data-access behavior for route and UI callers. Keep exports and error semantics aligned with their consumers.
 import { AuditEventType, HomeownerPolicyAcceptance, Prisma, Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 

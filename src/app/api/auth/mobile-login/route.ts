@@ -1,3 +1,4 @@
+// Architecture: API boundary /auth/mobile-login; validates a request and delegates to the platform domain/integration layers. Treat authentication, identifiers and response shapes as contracts shared with applicable web, iOS, Alexa, Hub Agent and support consumers.
 import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
 import { authenticateWithCredentialsDetailed, createKioskToken, hashPassword } from '@/lib/auth';

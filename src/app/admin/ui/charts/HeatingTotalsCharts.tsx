@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/admin/ui/charts/HeatingTotalsCharts.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 'use client';
 
 import type { PointerEvent } from 'react';

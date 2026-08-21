@@ -1,3 +1,4 @@
+// Architecture: Repository maintenance or verification script scripts/generate_surface_inventory.mjs; supports parity, generation, security, logging or operational checks outside request-time runtime code.
 import { execFileSync } from 'node:child_process';
 
 process.stdout.on('error', (err) => {

@@ -1,3 +1,4 @@
+// Architecture: App Router surface src/app/companylogin/login/page.tsx; composes the user journey for this route and delegates reusable data, validation and state work to shared modules.
 import { getCurrentUser } from '@/lib/auth';
 import { getCompanyLandingPath, isCompanyPortalRole } from '@/lib/companyPortalAccess';
 import CompanyLoginClient from './CompanyLoginClient';

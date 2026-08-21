@@ -1,3 +1,4 @@
+// Architecture: Reusable web UI component src/components/ui/EmptyState.tsx; renders part of the platform surface and receives state/actions from its parent flow.
 import { Button } from './Button';
 
 type EmptyStateProps = {
