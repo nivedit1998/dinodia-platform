@@ -50,6 +50,12 @@ type HaAreasSnapshotUpload = {
   areas: { areaId?: string; name: string }[];
 };
 
+type HubRuntimeUpload = {
+  kind: 'dinodia_os';
+  version: string;
+  capabilities: { managedAreaProvisioningV1: true };
+};
+
 function parseIsoDate(value: unknown): Date | null {
   if (typeof value !== 'string' || !value.trim()) return null;
   const d = new Date(value);
@@ -86,6 +92,24 @@ function normalizeHaAreasSnapshot(value: unknown): { capturedAt: Date; snapshot:
   return {
     capturedAt,
     snapshot: { schemaVersion: 1, capturedAt: capturedAt.toISOString(), areas },
+  };
+}
+
+function normalizeHubRuntime(value: unknown): { reportedAt: Date; runtime: HubRuntimeUpload } | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const obj = value as Record<string, unknown>;
+  if (obj.kind !== 'dinodia_os' || typeof obj.version !== 'string' || !obj.version.trim()) return null;
+  const capabilities = obj.capabilities;
+  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) return null;
+  const cap = capabilities as Record<string, unknown>;
+  if (cap.managedAreaProvisioningV1 !== true) return null;
+  return {
+    reportedAt: new Date(),
+    runtime: {
+      kind: 'dinodia_os',
+      version: obj.version.trim().slice(0, 64),
+      capabilities: { managedAreaProvisioningV1: true },
+    },
   };
 }
 
@@ -317,6 +341,7 @@ export async function POST(req: NextRequest) {
 	    heatingUsage?: HeatingUsageUpload;
 	    heatingUsageResetAckAt?: string;
 	    haAreas?: unknown;
+	    hubRuntime?: unknown;
 	  };
   try {
     body = await req.json();
@@ -329,6 +354,7 @@ export async function POST(req: NextRequest) {
 	  const reportedLanBaseUrl = normalizeLanBaseUrl(body?.lanBaseUrl);
 	  const heatingUsageResetAckAt = parseIsoDate(body?.heatingUsageResetAckAt);
 	  const haAreasSnapshot = normalizeHaAreasSnapshot(body?.haAreas);
+	  const hubRuntime = normalizeHubRuntime(body?.hubRuntime);
 
   if (!serial || typeof ts !== 'number' || !nonce || !sig) {
     return apiFailFromStatus(400, 'serial, ts, nonce, sig are required.');
@@ -349,6 +375,10 @@ export async function POST(req: NextRequest) {
 	      heatingUsageResetRequestedAt: true,
 	      heatingUsageResetCompletedAt: true,
 	      lastReportedHaAreasAt: true,
+	      runtimeKind: true,
+	      runtimeVersion: true,
+	      runtimeCapabilities: true,
+	      runtimeCapabilitiesReportedAt: true,
 	      hubTokens: true,
 	      homeId: true,
 	      home: { select: { id: true, haConnectionId: true } },
@@ -470,6 +500,13 @@ export async function POST(req: NextRequest) {
 	  ) {
 	    hubUpdate.lastReportedHaAreas = haAreasSnapshot.snapshot;
 	    hubUpdate.lastReportedHaAreasAt = haAreasSnapshot.capturedAt;
+	  }
+
+	  if (hubRuntime) {
+	    hubUpdate.runtimeKind = hubRuntime.runtime.kind;
+	    hubUpdate.runtimeVersion = hubRuntime.runtime.version;
+	    hubUpdate.runtimeCapabilities = hubRuntime.runtime.capabilities;
+	    hubUpdate.runtimeCapabilitiesReportedAt = hubRuntime.reportedAt;
 	  }
 
 	  await prisma.$transaction(async (tx) => {

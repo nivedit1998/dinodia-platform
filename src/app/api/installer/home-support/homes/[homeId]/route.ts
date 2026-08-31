@@ -12,6 +12,7 @@ import {
   getLatestHomeSupportRequest,
 } from '@/lib/supportHomeAccess';
 import { supportAuditSummary } from '@/lib/supportHomeAccessAudit';
+import { hubRuntimeSummary } from '@/lib/dinodiaOsAreaProvisioning';
 
 function parseHomeId(raw: string | undefined): number | null {
   if (!raw) return null;
@@ -65,6 +66,11 @@ export async function GET(
           lastAckedHubTokenVersion: true,
           lastReportedLanBaseUrl: true,
           lastReportedLanBaseUrlAt: true,
+          runtimeKind: true,
+          runtimeVersion: true,
+          runtimeCapabilities: true,
+          runtimeCapabilitiesReportedAt: true,
+          platformSyncIntervalMinutes: true,
         },
       },
       haConnection: {
@@ -153,9 +159,10 @@ export async function GET(
         lastAckedHubTokenVersion: home.hubInstall.lastAckedHubTokenVersion,
         lastReportedLanBaseUrl: home.hubInstall.lastReportedLanBaseUrl,
         lastReportedLanBaseUrlAt: home.hubInstall.lastReportedLanBaseUrlAt,
+        runtime: hubRuntimeSummary(home.hubInstall),
         installedAt,
       }
-    : { serial: null, lastSeenAt: null, installedAt };
+    : { serial: null, lastSeenAt: null, runtime: null, installedAt };
 
   const [roomCount, auditEvents] = await Promise.all([
     home.hubInstall ? prisma.room.count({ where: { hubInstallId: home.hubInstall.id } }) : Promise.resolve(0),

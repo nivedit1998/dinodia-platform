@@ -424,6 +424,10 @@ model HubInstall {
   lastReportedLanBaseUrlAt     DateTime?
   lastReportedHaAreas          Json?
   lastReportedHaAreasAt        DateTime?
+  runtimeKind                  String?
+  runtimeVersion               String?
+  runtimeCapabilities          Json?
+  runtimeCapabilitiesReportedAt DateTime?
   lastSeenAt                   DateTime?
   home                         Home?                        @relation("HomeHubInstall", fields: [homeId], references: [id], onDelete: SetNull)
   homeId                       Int?                         @unique

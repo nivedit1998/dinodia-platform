@@ -1,18 +1,17 @@
 // Architecture: API boundary /installer/hubs/[hubInstallId]/rooms; validates a request and delegates to the platform domain/integration layers. Treat authentication, identifiers and response shapes as contracts shared with applicable web, iOS, Alexa, Hub Agent and support consumers.
 import { NextRequest, NextResponse } from 'next/server';
-import { RoomStatus } from '@prisma/client';
 import { apiFailFromStatus } from '@/lib/apiError';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { requireTrustedPrivilegedDevice } from '@/lib/deviceAuth';
 import { canAccessProvision } from '@/lib/companyPortalAccess';
 import {
-  buildRoomQrPayload,
-  decryptRoomQrSecret,
-  encryptRoomQrSecret,
-  generateRoomQrSecret,
-  hashRoomQrSecret,
-} from '@/lib/roomQr';
+  DinodiaOsAreaError,
+  getDinodiaOsHubContext,
+  hubRuntimeSummary,
+} from '@/lib/dinodiaOsAreaProvisioning';
+import { createQrRoom } from '@/lib/qrRoomService';
+import { buildRoomQrPayload, decryptRoomQrSecret } from '@/lib/roomQr';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,7 +28,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ hubInst
 
   const { hubInstallId } = await context.params;
 
-  const hub = await prisma.hubInstall.findUnique({ where: { id: hubInstallId }, select: { id: true } });
+  const hub = await getDinodiaOsHubContext(hubInstallId);
   if (!hub) return apiFailFromStatus(404, 'Hub not found.');
 
   const rooms = await prisma.room.findMany({
@@ -63,7 +62,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ hubInst
     };
   });
 
-  return NextResponse.json({ ok: true, rooms: shaped });
+  return NextResponse.json({ ok: true, rooms: shaped, hubRuntime: hubRuntimeSummary(hub) });
 }
 
 export async function POST(req: NextRequest, context: { params: Promise<{ hubInstallId: string }> }) {
@@ -77,9 +76,6 @@ export async function POST(req: NextRequest, context: { params: Promise<{ hubIns
   }
 
   const { hubInstallId } = await context.params;
-  const hub = await prisma.hubInstall.findUnique({ where: { id: hubInstallId }, select: { id: true } });
-  if (!hub) return apiFailFromStatus(404, 'Hub not found.');
-
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== 'object') {
     return apiFailFromStatus(400, 'Invalid request. Please try again.');
@@ -87,24 +83,13 @@ export async function POST(req: NextRequest, context: { params: Promise<{ hubIns
   const obj = body as Record<string, unknown>;
   const displayName = typeof obj.displayName === 'string' ? obj.displayName.trim() : '';
   const haAreaName = typeof obj.haAreaName === 'string' ? obj.haAreaName.trim() : '';
-  if (!displayName || !haAreaName) {
-    return apiFailFromStatus(400, 'Room name and Home Assistant area name are required.');
+  try {
+    const created = await createQrRoom({ hubInstallId, displayName, haAreaName });
+    return NextResponse.json({ ok: true, roomId: created.roomId, existing: created.existing, area: created.area });
+  } catch (error) {
+    if (error instanceof DinodiaOsAreaError) return apiFailFromStatus(error.status, error.message);
+    const prismaError = error as { code?: string };
+    if (prismaError?.code === 'P2002') return apiFailFromStatus(409, 'A room already exists for that Home Assistant area name.');
+    return apiFailFromStatus(500, 'Unable to create room right now.');
   }
-
-  const secret = generateRoomQrSecret();
-  const room = await prisma.room.create({
-    data: {
-      hubInstallId,
-      displayName,
-      haAreaName,
-      haAreaNameOriginal: haAreaName,
-      qrKeyVersion: 1,
-      qrSecretHash: hashRoomQrSecret(secret),
-      qrSecretCiphertext: encryptRoomQrSecret(secret),
-      status: RoomStatus.ACTIVE,
-    },
-    select: { id: true },
-  });
-
-  return NextResponse.json({ ok: true, roomId: room.id });
 }

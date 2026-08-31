@@ -6,6 +6,12 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { requireTrustedPrivilegedDevice } from '@/lib/deviceAuth';
 import { canAccessProvision } from '@/lib/companyPortalAccess';
+import {
+  DinodiaOsAreaError,
+  getDinodiaOsHubContext,
+  isDinodiaOsManagedAreaHub,
+  resyncDinodiaOsArea,
+} from '@/lib/dinodiaOsAreaProvisioning';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,10 +54,26 @@ export async function POST(
     return NextResponse.json({ ok: true, updated: false });
   }
 
+  const hubContext = await getDinodiaOsHubContext(hubInstallId);
+  const isDinodiaOs = hubContext?.runtimeKind === 'dinodia_os';
+  let storedNewAreaName = newHaAreaName;
+  if (isDinodiaOs) {
+    if (!isDinodiaOsManagedAreaHub(hubContext)) {
+      return apiFailFromStatus(409, 'The Dinodia OS hub heartbeat is stale. Wait for the hub to reconnect and try again.');
+    }
+    try {
+      const result = await resyncDinodiaOsArea(hubInstallId, oldArea, newHaAreaName);
+      storedNewAreaName = result.areaName;
+    } catch (error) {
+      if (error instanceof DinodiaOsAreaError) return apiFailFromStatus(error.status, error.message);
+      return apiFailFromStatus(502, 'Unable to resync the area in Dinodia OS.');
+    }
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.room.update({
       where: { id: room.id },
-      data: { haAreaName: newHaAreaName },
+      data: { haAreaName: storedNewAreaName },
     });
 
     if (homeId) {
@@ -63,7 +85,7 @@ export async function POST(
       if (ids.length > 0) {
         await tx.accessRule.updateMany({
           where: { userId: { in: ids }, area: oldArea },
-          data: { area: newHaAreaName },
+          data: { area: storedNewAreaName },
         });
       }
     }
@@ -79,7 +101,8 @@ export async function POST(
           roomId: room.id,
           roomDisplayName: room.displayName,
           oldHaAreaName: oldArea,
-          newHaAreaName,
+          newHaAreaName: storedNewAreaName,
+          dinodiaOs: isDinodiaOs,
         },
       },
     });

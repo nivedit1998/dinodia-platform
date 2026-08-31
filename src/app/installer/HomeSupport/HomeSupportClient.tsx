@@ -51,6 +51,12 @@ type HomeDetail = {
     lastAckedHubTokenVersion?: number | null;
     lastReportedLanBaseUrl?: string | null;
     lastReportedLanBaseUrlAt?: string | null;
+    runtime?: {
+      kind: string | null;
+      version: string | null;
+      managedAreaProvisioningV1: boolean;
+      capabilitiesReportedAt: string | null;
+    } | null;
   } | null;
   homeowners?: { email: string | null; username: string }[];
   tenants?: { email: string | null; username: string; areas: string[] }[];
@@ -380,6 +386,7 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
   const [roomsByHomeId, setRoomsByHomeId] = useState<Record<number, RoomSummary[]>>({});
   const [roomsLoading, setRoomsLoading] = useState<Record<number, boolean>>({});
   const [roomsError, setRoomsError] = useState<Record<number, string | null>>({});
+  const [roomsNotice, setRoomsNotice] = useState<Record<number, string | null>>({});
   const [haAreasByHomeId, setHaAreasByHomeId] = useState<Record<number, string[]>>({});
   const [addingRoom, setAddingRoom] = useState<Record<number, boolean>>({});
   const [newRoomDisplayName, setNewRoomDisplayName] = useState<Record<number, string>>({});
@@ -497,13 +504,14 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
   async function addRoom(homeId: number) {
     const displayName = (newRoomDisplayName[homeId] ?? '').trim();
     const haAreaName = (newRoomHaAreaName[homeId] ?? '').trim();
-    if (!displayName || !haAreaName) {
-      alert('Enter both display name and HA area name.');
+    const dinodiaOs = details[homeId]?.hubStatus?.runtime?.kind === 'dinodia_os';
+    if (!haAreaName || (!dinodiaOs && !displayName)) {
+      alert(dinodiaOs ? 'Choose a Home Assistant area.' : 'Enter both display name and HA area name.');
       return;
     }
     setAddingRoom((prev) => ({ ...prev, [homeId]: true }));
     try {
-      await platformFetchJson<{ ok?: boolean }>(
+      const created = await platformFetchJson<{ ok?: boolean; existing?: boolean }>(
         `/api/installer/home-support/homes/${homeId}/rooms`,
         {
           method: 'POST',
@@ -513,6 +521,10 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
         'Failed to add room.'
       );
       setNewRoomDisplayName((prev) => ({ ...prev, [homeId]: '' }));
+      setRoomsNotice((prev) => ({
+        ...prev,
+        [homeId]: created.existing ? 'Room already existed; the existing QR room was reused.' : 'Room created after the Dinodia OS area was confirmed.',
+      }));
       await loadRooms(homeId);
     } catch (err) {
       alert(friendlyUnknownError(err, 'Failed to add room.'));
@@ -552,9 +564,27 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
   }
 
   async function removeRoom(homeId: number, room: RoomSummary) {
-    const ok = window.confirm(
-      `Remove "${room.displayName}"? This will also revoke tenant access for HA area "${room.haAreaName}".`
-    );
+    let confirmation = `Remove "${room.displayName}"? This will also revoke tenant access for HA area "${room.haAreaName}".`;
+    try {
+      const preflight = await platformFetchJson<{
+        dinodiaOs?: boolean;
+        area?: { exists?: boolean; areaName?: string; deviceCount?: number; entityCount?: number } | null;
+      }>(
+        `/api/installer/home-support/homes/${homeId}/rooms/${encodeURIComponent(room.id)}`,
+        { cache: 'no-store' },
+        'Unable to check the room area before removal.'
+      );
+      if (preflight.dinodiaOs) {
+        const area = preflight.area;
+        confirmation = area?.exists
+          ? `Remove "${room.displayName}" and its Dinodia OS area "${area.areaName || room.haAreaName}"? This will clear ${area.deviceCount || 0} device assignment(s) and ${area.entityCount || 0} child-entity assignment(s), remove the area, and revoke tenant access. Continue?`
+          : `The Dinodia OS area "${room.haAreaName}" is already missing. Remove the room and revoke tenant access?`;
+      }
+    } catch (err) {
+      alert(friendlyUnknownError(err, 'Unable to check the room area before removal.'));
+      return;
+    }
+    const ok = window.confirm(confirmation);
     if (!ok) return;
     try {
       await platformFetchJson<{ ok?: boolean }>(
@@ -1515,20 +1545,27 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
                               </div>
                             </div>
                             <p className="mt-1 text-xs text-slate-600">
-                              Manage persistent room QR codes for this hub. Removing a room also revokes tenant access for that HA area.
+                              Manage persistent room QR codes for this hub. Dinodia OS rooms create and remove the matching hub area; Home Assistant rooms keep their existing behavior.
                             </p>
+                            {detail.hubStatus?.runtime?.kind === 'dinodia_os' ? (
+                              <p className="mt-2 inline-flex rounded-full bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700">
+                                Dinodia OS area sync {detail.hubStatus.runtime.managedAreaProvisioningV1 ? 'enabled' : 'waiting for a fresh capability heartbeat'}
+                              </p>
+                            ) : null}
 
                             {(detail.canManageQrRooms ?? canManageQrRooms) ? (
                               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
                                 <div>
-                                  <label className="block text-xs font-semibold text-slate-700">Room display name</label>
+                                  <label className="block text-xs font-semibold text-slate-700">
+                                    Room display name{details[home.homeId]?.hubStatus?.runtime?.kind === 'dinodia_os' ? ' (optional)' : ''}
+                                  </label>
                                   <input
                                     className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-xs"
                                     value={newRoomDisplayName[home.homeId] ?? ''}
                                     onChange={(e) =>
                                       setNewRoomDisplayName((prev) => ({ ...prev, [home.homeId]: e.target.value }))
                                     }
-                                    placeholder="e.g. Room 1"
+                                    placeholder={details[home.homeId]?.hubStatus?.runtime?.kind === 'dinodia_os' ? 'Defaults to area name' : 'e.g. Room 1'}
                                   />
                                 </div>
                                 <div>
@@ -1576,6 +1613,9 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
 
                             {roomsError[home.homeId] ? (
                               <p className="mt-2 text-xs text-rose-600">{roomsError[home.homeId]}</p>
+                            ) : null}
+                            {roomsNotice[home.homeId] ? (
+                              <p className="mt-2 text-xs text-emerald-700">{roomsNotice[home.homeId]}</p>
                             ) : null}
                             {roomsLoading[home.homeId] ? (
                               <p className="mt-2 text-xs text-slate-600">Loading rooms…</p>
@@ -1632,7 +1672,7 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
 
                                     <div className="mt-3">
                                       <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                        Resync HA area
+                                          Resync HA area in hub
                                       </label>
                                       {(detail.canManageQrRooms ?? canManageQrRooms) ? (
                                         <select
@@ -1906,6 +1946,10 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
                             <p className="text-sm font-semibold text-slate-900">Hub Local connection Status</p>
                             <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
                               <CredentialRow label="Serial" value={detail.hubStatus?.serial ?? null} />
+                              <CredentialRow
+                                label="Hub runtime"
+                                value={detail.hubStatus?.runtime?.kind ? `${detail.hubStatus.runtime.kind} ${detail.hubStatus.runtime.version || ''}`.trim() : null}
+                              />
                               <CredentialRow label="Last seen" value={formatDate(detail.hubStatus?.lastSeenAt)} />
                               <CredentialRow
                                 label="Last reported LAN base URL"

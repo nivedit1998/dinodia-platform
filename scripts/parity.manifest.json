@@ -3,6 +3,8 @@
   "destRepo": "dinodia-platform-aws",
   "paths": [
     { "src": "labels/registry.json", "dest": "labels/registry.json", "mode": "file" },
+    { "src": "prisma/schema.prisma", "dest": "prisma/schema.prisma", "mode": "file" },
+    { "src": "prisma/migrations/20260831120000_dinodia_os_runtime_capabilities/migration.sql", "dest": "prisma/migrations/20260831120000_dinodia_os_runtime_capabilities/migration.sql", "mode": "file" },
 
     { "src": "src/app/layout.tsx", "dest": "src/app/layout.tsx", "mode": "file" },
     { "src": "src/app/globals.css", "dest": "src/app/globals.css", "mode": "file" },
@@ -35,6 +37,8 @@
     { "src": "src/lib/deviceControl.ts", "dest": "src/lib/deviceControl.ts", "mode": "file" },
     { "src": "src/lib/deviceCommissioningWorkflow.ts", "dest": "src/lib/deviceCommissioningWorkflow.ts", "mode": "file" },
     { "src": "src/lib/haAreas.ts", "dest": "src/lib/haAreas.ts", "mode": "file" },
+    { "src": "src/lib/dinodiaOsAreaProvisioning.ts", "dest": "src/lib/dinodiaOsAreaProvisioning.ts", "mode": "file" },
+    { "src": "src/lib/qrRoomService.ts", "dest": "src/lib/qrRoomService.ts", "mode": "file" },
     { "src": "src/lib/haConfigFlow.ts", "dest": "src/lib/haConfigFlow.ts", "mode": "file" },
     { "src": "src/lib/haLabels.ts", "dest": "src/lib/haLabels.ts", "mode": "file" },
 
@@ -111,6 +115,11 @@
     { "src": "src/lib/alexaEvents.ts", "dest": "src/lib/alexaEvents.ts", "mode": "file" },
     { "src": "src/app/api/auth/register-admin/route.ts", "dest": "src/app/api/auth/register-admin/route.ts", "mode": "file" },
     { "src": "src/app/api/hub-agent/token-state/route.ts", "dest": "src/app/api/hub-agent/token-state/route.ts", "mode": "file" },
+    { "src": "src/app/api/installer/home-support/homes/[homeId]/rooms/route.ts", "dest": "src/app/api/installer/home-support/homes/[homeId]/rooms/route.ts", "mode": "file" },
+    { "src": "src/app/api/installer/home-support/homes/[homeId]/rooms/[roomId]/route.ts", "dest": "src/app/api/installer/home-support/homes/[homeId]/rooms/[roomId]/route.ts", "mode": "file" },
+    { "src": "src/app/api/installer/home-support/homes/[homeId]/rooms/[roomId]/resync/route.ts", "dest": "src/app/api/installer/home-support/homes/[homeId]/rooms/[roomId]/resync/route.ts", "mode": "file" },
+    { "src": "src/app/api/installer/hubs/[hubInstallId]/rooms/route.ts", "dest": "src/app/api/installer/hubs/[hubInstallId]/rooms/route.ts", "mode": "file" },
+    { "src": "src/app/api/installer/hubs/[hubInstallId]/rooms/[roomId]/resync/route.ts", "dest": "src/app/api/installer/hubs/[hubInstallId]/rooms/[roomId]/resync/route.ts", "mode": "file" },
 
     { "src": "scripts/check_no_unsafe_logs.mjs", "dest": "scripts/check_no_unsafe_logs.mjs", "mode": "file" },
     { "src": "scripts/check_security_headers.mjs", "dest": "scripts/check_security_headers.mjs", "mode": "file" },

@@ -22,6 +22,13 @@ type RoomRow = {
   qrPayload: string;
 };
 
+type HubRuntimeSummary = {
+  kind: string | null;
+  version: string | null;
+  managedAreaProvisioningV1: boolean;
+  capabilitiesReportedAt: string | null;
+};
+
 export default function ProvisionClient({ installerName, role }: { installerName: string; role: Role }) {
   const router = useRouter();
   const [serial, setSerial] = useState('');
@@ -36,6 +43,7 @@ export default function ProvisionClient({ installerName, role }: { installerName
   const [qrPayload, setQrPayload] = useState<string | null>(null);
   const [haAreas, setHaAreas] = useState<string[]>([]);
   const [rooms, setRooms] = useState<Array<RoomRow & { qrDataUrl?: string | null }>>([]);
+  const [hubRuntime, setHubRuntime] = useState<HubRuntimeSummary | null>(null);
   const [roomsLoading, setRoomsLoading] = useState(false);
   const [roomsError, setRoomsError] = useState<string | null>(null);
   const [newRoomDisplayName, setNewRoomDisplayName] = useState('');
@@ -119,6 +127,7 @@ export default function ProvisionClient({ installerName, role }: { installerName
         return;
       }
       const list: RoomRow[] = Array.isArray(data.rooms) ? data.rooms : [];
+      setHubRuntime(data.hubRuntime && typeof data.hubRuntime === 'object' ? data.hubRuntime : null);
       const withQr = await Promise.all(
         list.map(async (room) => {
           try {
@@ -151,6 +160,7 @@ export default function ProvisionClient({ installerName, role }: { installerName
     setQrPayload(null);
     setQrError(null);
     setRooms([]);
+    setHubRuntime(null);
     setHaAreas([]);
     setNewRoomDisplayName('');
     setNewRoomHaAreaName('');
@@ -219,8 +229,9 @@ export default function ProvisionClient({ installerName, role }: { installerName
     if (!hubInstallId) return;
     const displayName = newRoomDisplayName.trim();
     const haAreaName = newRoomHaAreaName.trim();
-    if (!displayName || !haAreaName) {
-      setRoomsError('Enter a room name and choose a Home Assistant area.');
+    const dinodiaOs = hubRuntime?.kind === 'dinodia_os';
+    if (!haAreaName || (!dinodiaOs && !displayName)) {
+      setRoomsError(dinodiaOs ? 'Choose a Home Assistant area.' : 'Enter a room name and choose a Home Assistant area.');
       return;
     }
     setAddingRoom(true);
@@ -430,13 +441,15 @@ export default function ProvisionClient({ installerName, role }: { installerName
 
               <form onSubmit={handleAddRoom} className="mt-4 grid gap-3 md:grid-cols-3">
                 <div className="md:col-span-1">
-                  <label className="block text-xs font-medium text-slate-700">Room display name</label>
+                  <label className="block text-xs font-medium text-slate-700">
+                    Room display name{hubRuntime?.kind === 'dinodia_os' ? ' (optional)' : ''}
+                  </label>
                   <input
                     className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-slate-500 focus:outline-none"
                     value={newRoomDisplayName}
                     onChange={(e) => setNewRoomDisplayName(e.target.value)}
-                    placeholder="e.g. Room 1"
-                    required
+                    placeholder={hubRuntime?.kind === 'dinodia_os' ? 'Defaults to area name' : 'e.g. Room 1'}
+                    required={hubRuntime?.kind !== 'dinodia_os'}
                   />
                 </div>
                 <div className="md:col-span-1">

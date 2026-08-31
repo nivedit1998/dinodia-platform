@@ -1,16 +1,13 @@
 // Architecture: API boundary /installer/home-support/homes/[homeId]/rooms; validates a request and delegates to the platform domain/integration layers. Treat authentication, identifiers and response shapes as contracts shared with applicable web, iOS, Alexa, Hub Agent and support consumers.
 import { NextRequest, NextResponse } from 'next/server';
-import { AuditEventType, Prisma, RoomStatus } from '@prisma/client';
 import { apiFailFromStatus } from '@/lib/apiError';
 import { prisma } from '@/lib/prisma';
 import { requireCompanyHomeSupportQrOperator } from '@/lib/companyPortalGuards';
 import {
-  buildRoomQrPayload,
-  decryptRoomQrSecret,
-  encryptRoomQrSecret,
-  generateRoomQrSecret,
-  hashRoomQrSecret,
-} from '@/lib/roomQr';
+  DinodiaOsAreaError,
+} from '@/lib/dinodiaOsAreaProvisioning';
+import { createQrRoom } from '@/lib/qrRoomService';
+import { buildRoomQrPayload, decryptRoomQrSecret } from '@/lib/roomQr';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -98,41 +95,19 @@ export async function POST(req: NextRequest, context: { params: Promise<{ homeId
   const obj = body as Record<string, unknown>;
   const displayName = typeof obj.displayName === 'string' ? obj.displayName.trim() : '';
   const haAreaName = typeof obj.haAreaName === 'string' ? obj.haAreaName.trim() : '';
-  if (!displayName || !haAreaName) {
-    return apiFailFromStatus(400, 'Room name and Home Assistant area name are required.');
-  }
-
-  const secret = generateRoomQrSecret();
   try {
-    const room = await prisma.room.create({
-      data: {
-        hubInstallId,
-        displayName,
-        haAreaName,
-        haAreaNameOriginal: haAreaName,
-        qrKeyVersion: 1,
-        qrSecretHash: hashRoomQrSecret(secret),
-        qrSecretCiphertext: encryptRoomQrSecret(secret),
-        status: RoomStatus.ACTIVE,
-      },
-      select: { id: true },
+    const created = await createQrRoom({
+      actorUserId: resolved.userId,
+      homeId,
+      hubInstallId,
+      displayName,
+      haAreaName,
     });
-
-    await prisma.auditEvent.create({
-      data: {
-        type: AuditEventType.ROOM_QR_REKEYED,
-        homeId,
-        actorUserId: resolved.userId,
-        metadata: { action: 'ROOM_CREATED', roomId: room.id, displayName, haAreaName },
-      },
-    });
-
-    return NextResponse.json({ ok: true, roomId: room.id });
-  } catch (err) {
-    const prismaError = err as Prisma.PrismaClientKnownRequestError;
-    if (prismaError?.code === 'P2002') {
-      return apiFailFromStatus(409, 'A room already exists for that Home Assistant area name.');
-    }
+    return NextResponse.json({ ok: true, roomId: created.roomId, existing: created.existing, area: created.area });
+  } catch (error) {
+    if (error instanceof DinodiaOsAreaError) return apiFailFromStatus(error.status, error.message);
+    const prismaError = error as { code?: string };
+    if (prismaError?.code === 'P2002') return apiFailFromStatus(409, 'A room already exists for that Home Assistant area name.');
     return apiFailFromStatus(500, 'Unable to create room right now.');
   }
 }
