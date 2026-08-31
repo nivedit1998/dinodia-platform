@@ -11,6 +11,7 @@ import {
   isDinodiaOsManagedAreaHub,
   removeDinodiaOsArea,
 } from '@/lib/dinodiaOsAreaProvisioning';
+import { hashForLog } from '@/lib/safeLogger';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -123,6 +124,7 @@ export async function DELETE(
         accessRulesDeleted: revoked.accessRulesDeleted,
         dinodiaOsAreaRemoved: areaRemoval?.removed ?? false,
         dinodiaOsAreaAlreadyMissing: areaRemoval?.alreadyMissing ?? false,
+        dinodiaOsAreaIdHash: hashForLog(areaRemoval?.areaId ?? ''),
         dinodiaOsDeviceAssignments: areaRemoval?.deviceCount ?? 0,
         dinodiaOsEntityAssignments: areaRemoval?.entityCount ?? 0,
       },
