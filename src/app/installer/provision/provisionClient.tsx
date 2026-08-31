@@ -454,28 +454,22 @@ export default function ProvisionClient({ installerName, role }: { installerName
                 </div>
                 <div className="md:col-span-1">
                   <label className="block text-xs font-medium text-slate-700">Home Assistant area</label>
-                  {haAreas.length > 0 ? (
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-slate-500 focus:outline-none"
-                      value={newRoomHaAreaName}
-                      onChange={(e) => setNewRoomHaAreaName(e.target.value)}
-                      required
-                    >
-                      {haAreas.map((area) => (
-                        <option key={area} value={area}>
-                          {area}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-slate-500 focus:outline-none"
-                      value={newRoomHaAreaName}
-                      onChange={(e) => setNewRoomHaAreaName(e.target.value)}
-                      placeholder="e.g. Bedroom"
-                      required
-                    />
-                  )}
+                  <input
+                    list="provision-ha-areas"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-slate-500 focus:outline-none"
+                    value={newRoomHaAreaName}
+                    onChange={(e) => setNewRoomHaAreaName(e.target.value)}
+                    placeholder="Type an area, e.g. Bedroom"
+                    required
+                  />
+                  <datalist id="provision-ha-areas">
+                    {haAreas.map((area) => (
+                      <option key={area} value={area} />
+                    ))}
+                  </datalist>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Type a new area name or choose a live area suggestion.
+                  </p>
                 </div>
                 <div className="md:col-span-1 flex items-end">
                   <button

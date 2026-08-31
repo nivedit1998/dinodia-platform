@@ -1570,30 +1570,24 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
                                 </div>
                                 <div>
                                   <label className="block text-xs font-semibold text-slate-700">Home Assistant area</label>
-                                  {Array.isArray(haAreasByHomeId[home.homeId]) && haAreasByHomeId[home.homeId]!.length > 0 ? (
-                                    <select
-                                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-xs"
-                                      value={newRoomHaAreaName[home.homeId] ?? ''}
-                                      onChange={(e) =>
-                                        setNewRoomHaAreaName((prev) => ({ ...prev, [home.homeId]: e.target.value }))
-                                      }
-                                    >
-                                      {haAreasByHomeId[home.homeId]!.map((area) => (
-                                        <option key={area} value={area}>
-                                          {area}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <input
-                                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-xs"
-                                      value={newRoomHaAreaName[home.homeId] ?? ''}
-                                      onChange={(e) =>
-                                        setNewRoomHaAreaName((prev) => ({ ...prev, [home.homeId]: e.target.value }))
-                                      }
-                                      placeholder="e.g. Bedroom"
-                                    />
-                                  )}
+                                  <input
+                                    list={`home-support-ha-areas-${home.homeId}`}
+                                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-xs"
+                                    value={newRoomHaAreaName[home.homeId] ?? ''}
+                                    onChange={(e) =>
+                                      setNewRoomHaAreaName((prev) => ({ ...prev, [home.homeId]: e.target.value }))
+                                    }
+                                    placeholder="Type an area, e.g. Bedroom"
+                                    required
+                                  />
+                                  <datalist id={`home-support-ha-areas-${home.homeId}`}>
+                                    {(haAreasByHomeId[home.homeId] ?? []).map((area) => (
+                                      <option key={area} value={area} />
+                                    ))}
+                                  </datalist>
+                                  <p className="mt-1 text-[11px] text-slate-500">
+                                    Type a new area name or choose a live area suggestion.
+                                  </p>
                                 </div>
                                 <div className="flex items-end">
                                   <button
