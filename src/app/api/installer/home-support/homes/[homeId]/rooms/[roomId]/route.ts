@@ -12,6 +12,7 @@ import {
   removeDinodiaOsArea,
 } from '@/lib/dinodiaOsAreaProvisioning';
 import { hashForLog } from '@/lib/safeLogger';
+import { removeAreaFromHaAreasSnapshot } from '@/lib/haAreasSnapshot';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -73,7 +74,7 @@ export async function DELETE(
 
   const hub = await prisma.home.findUnique({
     where: { id: homeId },
-    select: { hubInstall: { select: { id: true } } },
+    select: { hubInstall: { select: { id: true, lastReportedHaAreas: true } } },
   });
   const hubInstallId = hub?.hubInstall?.id;
   if (!hubInstallId) return apiFailFromStatus(404, 'Home not found.');
@@ -108,6 +109,27 @@ export async function DELETE(
       ? await tx.accessRule.deleteMany({ where: { userId: { in: ids }, area: room.haAreaName } })
       : { count: 0 };
     await tx.room.delete({ where: { id: room.id } });
+
+    // Room deletion already changed the live Dinodia OS registry. Keep the
+    // platform's cached snapshot in sync immediately instead of waiting for
+    // the next heartbeat; an empty snapshot is valid and must be persisted.
+    if (hubContext?.runtimeKind === 'dinodia_os' && areaRemoval) {
+      const nextSnapshot = removeAreaFromHaAreasSnapshot(
+        hub.hubInstall?.lastReportedHaAreas,
+        room.haAreaName,
+        areaRemoval.areaId,
+        new Date()
+      );
+      if (nextSnapshot) {
+        await tx.hubInstall.update({
+          where: { id: hubInstallId },
+          data: {
+            lastReportedHaAreas: nextSnapshot,
+            lastReportedHaAreasAt: new Date(nextSnapshot.capturedAt),
+          },
+        });
+      }
+    }
     return { accessRulesDeleted: accessRules.count };
   });
 

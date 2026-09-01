@@ -16,6 +16,7 @@ import { verifyHmac } from '@/lib/hubCrypto';
 import { enforceHubReplayProtection, HubReplayError } from '@/lib/hubReplayProtection';
 import { normalizeLanBaseUrl } from '@/lib/lanBaseUrl';
 import { hashForLog, safeLog } from '@/lib/safeLogger';
+import { normalizeHaAreasSnapshot } from '@/lib/haAreasSnapshot';
 
 function isUniqueConstraintError(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
@@ -44,12 +45,6 @@ type HeatingUsageUpload = {
   devices?: unknown;
 };
 
-type HaAreasSnapshotUpload = {
-  schemaVersion: 1;
-  capturedAt: string;
-  areas: { areaId?: string; name: string }[];
-};
-
 type HubRuntimeUpload = {
   kind: 'dinodia_os';
   version: string;
@@ -58,41 +53,8 @@ type HubRuntimeUpload = {
 
 function parseIsoDate(value: unknown): Date | null {
   if (typeof value !== 'string' || !value.trim()) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
-}
-
-function normalizeHaAreasSnapshot(value: unknown): { capturedAt: Date; snapshot: HaAreasSnapshotUpload } | null {
-  if (!value || typeof value !== 'object') return null;
-  const obj = value as Record<string, unknown>;
-  const schemaVersion = Number(obj.schemaVersion ?? 0);
-  if (schemaVersion !== 1) return null;
-  const capturedAt = parseIsoDate(obj.capturedAt);
-  if (!capturedAt) return null;
-
-  const rawAreas = obj.areas;
-  if (!Array.isArray(rawAreas)) return null;
-
-  const MAX_AREAS = 500;
-  const deduped = new Map<string, { areaId?: string; name: string }>();
-  for (const row of rawAreas.slice(0, MAX_AREAS)) {
-    if (!row || typeof row !== 'object') continue;
-    const r = row as Record<string, unknown>;
-    const name = typeof r.name === 'string' ? r.name.trim() : '';
-    if (!name) continue;
-    const areaId = typeof r.areaId === 'string' ? r.areaId.trim() : '';
-    const key = name.toLowerCase();
-    if (!deduped.has(key)) deduped.set(key, areaId ? { areaId, name } : { name });
-  }
-
-  const areas = Array.from(deduped.values());
-  if (areas.length === 0) return null;
-
-  return {
-    capturedAt,
-    snapshot: { schemaVersion: 1, capturedAt: capturedAt.toISOString(), areas },
-  };
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function normalizeHubRuntime(value: unknown): { reportedAt: Date; runtime: HubRuntimeUpload } | null {

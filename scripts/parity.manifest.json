@@ -30,6 +30,7 @@
     { "src": "src/lib/roomAccess.ts", "dest": "src/lib/roomAccess.ts", "mode": "file" },
     { "src": "src/lib/accessScope.ts", "dest": "src/lib/accessScope.ts", "mode": "file" },
     { "src": "src/lib/apiGuards.ts", "dest": "src/lib/apiGuards.ts", "mode": "file" },
+    { "src": "src/lib/haAreasSnapshot.ts", "dest": "src/lib/haAreasSnapshot.ts", "mode": "file" },
     { "src": "src/lib/policyVersions.ts", "dest": "src/lib/policyVersions.ts", "mode": "file" },
     { "src": "src/lib/policyAcceptance.ts", "dest": "src/lib/policyAcceptance.ts", "mode": "file" },
     { "src": "src/lib/safeLogger.ts", "dest": "src/lib/safeLogger.ts", "mode": "file" },
