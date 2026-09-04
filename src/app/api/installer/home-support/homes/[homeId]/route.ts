@@ -164,7 +164,7 @@ export async function GET(
       }
     : { serial: null, lastSeenAt: null, runtime: null, installedAt };
 
-  const [roomCount, auditEvents] = await Promise.all([
+  const [roomCount, auditEvents, activityIncidents, activityIncidentOpenCount, activityIncidentLatest] = await Promise.all([
     home.hubInstall ? prisma.room.count({ where: { hubInstallId: home.hubInstall.id } }) : Promise.resolve(0),
     prisma.auditEvent.findMany({
       where: {
@@ -180,6 +180,40 @@ export async function GET(
         metadata: true,
       },
     }),
+    home.hubInstall
+      ? prisma.hubIncident.findMany({
+          where: { homeId },
+          orderBy: [{ state: 'asc' }, { lastObservedAt: 'desc' }],
+          take: 50,
+          select: {
+            id: true,
+            incidentId: true,
+            revision: true,
+            kind: true,
+            severity: true,
+            state: true,
+            summary: true,
+            detail: true,
+            deviceId: true,
+            deviceName: true,
+            deviceProtocol: true,
+            deviceModel: true,
+            areaName: true,
+            labels: true,
+            details: true,
+            firstObservedAt: true,
+            lastObservedAt: true,
+            openedAt: true,
+            resolvedAt: true,
+          },
+        })
+      : Promise.resolve([]),
+    home.hubInstall
+      ? prisma.hubIncident.count({ where: { homeId, state: 'open', severity: 'critical' } })
+      : Promise.resolve(0),
+    home.hubInstall
+      ? prisma.hubIncident.findFirst({ where: { homeId }, orderBy: { lastObservedAt: 'desc' }, select: { lastObservedAt: true } })
+      : Promise.resolve(null),
   ]);
 
   const relevantAuditEvents = homeSupportRequest
@@ -231,6 +265,17 @@ export async function GET(
         }
       : null,
     hubStatus,
+    activityIncidents: {
+      openCount: activityIncidentOpenCount,
+      latestObservedAt: activityIncidentLatest?.lastObservedAt.toISOString() ?? null,
+      recent: activityIncidents.map((incident) => ({
+        ...incident,
+        firstObservedAt: incident.firstObservedAt.toISOString(),
+        lastObservedAt: incident.lastObservedAt.toISOString(),
+        openedAt: incident.openedAt?.toISOString() ?? null,
+        resolvedAt: incident.resolvedAt?.toISOString() ?? null,
+      })),
+    },
     homeowners,
     tenants,
     alexaEnabled,

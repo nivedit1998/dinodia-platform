@@ -17,6 +17,7 @@ import { enforceHubReplayProtection, HubReplayError } from '@/lib/hubReplayProte
 import { normalizeLanBaseUrl } from '@/lib/lanBaseUrl';
 import { hashForLog, safeLog } from '@/lib/safeLogger';
 import { normalizeHaAreasSnapshot } from '@/lib/haAreasSnapshot';
+import { ingestHubActivityIncidents } from '@/lib/hubActivityIncidents';
 
 function isUniqueConstraintError(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
@@ -48,7 +49,7 @@ type HeatingUsageUpload = {
 type HubRuntimeUpload = {
   kind: 'dinodia_os';
   version: string;
-  capabilities: { managedAreaProvisioningV1: true };
+  capabilities: { managedAreaProvisioningV1: true; managedDevicePresentationV1?: boolean; activityIncidentReportingV1?: boolean };
 };
 
 function parseIsoDate(value: unknown): Date | null {
@@ -70,7 +71,11 @@ function normalizeHubRuntime(value: unknown): { reportedAt: Date; runtime: HubRu
     runtime: {
       kind: 'dinodia_os',
       version: obj.version.trim().slice(0, 64),
-      capabilities: { managedAreaProvisioningV1: true },
+      capabilities: {
+        managedAreaProvisioningV1: true,
+        ...(cap.managedDevicePresentationV1 === true ? { managedDevicePresentationV1: true } : {}),
+        ...(cap.activityIncidentReportingV1 === true ? { activityIncidentReportingV1: true } : {}),
+      },
     },
   };
 }
@@ -304,6 +309,7 @@ export async function POST(req: NextRequest) {
 	    heatingUsageResetAckAt?: string;
 	    haAreas?: unknown;
 	    hubRuntime?: unknown;
+	    activityIncidents?: unknown;
 	  };
   try {
     body = await req.json();
@@ -559,6 +565,30 @@ export async function POST(req: NextRequest) {
     };
   }
 
+  let acceptedActivityIncidentIds: string[] = [];
+  if (hubRuntime?.runtime.capabilities.activityIncidentReportingV1 === true && body?.activityIncidents) {
+    try {
+      const incidentSummary = await ingestHubActivityIncidents({
+        hubInstallId: hubInstall.id,
+        homeId: hubInstall.homeId,
+        payload: body.activityIncidents,
+        now,
+      });
+      acceptedActivityIncidentIds = incidentSummary.accepted;
+      if (incidentSummary.ignored > 0) {
+        safeLog('warn', '[hub-agent/token-state] Ignored invalid activity incident envelopes', {
+          serialHash: hashForLog(serial),
+          ignored: incidentSummary.ignored,
+        });
+      }
+    } catch (err) {
+      safeLog('warn', '[hub-agent/token-state] Activity incident ingestion failed', {
+        serialHash: hashForLog(serial),
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     platformSyncEnabled: hubInstall.platformSyncEnabled,
@@ -568,5 +598,6 @@ export async function POST(req: NextRequest) {
     hubTokenHashes: hashes,
     heatingUsageResetAt: heatingUsageResetAtForResponse,
     heatingUsageConfig,
+    acceptedActivityIncidentIds,
   });
 }

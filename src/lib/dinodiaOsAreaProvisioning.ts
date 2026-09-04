@@ -90,10 +90,12 @@ export function isDinodiaOsManagedAreaHub(
 }
 
 export function hubRuntimeSummary(hub: Pick<DinodiaOsHubContext, 'runtimeKind' | 'runtimeVersion' | 'runtimeCapabilities' | 'runtimeCapabilitiesReportedAt' | 'lastSeenAt' | 'platformSyncIntervalMinutes'>) {
+  const capabilities = runtimeCapabilities(hub.runtimeCapabilities);
   return {
     kind: hub.runtimeKind,
     version: hub.runtimeVersion,
     managedAreaProvisioningV1: isDinodiaOsManagedAreaHub(hub),
+    activityIncidentReportingV1: capabilities.activityIncidentReportingV1 === true,
     capabilitiesReportedAt: hub.runtimeCapabilitiesReportedAt?.toISOString() ?? null,
   };
 }

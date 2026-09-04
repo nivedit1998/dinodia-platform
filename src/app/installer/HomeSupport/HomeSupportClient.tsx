@@ -55,6 +55,7 @@ type HomeDetail = {
       kind: string | null;
       version: string | null;
       managedAreaProvisioningV1: boolean;
+      activityIncidentReportingV1: boolean;
       capabilitiesReportedAt: string | null;
     } | null;
   } | null;
@@ -70,6 +71,33 @@ type HomeDetail = {
   tenantCount?: number;
   homeownerCount?: number;
   alexaLinkedCount?: number;
+  activityIncidents?: {
+    openCount: number;
+    latestObservedAt: string | null;
+    recent: HubIncidentSummary[];
+  };
+};
+
+type HubIncidentSummary = {
+  id: string;
+  incidentId: string;
+  revision: number;
+  kind: string;
+  severity: string;
+  state: string;
+  summary: string;
+  detail: string | null;
+  deviceId: string | null;
+  deviceName: string | null;
+  deviceProtocol: string | null;
+  deviceModel: string | null;
+  areaName: string | null;
+  labels: unknown;
+  details: unknown;
+  firstObservedAt: string;
+  lastObservedAt: string;
+  openedAt: string | null;
+  resolvedAt: string | null;
 };
 
 type RemoveHomeChecklistKey =
@@ -362,6 +390,17 @@ function formatDate(value: string | null | undefined) {
   }
 }
 
+function formatIncidentDuration(firstObservedAt: string, lastObservedAt: string) {
+  const first = new Date(firstObservedAt).getTime();
+  const last = new Date(lastObservedAt).getTime();
+  if (!Number.isFinite(first) || !Number.isFinite(last) || last < first) return null;
+  const totalMinutes = Math.max(0, Math.floor((last - first) / 60000));
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}h${minutes ? ` ${minutes}m` : ''}`;
+}
+
 export default function HomeSupportClient({ installerName, role }: { installerName: string; role: Role }) {
   const [homes, setHomes] = useState<HomeSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -454,6 +493,12 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
   useEffect(() => {
     void loadAllHomes();
   }, []);
+
+  useEffect(() => {
+    if (!expandedHomeId) return undefined;
+    const id = setInterval(() => void loadDetail(expandedHomeId), 60_000);
+    return () => clearInterval(id);
+  }, [expandedHomeId]);
 
   async function loadRooms(homeId: number) {
     setRoomsError((prev) => ({ ...prev, [homeId]: null }));
@@ -1414,6 +1459,46 @@ export default function HomeSupportClient({ installerName, role }: { installerNa
                               </div>
                             )}
                           </section>
+
+                          {detail.hubStatus?.runtime?.kind === 'dinodia_os' ? (
+                            <section className="rounded-md bg-white p-3 shadow-inner ring-1 ring-slate-200">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">Dinodia OS incidents</p>
+                                  <p className="mt-1 text-xs text-slate-600">Persistent device and radio failures reported by this Dinodia OS hub.</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${detail.activityIncidents?.openCount ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                    {detail.activityIncidents?.openCount ?? 0} open
+                                  </span>
+                                  <span className="text-[11px] text-slate-500">Latest {formatDate(detail.activityIncidents?.latestObservedAt)}</span>
+                                </div>
+                              </div>
+                              {detail.hubStatus?.runtime?.activityIncidentReportingV1 ? (
+                                <div className="mt-3 space-y-2">
+                                  {(detail.activityIncidents?.recent ?? []).length === 0 ? (
+                                    <p className="text-xs text-slate-600">No Dinodia OS incidents have been reported.</p>
+                                  ) : (
+                                    (detail.activityIncidents?.recent ?? []).map((incident) => (
+                                      <div key={incident.incidentId} className={`rounded-md border px-3 py-2 ${incident.state === 'open' ? 'border-rose-200 bg-rose-50' : 'border-emerald-200 bg-emerald-50'}`}>
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <p className={`text-xs font-semibold ${incident.state === 'open' ? 'text-rose-900' : 'text-emerald-900'}`}>{incident.summary}</p>
+                                          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">{incident.state}</span>
+                                        </div>
+                                        <p className="mt-1 text-[11px] text-slate-700">
+                                          {[incident.deviceName, incident.areaName, incident.deviceProtocol].filter(Boolean).join(' · ') || 'Hub'}
+                                        </p>
+                                        <p className="mt-1 text-[11px] text-slate-500">Reported by Dinodia OS · Last observed {formatDate(incident.lastObservedAt)}{incident.kind === 'device_offline' && formatIncidentDuration(incident.firstObservedAt, incident.lastObservedAt) ? ` · Offline ${formatIncidentDuration(incident.firstObservedAt, incident.lastObservedAt)}` : ''}{incident.resolvedAt ? ` · Resolved ${formatDate(incident.resolvedAt)}` : ''}</p>
+                                        {incident.detail ? <p className="mt-1 text-[11px] text-slate-600">{incident.detail}</p> : null}
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="mt-3 text-xs text-slate-600">Waiting for a fresh capability heartbeat from this Dinodia OS hub.</p>
+                              )}
+                            </section>
+                          ) : null}
 
                           <section className="rounded-md bg-white p-3 shadow-inner ring-1 ring-slate-200">
                             <div className="flex items-center justify-between gap-2">

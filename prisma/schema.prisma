@@ -189,6 +189,7 @@ model Home {
   users                                 User[]
   automationOwnerships                  AutomationOwnership[]
   homeAutomations                       HomeAutomation[]
+  hubIncidents                          HubIncident[]
   hubInstall                            HubInstall?                           @relation("HomeHubInstall")
   createdAt                             DateTime                              @default(now())
   updatedAt                             DateTime                              @updatedAt
@@ -435,8 +436,41 @@ model HubInstall {
   hubTokens                    HubToken[]
   rooms                        Room[]
   roomAccessRequests           RoomAccessRequest[]
+  hubIncidents                 HubIncident[]
   createdAt                    DateTime                     @default(now())
   updatedAt                    DateTime                     @updatedAt
+}
+
+model HubIncident {
+  id              String     @id @default(uuid())
+  hubInstall      HubInstall @relation(fields: [hubInstallId], references: [id], onDelete: Cascade)
+  hubInstallId    String
+  home            Home       @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  homeId          Int
+  incidentId      String
+  revision        Int
+  kind            String
+  severity        String
+  state           String
+  summary         String
+  detail          String?
+  deviceId        String?
+  deviceName      String?
+  deviceProtocol  String?
+  deviceModel     String?
+  areaName        String?
+  labels          Json?
+  details         Json?
+  firstObservedAt DateTime
+  lastObservedAt  DateTime
+  openedAt        DateTime?
+  resolvedAt      DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([hubInstallId, incidentId])
+  @@index([homeId, state, lastObservedAt])
+  @@index([hubInstallId, lastObservedAt])
 }
 
 model HomeownerPolicyAcceptance {
