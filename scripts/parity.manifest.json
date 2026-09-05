@@ -5,6 +5,7 @@
     { "src": "labels/registry.json", "dest": "labels/registry.json", "mode": "file" },
     { "src": "prisma/schema.prisma", "dest": "prisma/schema.prisma", "mode": "file" },
     { "src": "prisma/migrations/20260831120000_dinodia_os_runtime_capabilities/migration.sql", "dest": "prisma/migrations/20260831120000_dinodia_os_runtime_capabilities/migration.sql", "mode": "file" },
+    { "src": "prisma/migrations/20270630120000_electric_light_usage_accumulators/migration.sql", "dest": "prisma/migrations/20270630120000_electric_light_usage_accumulators/migration.sql", "mode": "file" },
 
     { "src": "src/app/layout.tsx", "dest": "src/app/layout.tsx", "mode": "file" },
     { "src": "src/app/globals.css", "dest": "src/app/globals.css", "mode": "file" },
@@ -42,6 +43,12 @@
     { "src": "src/lib/qrRoomService.ts", "dest": "src/lib/qrRoomService.ts", "mode": "file" },
     { "src": "src/lib/haConfigFlow.ts", "dest": "src/lib/haConfigFlow.ts", "mode": "file" },
     { "src": "src/lib/haLabels.ts", "dest": "src/lib/haLabels.ts", "mode": "file" },
+    { "src": "src/lib/adminDashboardBootstrap.ts", "dest": "src/lib/adminDashboardBootstrap.ts", "mode": "file" },
+    { "src": "src/lib/adminMonitoringSelectorInventory.ts", "dest": "src/lib/adminMonitoringSelectorInventory.ts", "mode": "file" },
+    { "src": "src/lib/electricUsageConfig.ts", "dest": "src/lib/electricUsageConfig.ts", "mode": "file" },
+    { "src": "src/lib/electricUsageMonitoring.ts", "dest": "src/lib/electricUsageMonitoring.ts", "mode": "file" },
+    { "src": "src/lib/electricUsageCompaction.ts", "dest": "src/lib/electricUsageCompaction.ts", "mode": "file" },
+    { "src": "src/lib/adminElectricLightDashboard.ts", "dest": "src/lib/adminElectricLightDashboard.ts", "mode": "file" },
 
     { "src": "src/app/api/devices/route.ts", "dest": "src/app/api/devices/route.ts", "mode": "file" },
     { "src": "src/app/api/automations/route.ts", "dest": "src/app/api/automations/route.ts", "mode": "file" },
@@ -61,6 +68,7 @@
     { "src": "src/app/api/admin/profile/ha-settings/route.ts", "dest": "src/app/api/admin/profile/ha-settings/route.ts", "mode": "file" },
     { "src": "src/app/api/admin/selling-property/route.ts", "dest": "src/app/api/admin/selling-property/route.ts", "mode": "file" },
     { "src": "src/app/api/admin/tenant/[tenantId]/route.ts", "dest": "src/app/api/admin/tenant/[tenantId]/route.ts", "mode": "file" },
+    { "src": "src/app/api/admin/monitoring/electric-light-dashboard/route.ts", "dest": "src/app/api/admin/monitoring/electric-light-dashboard/route.ts", "mode": "file" },
     { "src": "src/app/api/alexa/device-control/route.ts", "dest": "src/app/api/alexa/device-control/route.ts", "mode": "file" },
     { "src": "src/app/api/alexa/devices/route.ts", "dest": "src/app/api/alexa/devices/route.ts", "mode": "file" },
     { "src": "src/app/api/alexa/link/route.ts", "dest": "src/app/api/alexa/link/route.ts", "mode": "file" },

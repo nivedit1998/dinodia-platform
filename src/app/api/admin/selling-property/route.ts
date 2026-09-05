@@ -101,6 +101,9 @@ async function getFullResetPreview(homeId: number, haConnectionId: number, hubIn
     boilerTemperatureReadings,
     boilerUsageAccumulators,
     radiatorUsageAccumulators,
+    electricUsageAccumulators,
+    electricUsageReadings,
+    electricUsageDailyRollups,
     supportRequests,
     pendingHomeownerOnboardings,
     tenantDeviceOverrides,
@@ -129,6 +132,9 @@ async function getFullResetPreview(homeId: number, haConnectionId: number, hubIn
     prisma.boilerTemperatureReading.count({ where: { haConnectionId } }),
     prisma.boilerUsageAccumulator.count({ where: { haConnectionId } }),
     prisma.radiatorUsageAccumulator.count({ where: { haConnectionId } }),
+    prisma.electricUsageAccumulator.count({ where: { haConnectionId } }),
+    prisma.electricUsageReading.count({ where: { haConnectionId } }),
+    prisma.electricUsageDailyRollup.count({ where: { haConnectionId } }),
     prisma.supportRequest.count({ where: { homeId } }),
     prisma.pendingHomeownerOnboarding.count({
       where: pendingHomeownerOnboardingWhere,
@@ -176,6 +182,9 @@ async function getFullResetPreview(homeId: number, haConnectionId: number, hubIn
       boilerTemperatureReadings,
       boilerUsageAccumulators,
       radiatorUsageAccumulators,
+      electricUsageAccumulators,
+      electricUsageReadings,
+      electricUsageDailyRollups,
       supportRequests,
       pendingHomeownerOnboardings,
       alexaSkillUserLinks,
@@ -203,6 +212,9 @@ async function getOwnerTransferPreview(homeId: number, actorUserId: number, haCo
     boilerTemperatureReadings,
     boilerUsageAccumulators,
     radiatorUsageAccumulators,
+    electricUsageAccumulators,
+    electricUsageReadings,
+    electricUsageDailyRollups,
   ] = await Promise.all([
     prisma.trustedDevice.count({ where: { userId: actorUserId } }),
     prisma.authChallenge.count({ where: { userId: actorUserId } }),
@@ -221,6 +233,9 @@ async function getOwnerTransferPreview(homeId: number, actorUserId: number, haCo
     prisma.boilerTemperatureReading.count({ where: { haConnectionId } }),
     prisma.boilerUsageAccumulator.count({ where: { haConnectionId } }),
     prisma.radiatorUsageAccumulator.count({ where: { haConnectionId } }),
+    prisma.electricUsageAccumulator.count({ where: { haConnectionId } }),
+    prisma.electricUsageReading.count({ where: { haConnectionId } }),
+    prisma.electricUsageDailyRollup.count({ where: { haConnectionId } }),
   ]);
 
   return {
@@ -243,6 +258,9 @@ async function getOwnerTransferPreview(homeId: number, actorUserId: number, haCo
       boilerTemperatureReadings,
       boilerUsageAccumulators,
       radiatorUsageAccumulators,
+      electricUsageAccumulators,
+      electricUsageReadings,
+      electricUsageDailyRollups,
     },
   };
 }
@@ -395,6 +413,15 @@ export async function POST(req: NextRequest) {
         const radiatorUsageAccumulators = await tx.radiatorUsageAccumulator.deleteMany({
           where: { haConnectionId: haConnection.id },
         });
+        const electricUsageAccumulators = await tx.electricUsageAccumulator.deleteMany({
+          where: { haConnectionId: haConnection.id },
+        });
+        const electricUsageReadings = await tx.electricUsageReading.deleteMany({
+          where: { haConnectionId: haConnection.id },
+        });
+        const electricUsageDailyRollups = await tx.electricUsageDailyRollup.deleteMany({
+          where: { haConnectionId: haConnection.id },
+        });
 
         // Phase 8: request hub-side heating usage epoch reset so counters do not repopulate from cached hub state.
         const heatingUsageResetRequested =
@@ -440,6 +467,9 @@ export async function POST(req: NextRequest) {
           boilerTemperatureReadings: boilerTemperatureReadings.count,
           boilerUsageAccumulators: boilerUsageAccumulators.count,
           radiatorUsageAccumulators: radiatorUsageAccumulators.count,
+          electricUsageAccumulators: electricUsageAccumulators.count,
+          electricUsageReadings: electricUsageReadings.count,
+          electricUsageDailyRollups: electricUsageDailyRollups.count,
           heatingUsageResetRequested: Boolean(heatingUsageResetRequested),
           trustedDevices: trustedDevices.count,
           authChallenges: authChallenges.count,
@@ -688,6 +718,15 @@ export async function POST(req: NextRequest) {
       const radiatorUsageAccumulators = await tx.radiatorUsageAccumulator.deleteMany({
         where: { haConnectionId: haConnection.id },
       });
+      const electricUsageAccumulators = await tx.electricUsageAccumulator.deleteMany({
+        where: { haConnectionId: haConnection.id },
+      });
+      const electricUsageReadings = await tx.electricUsageReading.deleteMany({
+        where: { haConnectionId: haConnection.id },
+      });
+      const electricUsageDailyRollups = await tx.electricUsageDailyRollup.deleteMany({
+        where: { haConnectionId: haConnection.id },
+      });
       const supportRequests = await tx.supportRequest.deleteMany({ where: { homeId: home.id } });
       const pendingHomeownerOnboardings = await tx.pendingHomeownerOnboarding.deleteMany({
         where: pendingHomeownerOnboardingWhere,
@@ -740,6 +779,9 @@ export async function POST(req: NextRequest) {
         boilerTemperatureReadings: boilerTemperatureReadings.count,
         boilerUsageAccumulators: boilerUsageAccumulators.count,
         radiatorUsageAccumulators: radiatorUsageAccumulators.count,
+        electricUsageAccumulators: electricUsageAccumulators.count,
+        electricUsageReadings: electricUsageReadings.count,
+        electricUsageDailyRollups: electricUsageDailyRollups.count,
         supportRequests: supportRequests.count,
         pendingHomeownerOnboardings: pendingHomeownerOnboardings.count,
         usersDeleted: usersDeleted.count,

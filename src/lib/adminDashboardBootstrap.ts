@@ -6,6 +6,7 @@ import { buildAdminMonitoringSummary } from '@/lib/adminMonitoringSummary';
 import { buildAdminHeatingDashboard } from '@/lib/adminHeatingDashboard';
 import { buildAdminMonitoringEnergyByEntity } from '@/lib/adminMonitoringEnergyByEntity';
 import { buildAdminMonitoringHubStatus } from '@/lib/adminMonitoringHubStatus';
+import { buildAdminElectricLightDashboard } from '@/lib/adminElectricLightDashboard';
 
 type SectionResult<T> = {
   ok: boolean;
@@ -19,6 +20,7 @@ const SECTION_TIMEOUT_MS = {
   selectors: 20_000,
   summary: 25_000,
   electric: 25_000,
+  lighting: 25_000,
   hubStatus: 20_000,
   heating: 45_000,
 } as const;
@@ -94,6 +96,9 @@ export async function buildAdminDashboardBootstrap(args: {
       ]),
     })
   );
+  const lightingPromise = timedSection('lighting', SECTION_TIMEOUT_MS.lighting, () =>
+    buildAdminElectricLightDashboard({ haConnectionId, searchParams: new URLSearchParams(allTimeDailyParams) })
+  );
   const hubStatusPromise = timedSection('hubStatus', SECTION_TIMEOUT_MS.hubStatus, () =>
     buildAdminMonitoringHubStatus({
       haConnectionId,
@@ -107,10 +112,11 @@ export async function buildAdminDashboardBootstrap(args: {
     buildAdminMonitoringSelectorInventory({ haConnectionId })
   );
 
-  const [summary, heating, electric, hubStatus, areaInventory, selectors] = await Promise.all([
+  const [summary, heating, electric, lighting, hubStatus, areaInventory, selectors] = await Promise.all([
     summaryPromise,
     heatingPromise,
     electricPromise,
+    lightingPromise,
     hubStatusPromise,
     areaInventoryPromise,
     selectorsPromise,
@@ -123,12 +129,14 @@ export async function buildAdminDashboardBootstrap(args: {
     summaryMs: summary.durationMs,
     heatingMs: heating.durationMs,
     electricMs: electric.durationMs,
+    lightingMs: lighting.durationMs,
     hubStatusMs: hubStatus.durationMs,
     areaInventoryMs: areaInventory.durationMs,
     selectorsMs: selectors.durationMs,
     summaryState: summary.result.timedOut ? 'timedOut' : summary.result.ok ? 'success' : 'failed',
     heatingState: heating.result.timedOut ? 'timedOut' : heating.result.ok ? 'success' : 'failed',
     electricState: electric.result.timedOut ? 'timedOut' : electric.result.ok ? 'success' : 'failed',
+    lightingState: lighting.result.timedOut ? 'timedOut' : lighting.result.ok ? 'success' : 'failed',
     hubStatusState: hubStatus.result.timedOut ? 'timedOut' : hubStatus.result.ok ? 'success' : 'failed',
     areaInventoryState: areaInventory.result.timedOut ? 'timedOut' : areaInventory.result.ok ? 'success' : 'failed',
     selectorsState: selectors.result.timedOut ? 'timedOut' : selectors.result.ok ? 'success' : 'failed',
@@ -164,6 +172,9 @@ export async function buildAdminDashboardBootstrap(args: {
     electric: electric.result.ok
       ? { ok: true, payload: electric.result.payload }
       : electric.result,
+    lighting: lighting.result.ok
+      ? { ok: true, payload: lighting.result.payload }
+      : lighting.result,
     hubStatus: hubStatus.result.ok
       ? { ok: true, payload: hubStatus.result.payload }
       : hubStatus.result,

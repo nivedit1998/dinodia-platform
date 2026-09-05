@@ -18,6 +18,7 @@ import { normalizeLanBaseUrl } from '@/lib/lanBaseUrl';
 import { hashForLog, safeLog } from '@/lib/safeLogger';
 import { normalizeHaAreasSnapshot } from '@/lib/haAreasSnapshot';
 import { ingestHubActivityIncidents } from '@/lib/hubActivityIncidents';
+import { estimateLightCostGbp, estimateLightKwh, readElectricUsageConfig } from '@/lib/electricUsageConfig';
 
 function isUniqueConstraintError(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
@@ -45,6 +46,27 @@ type HeatingUsageUpload = {
   capturedAt?: string;
   devices?: unknown;
 };
+
+type ElectricUsageDeviceUpdate = {
+  label: 'Light';
+  entityId: string;
+  entityName: string | null;
+  trackingStartedAt: Date | null;
+  trackingEpoch: string;
+  assignmentStartedAt: Date | null;
+  assignmentEpoch: string;
+  areaId: string | null;
+  areaName: string | null;
+  onSeconds: number;
+  offSeconds: number;
+  unknownSeconds: number;
+  lastSeenAt: Date;
+  lastWasOn: boolean | null;
+  lastWasKnown: boolean | null;
+  retired: boolean;
+};
+
+type ElectricUsageUpload = { schemaVersion: number; capturedAt?: string; devices?: unknown };
 
 type HubRuntimeUpload = {
   kind: 'dinodia_os';
@@ -162,6 +184,125 @@ function normalizeHeatingUsageDeviceUpdate(value: unknown, schemaVersion: number
     lastWasOn,
     lastWasKnown,
   };
+}
+
+function normalizeElectricUsageDeviceUpdate(value: unknown, now = new Date()): ElectricUsageDeviceUpdate | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  const entityId = typeof obj.entityId === 'string' ? obj.entityId.trim() : '';
+  const trackingEpoch = typeof obj.trackingEpoch === 'string' ? obj.trackingEpoch.trim() : '';
+  const assignmentEpoch = typeof obj.assignmentEpoch === 'string' ? obj.assignmentEpoch.trim() : '';
+  const lastSeenAt = parseIsoDate(obj.lastSeenAt);
+  const trackingStartedAt = obj.trackingStartedAt === undefined || obj.trackingStartedAt === null ? null : parseIsoDate(obj.trackingStartedAt);
+  const assignmentStartedAt = obj.assignmentStartedAt === undefined || obj.assignmentStartedAt === null ? null : parseIsoDate(obj.assignmentStartedAt);
+  const onSeconds = asNonNegativeInt(obj.onSeconds);
+  const offSeconds = asNonNegativeInt(obj.offSeconds);
+  const unknownSeconds = asNonNegativeInt(obj.unknownSeconds);
+  const lastWasOn = typeof obj.lastWasOn === 'boolean' ? obj.lastWasOn : null;
+  const lastWasKnown = typeof obj.lastWasKnown === 'boolean' ? obj.lastWasKnown : null;
+  if (obj.label !== 'Light' || !entityId || !/^(light|switch)\.[^\s]{1,200}$/i.test(entityId) || !trackingEpoch || trackingEpoch.length > 128 || !assignmentEpoch || assignmentEpoch.length > 128 || !lastSeenAt || onSeconds === null || offSeconds === null || unknownSeconds === null) return null;
+  if (trackingStartedAt === undefined || assignmentStartedAt === undefined) return null;
+  if (lastSeenAt.getTime() > now.getTime() + 5 * 60 * 1000) return null;
+  const clean = (value: unknown, max: number) => typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null;
+  return {
+    label: 'Light',
+    entityId,
+    entityName: clean(obj.entityName, 200),
+    trackingStartedAt,
+    trackingEpoch,
+    assignmentStartedAt,
+    assignmentEpoch,
+    areaId: clean(obj.areaId, 128),
+    areaName: clean(obj.areaName, 200),
+    onSeconds,
+    offSeconds,
+    unknownSeconds,
+    lastSeenAt,
+    lastWasOn,
+    lastWasKnown,
+    retired: obj.retired === true,
+  };
+}
+
+function electricWindowStart(date: Date) {
+  const size = 2 * 60 * 60 * 1000;
+  return new Date(Math.floor(date.getTime() / size) * size);
+}
+
+function boundedElectricDelta(current: { on: number; off: number; unknown: number }, previous: { on: number; off: number; unknown: number }, interval: number) {
+  const values = [current.on - previous.on, current.off - previous.off, current.unknown - previous.unknown];
+  if (values.some((value) => value < 0)) return null;
+  const total = values.reduce((sum, value) => sum + value, 0);
+  if (total <= interval) return { onForSeconds: values[0], offForSeconds: values[1], unknownForSeconds: values[2] };
+  if (interval <= 0 || total <= 0) return { onForSeconds: 0, offForSeconds: 0, unknownForSeconds: 0 };
+  const scaled = values.map((value) => Math.floor((value * interval) / total));
+  for (let i = 0; i < interval - scaled.reduce((sum, value) => sum + value, 0); i += 1) scaled[i % 3] += 1;
+  return { onForSeconds: scaled[0], offForSeconds: scaled[1], unknownForSeconds: scaled[2] };
+}
+
+async function ingestElectricUsage({ haConnectionId, upload, now = new Date() }: { haConnectionId: number; upload: ElectricUsageUpload; now?: Date }) {
+  if (Number(upload?.schemaVersion ?? 0) !== 1 || !Array.isArray(upload.devices)) return { processed: 0, skipped: 0 };
+  const normalized = upload.devices.slice(0, 200).map((row) => normalizeElectricUsageDeviceUpdate(row, now)).filter(Boolean) as ElectricUsageDeviceUpdate[];
+  const groups = new Map<string, ElectricUsageDeviceUpdate[]>();
+  for (const row of normalized) {
+    const list = groups.get(row.entityId) || [];
+    list.push(row);
+    groups.set(row.entityId, list);
+  }
+  let processed = 0;
+  let skipped = upload.devices.length > 200 ? upload.devices.length - 200 : 0;
+  const config = readElectricUsageConfig();
+  for (const rows of groups.values()) {
+    rows.sort((a, b) => a.lastSeenAt.getTime() - b.lastSeenAt.getTime());
+    let existing = await prisma.electricUsageAccumulator.findUnique({ where: { haConnectionId_entityId: { haConnectionId, entityId: rows[0].entityId } } });
+    for (const update of rows) {
+      if (existing?.lastSeenAt && update.lastSeenAt.getTime() <= existing.lastSeenAt.getTime()) {
+        const sameEpoch = existing.trackingEpoch === update.trackingEpoch && existing.assignmentEpoch === update.assignmentEpoch;
+        const updateAssignmentStart = update.assignmentStartedAt?.getTime() ?? 0;
+        const existingAssignmentStart = existing.assignmentStartedAt?.getTime() ?? 0;
+        if (sameEpoch || (existingAssignmentStart > 0 && updateAssignmentStart > 0 && updateAssignmentStart <= existingAssignmentStart)) { skipped += 1; continue; }
+      }
+      if (existing && (existing.trackingEpoch !== update.trackingEpoch || existing.assignmentEpoch !== update.assignmentEpoch || update.retired)) {
+        const previous = { on: existing.onSeconds, off: existing.offSeconds, unknown: existing.unknownSeconds };
+        const cursor = { on: existing.lastSnapshotOnSeconds ?? 0, off: existing.lastSnapshotOffSeconds ?? 0, unknown: existing.lastSnapshotUnknownSeconds ?? 0 };
+        const startAt = existing.lastSnapshotAt || existing.assignmentStartedAt || existing.trackingStartedAt || update.lastSeenAt;
+        const interval = Math.min(24 * 60 * 60 + 10 * 60, Math.max(0, Math.floor((update.lastSeenAt.getTime() - startAt.getTime()) / 1000)));
+        const delta = boundedElectricDelta(previous, cursor, interval);
+        await prisma.$transaction(async (tx) => {
+          if (delta && delta.onForSeconds + delta.offForSeconds + delta.unknownForSeconds > 0) {
+            const kwh = estimateLightKwh(config.averageWatts, delta.onForSeconds);
+            await tx.electricUsageReading.create({ data: {
+              haConnectionId, entityId: existing!.entityId, entityName: existing!.entityName, trackingEpoch: existing!.trackingEpoch, assignmentEpoch: existing!.assignmentEpoch,
+              sourceAreaId: existing!.sourceAreaId, sourceAreaName: existing!.sourceAreaName, windowStartedAt: electricWindowStart(startAt), windowEndedAt: update.lastSeenAt,
+              onForSeconds: delta.onForSeconds, offForSeconds: delta.offForSeconds, unknownForSeconds: delta.unknownForSeconds,
+              averageWattsApplied: config.averageWatts, electricPricePerKwh: config.electricPricePerKwh, estimatedKwh: kwh, estimatedCostGbp: estimateLightCostGbp(kwh, config.electricPricePerKwh),
+            } });
+          }
+          await tx.electricUsageAccumulator.update({ where: { id: existing!.id }, data: {
+            entityName: update.entityName, trackingStartedAt: update.trackingStartedAt, trackingEpoch: update.trackingEpoch, assignmentStartedAt: update.assignmentStartedAt, assignmentEpoch: update.assignmentEpoch,
+            sourceAreaId: update.areaId, sourceAreaName: update.areaName, onSeconds: update.onSeconds, offSeconds: update.offSeconds, unknownSeconds: update.unknownSeconds,
+            lastSeenAt: update.lastSeenAt, lastWasOn: update.lastWasOn, lastWasKnown: update.lastWasKnown, retiredAt: update.retired ? update.lastSeenAt : null,
+            lastSnapshotOnSeconds: null, lastSnapshotOffSeconds: null, lastSnapshotUnknownSeconds: null, lastSnapshotAt: null,
+          } });
+        });
+        existing = await prisma.electricUsageAccumulator.findUnique({ where: { id: existing.id } });
+        processed += 1;
+        continue;
+      }
+      const next = {
+        entityName: update.entityName, trackingStartedAt: update.trackingStartedAt, trackingEpoch: update.trackingEpoch, assignmentStartedAt: update.assignmentStartedAt, assignmentEpoch: update.assignmentEpoch,
+        sourceAreaId: update.areaId, sourceAreaName: update.areaName, onSeconds: update.onSeconds, offSeconds: update.offSeconds, unknownSeconds: update.unknownSeconds,
+        lastSeenAt: update.lastSeenAt, lastWasOn: update.lastWasOn, lastWasKnown: update.lastWasKnown, retiredAt: update.retired ? update.lastSeenAt : null,
+      };
+      existing = await prisma.electricUsageAccumulator.upsert({
+        where: { haConnectionId_entityId: { haConnectionId, entityId: update.entityId } },
+        create: { haConnectionId, entityId: update.entityId, ...next, lastSnapshotOnSeconds: null, lastSnapshotOffSeconds: null, lastSnapshotUnknownSeconds: null, lastSnapshotAt: null },
+        update: next,
+      });
+      processed += 1;
+    }
+  }
+  return { processed, skipped };
 }
 
 async function ingestHeatingUsage({
@@ -306,6 +447,7 @@ export async function POST(req: NextRequest) {
 	    agentSeenVersion?: number;
 	    lanBaseUrl?: string;
 	    heatingUsage?: HeatingUsageUpload;
+	    electricUsage?: ElectricUsageUpload;
 	    heatingUsageResetAckAt?: string;
 	    haAreas?: unknown;
 	    hubRuntime?: unknown;
@@ -349,7 +491,7 @@ export async function POST(req: NextRequest) {
 	      runtimeCapabilitiesReportedAt: true,
 	      hubTokens: true,
 	      homeId: true,
-	      home: { select: { id: true, haConnectionId: true } },
+	      home: { select: { id: true, haConnectionId: true, timeZone: true } },
 	    },
 	  });
   if (!hubInstall) {
@@ -536,6 +678,27 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  let electricUsageSummary = { processed: 0, skipped: 0 };
+  if (hubInstall.home?.haConnectionId && body?.electricUsage) {
+    try {
+      electricUsageSummary = await ingestElectricUsage({ haConnectionId: hubInstall.home.haConnectionId, upload: body.electricUsage, now });
+      if (electricUsageSummary.processed > 0 || electricUsageSummary.skipped > 0) {
+        safeLog('info', '[hub-agent/token-state] Electric usage upload processed', {
+          serialHash: hashForLog(serial),
+          haConnectionIdHash: hashForLog(String(hubInstall.home.haConnectionId)),
+          processed: electricUsageSummary.processed,
+          skipped: electricUsageSummary.skipped,
+        });
+      }
+    } catch (err) {
+      safeLog('warn', '[hub-agent/token-state] Electric usage upload failed', {
+        serialHash: hashForLog(serial),
+        haConnectionIdHash: hashForLog(String(hubInstall.home.haConnectionId)),
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   let heatingUsageConfig: {
     schemaVersion: number;
     efficiencyBandsVersion: number;
@@ -598,6 +761,8 @@ export async function POST(req: NextRequest) {
     hubTokenHashes: hashes,
     heatingUsageResetAt: heatingUsageResetAtForResponse,
     heatingUsageConfig,
+    electricUsage: electricUsageSummary,
+    homeTimeZone: hubInstall.home?.timeZone || 'Europe/London',
     acceptedActivityIncidentIds,
   });
 }

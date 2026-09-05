@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getDevicesForHaConnection } from '@/lib/devicesSnapshot';
 import { getGroupLabel } from '@/lib/deviceLabels';
 import { buildMonitoringDisplayContext, UNASSIGNED_AREA } from '@/lib/adminMonitoringDisplay';
+import type { UIDevice } from '@/types/device';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_DAYS = 90;
@@ -61,6 +62,53 @@ type SelectorRow = {
   sourceLabel: string | null;
   lastCapturedAt: string;
 };
+
+function isLightSelectorDevice(device: Pick<UIDevice, 'domain' | 'label' | 'labels' | 'entityLabels' | 'deviceLabels'>) {
+  const domain = String(device?.domain || '').toLowerCase();
+  const labels = [device?.label, ...(device?.labels || []), ...(device?.entityLabels || []), ...(device?.deviceLabels || [])]
+    .map((value) => String(value || '').trim().toLowerCase());
+  return (domain === 'light' || domain === 'switch') && labels.includes('light');
+}
+
+export async function buildAdminElectricLightSelectors(args: { haConnectionId: number }) {
+  const { haConnectionId } = args;
+  const [devices, accumulators] = await Promise.all([
+    getDevicesForHaConnection(haConnectionId, { cacheTtlMs: 2000 }).catch(() => []),
+    prisma.electricUsageAccumulator.findMany({
+      where: { haConnectionId },
+      orderBy: [{ entityId: 'asc' }],
+      select: { entityId: true, entityName: true, sourceAreaName: true, lastSeenAt: true, retiredAt: true },
+    }),
+  ]);
+  const active = devices.filter(isLightSelectorDevice);
+  const ids = Array.from(new Set([...active.map((device) => device.entityId), ...accumulators.map((row) => row.entityId)]));
+  const displayCtx = await buildMonitoringDisplayContext({ haConnectionId, entityIds: ids });
+  const activeIds = new Set(active.map((device) => device.entityId));
+  const activeRows = active.map((device) => ({
+    entityId: device.entityId,
+    name: displayCtx.displayName(device.entityId) || device.name || device.entityId,
+    area: displayCtx.displayArea(device.entityId) || UNASSIGNED_AREA,
+    displayAreaKey: displayCtx.displayAreaKey(device.entityId),
+    label: 'Light',
+    isActive: true,
+    retiredAt: null,
+    lastCapturedAt: accumulators.find((row) => row.entityId === device.entityId)?.lastSeenAt?.toISOString() || null,
+  }));
+  const formerRows = accumulators.filter((row) => !activeIds.has(row.entityId)).map((row) => ({
+    entityId: row.entityId,
+    name: row.entityName || displayCtx.displayName(row.entityId) || row.entityId,
+    area: row.sourceAreaName || UNASSIGNED_AREA,
+    displayAreaKey: displayCtx.displayAreaKeyForArea(row.sourceAreaName || UNASSIGNED_AREA),
+    label: 'Light',
+    isActive: false,
+    retiredAt: row.retiredAt?.toISOString() || null,
+    lastCapturedAt: row.lastSeenAt?.toISOString() || null,
+  }));
+  return {
+    lightEntities: activeRows.sort((a, b) => a.name.localeCompare(b.name)),
+    formerLightEntities: formerRows.sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
 
 export async function buildAdminMonitoringEntities(args: {
   haConnectionId: number;
@@ -321,7 +369,7 @@ export async function buildAdminMonitoringSelectorInventory(args: {
   const allTimeParams = new URLSearchParams();
   allTimeParams.set('days', 'all');
 
-  const [entities, radiators, boilers] = await Promise.all([
+  const [entities, radiators, boilers, lights] = await Promise.all([
     buildAdminMonitoringEntities({ haConnectionId, searchParams: allTimeParams }),
     buildAdminMonitoringBoilerEntities({
       haConnectionId,
@@ -331,6 +379,7 @@ export async function buildAdminMonitoringSelectorInventory(args: {
       haConnectionId,
       searchParams: new URLSearchParams([['days', 'all'], ['label', 'Boiler']]),
     }),
+    buildAdminElectricLightSelectors({ haConnectionId }),
   ]);
 
   return {
@@ -339,5 +388,7 @@ export async function buildAdminMonitoringSelectorInventory(args: {
     batteryEntities: entities.batteryEntities ?? [],
     radiatorEntities: radiators.boilerEntities ?? [],
     boilerEntities: boilers.boilerEntities ?? [],
+    lightEntities: lights.lightEntities ?? [],
+    formerLightEntities: lights.formerLightEntities ?? [],
   };
 }

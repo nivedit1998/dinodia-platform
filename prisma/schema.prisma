@@ -176,6 +176,7 @@ model Home {
   state                                 String?
   postcode                              String
   country                               String
+  timeZone                              String                                @default("Europe/London")
   haConnection                          HaConnection                          @relation(fields: [haConnectionId], references: [id])
   haConnectionId                        Int                                   @unique
   claimCodeHash                         String?                               @unique
@@ -399,6 +400,9 @@ model HaConnection {
   boilerTemperatureReadings      BoilerTemperatureReading[]
   boilerUsageAccumulators        BoilerUsageAccumulator[]
   radiatorUsageAccumulators      RadiatorUsageAccumulator[]
+  electricUsageAccumulators      ElectricUsageAccumulator[]
+  electricUsageReadings          ElectricUsageReading[]
+  electricUsageDailyRollups      ElectricUsageDailyRollup[]
   newDeviceCommissioningSessions NewDeviceCommissioningSession[]
   areaDisplayOverrides           AreaDisplayOverride[]           @relation("HaConnectionAreaDisplayOverrides")
   labelDisplayOverrides          LabelDisplayOverride[]          @relation("HaConnectionLabelDisplayOverrides")
@@ -409,36 +413,36 @@ model HaConnection {
 }
 
 model HubInstall {
-  id                           String                       @id @default(uuid())
-  serial                       String                       @unique
-  bootstrapSecretCiphertext    String
-  syncSecretCiphertext         String?
-  platformSyncEnabled          Boolean                      @default(true)
-  platformSyncIntervalMinutes  Int                          @default(2)
-  rotateEveryMinutes           Int                          @default(60) // minutes
-  graceMinutes                 Int                          @default(20) // minutes
-  publishedHubTokenVersion     Int                          @default(0)
-  lastAckedHubTokenVersion     Int                          @default(0)
-  heatingUsageResetRequestedAt DateTime?
-  heatingUsageResetCompletedAt DateTime?
-  lastReportedLanBaseUrl       String?
-  lastReportedLanBaseUrlAt     DateTime?
-  lastReportedHaAreas          Json?
-  lastReportedHaAreasAt        DateTime?
-  runtimeKind                  String?
-  runtimeVersion               String?
-  runtimeCapabilities          Json?
+  id                            String                       @id @default(uuid())
+  serial                        String                       @unique
+  bootstrapSecretCiphertext     String
+  syncSecretCiphertext          String?
+  platformSyncEnabled           Boolean                      @default(true)
+  platformSyncIntervalMinutes   Int                          @default(2)
+  rotateEveryMinutes            Int                          @default(60) // minutes
+  graceMinutes                  Int                          @default(20) // minutes
+  publishedHubTokenVersion      Int                          @default(0)
+  lastAckedHubTokenVersion      Int                          @default(0)
+  heatingUsageResetRequestedAt  DateTime?
+  heatingUsageResetCompletedAt  DateTime?
+  lastReportedLanBaseUrl        String?
+  lastReportedLanBaseUrlAt      DateTime?
+  lastReportedHaAreas           Json?
+  lastReportedHaAreasAt         DateTime?
+  runtimeKind                   String?
+  runtimeVersion                String?
+  runtimeCapabilities           Json?
   runtimeCapabilitiesReportedAt DateTime?
-  lastSeenAt                   DateTime?
-  home                         Home?                        @relation("HomeHubInstall", fields: [homeId], references: [id], onDelete: SetNull)
-  homeId                       Int?                         @unique
-  pendingHomeownerOnboardings  PendingHomeownerOnboarding[]
-  hubTokens                    HubToken[]
-  rooms                        Room[]
-  roomAccessRequests           RoomAccessRequest[]
-  hubIncidents                 HubIncident[]
-  createdAt                    DateTime                     @default(now())
-  updatedAt                    DateTime                     @updatedAt
+  lastSeenAt                    DateTime?
+  home                          Home?                        @relation("HomeHubInstall", fields: [homeId], references: [id], onDelete: SetNull)
+  homeId                        Int?                         @unique
+  pendingHomeownerOnboardings   PendingHomeownerOnboarding[]
+  hubTokens                     HubToken[]
+  rooms                         Room[]
+  roomAccessRequests            RoomAccessRequest[]
+  hubIncidents                  HubIncident[]
+  createdAt                     DateTime                     @default(now())
+  updatedAt                     DateTime                     @updatedAt
 }
 
 model HubIncident {
@@ -769,6 +773,92 @@ model RadiatorUsageAccumulator {
   @@index([haConnectionId])
 }
 
+model ElectricUsageAccumulator {
+  id                         Int          @id @default(autoincrement())
+  haConnection               HaConnection @relation(fields: [haConnectionId], references: [id])
+  haConnectionId             Int
+  entityId                   String
+  entityName                 String?
+  trackingStartedAt          DateTime?
+  trackingEpoch              String
+  assignmentStartedAt        DateTime?
+  assignmentEpoch            String
+  sourceAreaId               String?
+  sourceAreaName             String?
+  onSeconds                  Int          @default(0)
+  offSeconds                 Int          @default(0)
+  unknownSeconds             Int          @default(0)
+  lastSeenAt                 DateTime?
+  lastWasOn                  Boolean?
+  lastWasKnown               Boolean?
+  retiredAt                  DateTime?
+  lastSnapshotOnSeconds      Int?
+  lastSnapshotOffSeconds     Int?
+  lastSnapshotUnknownSeconds Int?
+  lastSnapshotAt             DateTime?
+  createdAt                  DateTime     @default(now())
+  updatedAt                  DateTime     @updatedAt
+
+  @@unique([haConnectionId, entityId])
+  @@index([haConnectionId])
+  @@index([haConnectionId, updatedAt])
+}
+
+model ElectricUsageReading {
+  id                  Int          @id @default(autoincrement())
+  haConnection        HaConnection @relation(fields: [haConnectionId], references: [id])
+  haConnectionId      Int
+  entityId            String
+  entityName          String?
+  trackingEpoch       String
+  assignmentEpoch     String
+  sourceAreaId        String?
+  sourceAreaName      String?
+  windowStartedAt     DateTime
+  windowEndedAt       DateTime
+  onForSeconds        Int          @default(0)
+  offForSeconds       Int          @default(0)
+  unknownForSeconds   Int          @default(0)
+  averageWattsApplied Float?
+  electricPricePerKwh Float?
+  estimatedKwh        Float?
+  estimatedCostGbp    Float?
+  capturedAt          DateTime     @default(now())
+
+  @@unique([haConnectionId, entityId, windowStartedAt, assignmentEpoch])
+  @@index([haConnectionId, entityId, capturedAt])
+  @@index([haConnectionId, capturedAt])
+  @@index([haConnectionId, sourceAreaId, capturedAt])
+}
+
+model ElectricUsageDailyRollup {
+  id                  Int          @id @default(autoincrement())
+  haConnection        HaConnection @relation(fields: [haConnectionId], references: [id])
+  haConnectionId      Int
+  entityId            String
+  entityName          String?
+  trackingEpoch       String
+  assignmentEpoch     String
+  sourceAreaId        String?
+  sourceAreaName      String?
+  localDate           String
+  timeZone            String
+  onForSeconds        Int          @default(0)
+  offForSeconds       Int          @default(0)
+  unknownForSeconds   Int          @default(0)
+  estimatedKwh        Float?
+  estimatedCostGbp    Float?
+  averageWattsApplied Float?
+  electricPricePerKwh Float?
+  configurationMixed  Boolean      @default(false)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@unique([haConnectionId, entityId, localDate, assignmentEpoch])
+  @@index([haConnectionId, localDate])
+  @@index([haConnectionId, sourceAreaId, localDate])
+}
+
 model AlexaAuthCode {
   id          Int      @id @default(autoincrement())
   code        String   @unique
@@ -982,47 +1072,47 @@ model HomeAutomation {
 }
 
 model SupportRequest {
-  id                        String                       @id @default(uuid())
-  kind                      SupportRequestKind
-  homeId                    Int
-  targetUserId              Int?
-  installerUserId           Int
-  authChallengeId           String?                      @unique
-  reason                    String?
-  scope                     SupportAccessScope?
-  approvedByUserId          Int?
-  approvedBy                User?                        @relation("SupportRequestApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
-  approvedAt                DateTime?
-  approvalValidUntil        DateTime?
-  approvalRecipientType     SupportApprovalRecipientType?
-  approvalRecipientEmail    String?
-  approvalRecipientName     String?
-  revokedAt                 DateTime?
-  revokedByUserId           Int?
-  revokedBy                 User?                        @relation("SupportRequestRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
-  consumedAt                DateTime?
-  haSecurityCodeHash        String?
-  haSecurityCodeIssuedAt    DateTime?
-  haSecurityCodeExpiresAt   DateTime?
-  haSecurityCodeConsumedAt  DateTime?
-  connectButtonClickedAt    DateTime?
-  haSessionStartedAt        DateTime?
-  haSessionExpiresAt        DateTime?
-  haSessionEndedAt          DateTime?
-  haSessionFailureAt        DateTime?
-  haSessionFailureCode      String?
-  haSessionRevokedAt        DateTime?
-  notificationSentAt        DateTime?
-  notificationFailedAt      DateTime?
-  notificationFailureReason String?
-  supportGatewayHostname    String?
-  launchTicketHash          String?                      @unique
-  launchTicketExpiresAt     DateTime?
-  gatewaySessionHash        String?                      @unique
-  gatewaySessionBoundAt     DateTime?
+  id                          String                        @id @default(uuid())
+  kind                        SupportRequestKind
+  homeId                      Int
+  targetUserId                Int?
+  installerUserId             Int
+  authChallengeId             String?                       @unique
+  reason                      String?
+  scope                       SupportAccessScope?
+  approvedByUserId            Int?
+  approvedBy                  User?                         @relation("SupportRequestApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  approvedAt                  DateTime?
+  approvalValidUntil          DateTime?
+  approvalRecipientType       SupportApprovalRecipientType?
+  approvalRecipientEmail      String?
+  approvalRecipientName       String?
+  revokedAt                   DateTime?
+  revokedByUserId             Int?
+  revokedBy                   User?                         @relation("SupportRequestRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  consumedAt                  DateTime?
+  haSecurityCodeHash          String?
+  haSecurityCodeIssuedAt      DateTime?
+  haSecurityCodeExpiresAt     DateTime?
+  haSecurityCodeConsumedAt    DateTime?
+  connectButtonClickedAt      DateTime?
+  haSessionStartedAt          DateTime?
+  haSessionExpiresAt          DateTime?
+  haSessionEndedAt            DateTime?
+  haSessionFailureAt          DateTime?
+  haSessionFailureCode        String?
+  haSessionRevokedAt          DateTime?
+  notificationSentAt          DateTime?
+  notificationFailedAt        DateTime?
+  notificationFailureReason   String?
+  supportGatewayHostname      String?
+  launchTicketHash            String?                       @unique
+  launchTicketExpiresAt       DateTime?
+  gatewaySessionHash          String?                       @unique
+  gatewaySessionBoundAt       DateTime?
   gatewaySessionUserAgentHash String?
-  approvalTokens            SupportRequestApprovalToken[]
-  createdAt                 DateTime                     @default(now())
+  approvalTokens              SupportRequestApprovalToken[]
+  createdAt                   DateTime                      @default(now())
 
   @@index([homeId])
   @@index([targetUserId])

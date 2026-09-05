@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { captureBoilerTempSnapshotForAllConnections } from '@/lib/boilerMonitoring';
 import { captureDailyMonitoringSnapshotForAllConnections } from '@/lib/monitoring';
 import { cleanupMonitoringReadings } from '@/lib/monitoringCleanup';
+import { captureElectricUsageSnapshotForAllConnections } from '@/lib/electricUsageMonitoring';
+import { compactElectricUsageDetail } from '@/lib/electricUsageCompaction';
 import { syncHubStatusMarkersForAllConnections } from '@/lib/hubStatusMarkers';
 import { safeLog } from '@/lib/safeLogger';
 import { logServerError } from '@/lib/serverErrorLog';
@@ -48,6 +50,25 @@ export async function GET(req: NextRequest) {
   try {
     const boilerSummary = await captureBoilerTempSnapshotForAllConnections();
     const energySummary = await captureDailyMonitoringSnapshotForAllConnections();
+    let electricSummary: Awaited<ReturnType<typeof captureElectricUsageSnapshotForAllConnections>> | null = null;
+    let electricCompaction: Awaited<ReturnType<typeof compactElectricUsageDetail>> | null = null;
+    let electricError: string | null = null;
+    let electricCompactionError: string | null = null;
+
+    try {
+      electricSummary = await captureElectricUsageSnapshotForAllConnections();
+    } catch (err) {
+      electricError = err instanceof Error ? err.message : 'Electric usage snapshot failed';
+      logServerError('[cron/monitoring-snapshot] electric usage snapshot error', err);
+    }
+
+    try {
+      electricCompaction = await compactElectricUsageDetail();
+    } catch (err) {
+      electricCompactionError = err instanceof Error ? err.message : 'Electric usage compaction failed';
+      logServerError('[cron/monitoring-snapshot] electric usage compaction error', err);
+    }
+
     let cleanupError: string | null = null;
     let hubStatusError: string | null = null;
     let hubStatus: { processed: number; wrote: number } | null = null;
@@ -69,6 +90,9 @@ export async function GET(req: NextRequest) {
     const degraded =
       (boilerSummary.failedConnections ?? 0) > 0 ||
       (energySummary.failedConnections ?? 0) > 0 ||
+      (electricSummary?.failedConnections ?? 0) > 0 ||
+      electricError !== null ||
+      electricCompactionError !== null ||
       cleanupError !== null ||
       hubStatusError !== null;
 
@@ -76,6 +100,9 @@ export async function GET(req: NextRequest) {
       safeLog('warn', '[cron/monitoring-snapshot] completed with partial failures', {
         boilerFailedConnections: boilerSummary.failedConnections ?? 0,
         energyFailedConnections: energySummary.failedConnections ?? 0,
+        electricFailedConnections: electricSummary?.failedConnections ?? 0,
+        electricError,
+        electricCompactionError,
         cleanupFailed: cleanupError !== null,
       });
     }
@@ -85,6 +112,16 @@ export async function GET(req: NextRequest) {
       degraded,
       ...energySummary,
       boiler: boilerSummary,
+      electricUsage: {
+        ok: electricError === null,
+        error: electricError,
+        ...(electricSummary || { processed: 0, skipped: 0, failedConnections: 0 }),
+      },
+      electricCompaction: {
+        ok: electricCompactionError === null,
+        error: electricCompactionError,
+        result: electricCompaction,
+      },
       cleanup: {
         ok: cleanupError === null,
         error: cleanupError,

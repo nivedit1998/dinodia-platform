@@ -66,6 +66,9 @@ export type RemoveHomePreview = {
     boilerTemperatureReadings: number;
     boilerUsageAccumulators: number;
     radiatorUsageAccumulators: number;
+    electricUsageAccumulators: number;
+    electricUsageReadings: number;
+    electricUsageDailyRollups: number;
     auditEvents: number;
   };
   haTargets: {
@@ -320,6 +323,9 @@ export async function getHomeRemovalPreview(homeId: number): Promise<RemoveHomeP
         boilerTemperatureReadings: 0,
         boilerUsageAccumulators: 0,
         radiatorUsageAccumulators: 0,
+        electricUsageAccumulators: 0,
+        electricUsageReadings: 0,
+        electricUsageDailyRollups: 0,
         auditEvents: 0,
       },
       haTargets: {
@@ -375,6 +381,9 @@ export async function getHomeRemovalPreview(homeId: number): Promise<RemoveHomeP
       prisma.boilerTemperatureReading.count({ where: { haConnectionId: home.haConnectionId } }),
       prisma.boilerUsageAccumulator.count({ where: { haConnectionId: home.haConnectionId } }),
       prisma.radiatorUsageAccumulator.count({ where: { haConnectionId: home.haConnectionId } }),
+      prisma.electricUsageAccumulator.count({ where: { haConnectionId: home.haConnectionId } }),
+      prisma.electricUsageReading.count({ where: { haConnectionId: home.haConnectionId } }),
+      prisma.electricUsageDailyRollup.count({ where: { haConnectionId: home.haConnectionId } }),
       prisma.auditEvent.count({ where: { homeId } }),
     ]),
     getHomeCleanupTargets(homeId, home.haConnectionId, home.hubInstallId),
@@ -427,7 +436,10 @@ export async function getHomeRemovalPreview(homeId: number): Promise<RemoveHomeP
       boilerTemperatureReadings: counts[11],
       boilerUsageAccumulators: counts[12],
       radiatorUsageAccumulators: counts[13],
-      auditEvents: counts[14],
+      electricUsageAccumulators: counts[14],
+      electricUsageReadings: counts[15],
+      electricUsageDailyRollups: counts[16],
+      auditEvents: counts[17],
     },
     haTargets: {
       tenantOwnedDeviceIds: cleanupTargets.tenantOwnedDeviceIds.length,
@@ -637,6 +649,15 @@ export async function performCompanyHomeRemoval(args: {
     ).count;
     counts.radiatorUsageAccumulators = (
       await tx.radiatorUsageAccumulator.deleteMany({ where: { haConnectionId: home.haConnectionId } })
+    ).count;
+    counts.electricUsageAccumulators = (
+      await tx.electricUsageAccumulator.deleteMany({ where: { haConnectionId: home.haConnectionId } })
+    ).count;
+    counts.electricUsageReadings = (
+      await tx.electricUsageReading.deleteMany({ where: { haConnectionId: home.haConnectionId } })
+    ).count;
+    counts.electricUsageDailyRollups = (
+      await tx.electricUsageDailyRollup.deleteMany({ where: { haConnectionId: home.haConnectionId } })
     ).count;
 
     counts.automationOwnerships = (await tx.automationOwnership.deleteMany({ where: { homeId: args.homeId } })).count;

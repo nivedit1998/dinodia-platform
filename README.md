@@ -66,6 +66,8 @@ All deployments (local, preview, production) must define the following variables
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN`, `KV_REST_API_READ_ONLY_TOKEN` | (Recommended) Vercel KV endpoints/keys for distributed rate limiting. When unset, limits fall back to per-instance memory. |
 | `CRON_SECRET` | Shared secret used to secure the monitoring snapshot cron route (`/api/cron/monitoring-snapshot`). Send it via `Authorization: Bearer` (query param is disabled by default). |
 | `DISABLE_CRON_QUERY_SECRET` | Defaults to `true`; set to `false` only if you must support `?secret=` cron calls. |
+| `average_watts` | Optional positive average wattage used to estimate usage for each Light-labelled controlled circuit. The estimate multiplies this by the number of tracked lights and reported ON minutes. |
+| `electric_price_pkwh` | Optional non-negative electricity price per kWh used for the lighting cost estimate. Both lighting variables must be valid to show kWh/cost values. |
 | `AWS_REGION` | Default AWS region (fallback for SES/SQS). |
 | `AWS_SES_REGION` | AWS region for SES email (overrides `AWS_REGION` when set). |
 | `AWS_SQS_REGION` | AWS region for Alexa ChangeReport SQS queue (overrides `AWS_REGION` when set). |
@@ -156,6 +158,13 @@ For production/CI use `npx prisma migrate deploy` so only committed migrations r
 - Set `CRON_SECRET` in all active backends (Vercel and AWS, plus Cloudflare Worker secret) using the same value. Requests without the correct secret return HTTP 401; missing env returns HTTP 500.
 - Apply the migration to your database: `npx prisma migrate dev --name monitoring-readings` for local/dev, then `npx prisma migrate deploy` against Supabase/production. Regenerate the client if needed: `npx prisma generate`.
 - Manual trigger in development: `curl -H "Authorization: Bearer $CRON_SECRET" "http://localhost:3000/api/cron/monitoring-snapshot"` (after starting `npm run dev`). If you temporarily allow query secrets, append `?secret=$CRON_SECRET`.
+
+### Estimated light usage
+
+- Light usage is additive to the existing measured-electricity and boiler trackers. It includes only `light.*` and `switch.*` entities carrying the exact `Light` label; devices are not auto-paired or inferred from unlabeled entities.
+- Hub agents and the Dinodia OS replacement hub upload cumulative ON/OFF/UNKNOWN counters. The platform stores interval detail for 400 days and daily local-time rollups for seven years, then deletes older detail/rollups automatically.
+- Configure `average_watts` and `electric_price_pkwh` in the Vercel environment to enable estimated kWh and cost. These are estimates from reported ON time, not meter readings. The homeowner Electric tab labels them accordingly and keeps the existing measured-electricity view unchanged.
+- The authenticated admin endpoint is `/api/admin/monitoring/electric-light-dashboard`; the bootstrap response also includes a `lighting` envelope for clients that support it. Use `days`, `from`/`to`, `bucket`, `entityIds`, and `areas` query parameters for range and selector filtering.
 
 ## API rate limiting
 
